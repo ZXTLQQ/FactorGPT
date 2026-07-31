@@ -1,0 +1,52 @@
+# 字节码 / 缓存
+__pycache__/
+*.py[cod]
+*.pyc
+
+# 数据与向量库（本地产物，非源码）
+chroma_db/
+data/*.db
+data/*.sqlite3
+output/
+
+# 日志
+*.log
+
+# 密钥与本地配置（切勿入库）
+.env
+
+# 本地预备缓存（真实行情/整矿，可能较大，不入库）
+data/cache/
+
+# HuggingFace / 向量模型缓存（下载产物，非源码）
+# 若 config.yaml 的 rag.hf_home 指向仓库内目录（如 data/models），请保留此行
+data/models/
+~/.cache/huggingface/
+
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# --- 以下为本地私有 / 运行时产物，不入库 ---
+# CodeBuddy 项目数据（隐私，非源码）
+.codebuddy/
+
+# 本地运行日志与临时开发产物
+*.err
+err_norm.txt
+norm_err.txt
+norm_out.txt
+verify_out.txt
+scripts/_ocr_status.txt
+scripts/_ocr_pdf.log
+scripts/_ocr_pdf.err
+
+# 模型权重（大体积，下载产物，非源码）
+models/
+
+# 数据产物（整矿缓存 / 导入产物 / 图片型 PDF / OCR 知识语料）
+data/cache/
+data/knowledge/
+data/*.jsonl
