@@ -1,0 +1,12 @@
+[
+  {
+    "title": "因子评价方法论（量化拯救散户·因子字典）",
+    "category": "因子评价方法论",
+    "formula": "组合权重 w_i = max(0, (f_i - mean(f)) * IC方向) / sum(w_i)；涨停/跌停当日该标的权重置0",
+    "description": "因子字典（公众号「量化拯救散户」）用于评价因子的统一方法，适配A股、只做多不做空。组合构建：每个交易日因子值减全市场均值后乘IC方向，小于0置0，再除以所有标的因子值之和得权重；涨停/跌停当日该标的权重置0（其余不变，故当日持仓可能不足100%）；因子收盘后计算，次交易日收盘价买入，第三交易日按新权重再平衡。评价指标：IC=因子值与日收益率的斯皮尔曼秩相关（绝对值越大越好）；IR=IC均值/IC标准差（绝对值越大越好）；IC>0概率=方向稳定性（越偏离50%越好）；Sharpe=年化收益率/年化波动率；Turnover=abs(t日权重-(t-1)日权重)之和/2；Returns=区间内收益率均值×252；DrawDown=区间内最低点/最高点-1。Fitness（世坤指标）=Sharpe*Sqrt(Abs(Returns)/Max(Turnover,0.125))，分级：<1 Need Improve，1~1.5 Average，1.5~2 Good，2~2.5 Excellent，>2.5 Spectacular。",
+    "author": "量化拯救散户",
+    "url": "https://mp.weixin.qq.com/s/lJDPpCkfxZWXzu7PVu3PYg",
+    "reference": "飞书因子字典 https://my.feishu.cn/wiki/KwvtwSIdRi7muQkBf5Wcmcxenss",
+    "source": "wechat:量化拯救散户"
+  }
+]

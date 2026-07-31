@@ -1,0 +1,162 @@
+# FactorGPT 配置文件
+llm:
+  # 模型提供方: deepseek / openai / qwen / ollama / vllm 等任意 OpenAI 兼容端点
+  # 切换到本地 Ollama 时: provider=ollama, model=<ollama 中的模型名>,
+  #   base_url=http://localhost:11434/v1, api_key=ollama(占位, Ollama 不校验)
+  provider: ollama                # deepseek / openai / qwen / ollama
+  api_key: "ollama"                # Ollama 不校验 key, 占位即可
+  model: qwen2.5-coder:7b          # Ollama 中已拉取的代码模型名
+  base_url: "http://localhost:11434/v1"
+  temperature: 0.3
+  # 若设为 true，则允许用环境变量覆盖以下字段(便于不落盘密钥/快速切后端):
+  #   FACTORGPT_LLM_BASE_URL / FACTORGPT_LLM_API_KEY / FACTORGPT_LLM_MODEL / FACTORGPT_LLM_PROVIDER
+  use_env_override: false
+
+# Kronos 金融时序预测基础模型 (morrisluo/kronos, HuggingFace: NeoQuasar/Kronos-*)
+# 该模型为 decoder-only 的 K 线序列预测模型, 非聊天 LLM, 因此作为"预测因子"集成:
+# 用其未来 OHLCV 预测构造选股因子, 不参与代码生成(代码生成仍由上面的 LLM 负责)。
+kronos:
+  enabled: true             # 置 true 时, 选股流水线会调用 Kronos 预测因子(真实模型)
+  model_name: NeoQuasar/Kronos-mini   # mini(4.1M)/small(20.5M)/base(93.6M), 显存不够用 mini
+  tokenizer_name: NeoQuasar/Kronos-Tokenizer-base  # 与模型权重分开托管的 Kronos tokenizer
+  device: auto              # auto | cpu | cuda
+  horizon: 5                # 预测未来 N 根 K 线
+  future_return_window: 5   # 基于未来 N 根 K 线收盘计算的收益目标
+  cache_dir: "./models/kronos" # 权重缓存目录
+  hf_endpoint: "https://hf-mirror.com"  # HuggingFace 镜像, 国内可直连时改 ""
+  # 真实模型不可用(依赖缺失/权重下载失败)时: true=降级 stub 并告警; false=抛错中断
+  fallback_to_stub: false
+
+data:
+  # ── 免费数据源（推荐优先级从高到低） ──
+  # 1. AKShare（主力）: 完全免费，无需注册，覆盖A股行情/财务/新闻/指数/行业
+  # 2. Tushare Pro: 注册免费，token 在 https://tushare.pro 注册获取，基础接口够用
+  # 3. Baostock: 免费无需注册，适合批量历史数据，更新较慢
+  # 4. efinance: 免费，东方财富数据源，轻量快速
+  primary_source: akshare          # 主力数据源：akshare / tushare / ths / sina
+  # prefer_sina：部分网络下东方财富(push2his)的 HTTPS 连接会被对端重置
+  # (RemoteDisconnected)，但新浪源可正常访问。置 true（或把 primary_source 改为 sina）
+  # 可让新浪成为首选数据源，跳过东方财富的无谓失败与日志噪音。
+  prefer_sina: true
+  tushare_token: "${TUSHARE_TOKEN}"  # 可用环境变量 TUSHARE_TOKEN 覆盖
+
+  # ── 同花顺 iFinD MCP 网关数据源（可选） ──
+  # token 为 JWE 鉴权令牌（RSA-OAEP-256+A256GCM），仅作 Bearer 令牌向网关鉴权，
+  # 客户端无法解密其明文。环境变量 THS_API_TOKEN 优先级高于本配置。
+  # base_url 为网关 MCP 端点（实测可用：api-mcp.51ifind.com:8643 的 stock 域）。
+  # 同花顺有 4 个域端点：stock / fund / edb / news，因子回测用 stock 域。
+  ths_api_token: "${THS_API_TOKEN}"
+  ths_api_base_url: "https://api-mcp.51ifind.com:8643/ds-mcp-servers/hexin-ifind-ds-stock-mcp"
+  # iFinD MCP 无「指数成分股」专用工具，故直接用配置的小宇宙（可自由增删）。
+  # 若留空，则尝试用 search_stocks 自然语言查询 default_index 的成分股（不保证完整）。
+  ths_symbols:
+    - "600519.SH"   # 贵州茅台
+    - "000858.SZ"   # 五粮液
+    - "601318.SH"   # 中国平安
+    - "600036.SH"   # 招商银行
+    - "000333.SZ"   # 美的集团
+    - "601899.SH"   # 紫金矿业
+    - "600276.SH"   # 恒瑞医药
+    - "000001.SZ"   # 平安银行
+  default_index: "000906"          # 中证800
+  default_start_date: "2020-01-01"
+  default_end_date: "2024-12-31"
+  # 请求频率控制（避免被封IP）
+  request_interval: 0.5            # 每次请求间隔秒数
+  force_synthetic: false   # true 时跳过网络数据获取，使用可复现合成数据（离线演示/测试用）
+  synthetic_on_fail: false  # true 时若所有实时数据源均失败，自动回退到合成数据（避免界面空白）
+  # ── 本地缓存（预备数据源，抗网络波动） ──
+  cache_dir: "data/cache"   # 行情/指数/行业市值/整矿缓存目录（已被 .gitignore 忽略）
+  use_cache: true           # 拉取成功后写缓存；实时源失败/缺失时优先读取缓存
+  cache_only: false         # true 时完全离线，仅读取已预备缓存，绝不触网（现场答辩防断网）
+  # 说明：行情查询采用多源自动回退链 东方财富 → 新浪 → Tushare → 同花顺(THS) → 合成数据。
+  # 部分网络环境下东方财富连接会被重置，此时会自动切换新浪；若仍不可用且
+  # synthetic_on_fail=true，则返回模拟数据。指数服务（data/index）同样支持该回退。
+  # 建议：赛前运行 `python scripts/prefetch_data.py` 把真实行情/行业/市值缓存到本地，
+  # 现场即使断网也可置 data.cache_only=true（或 refinery.cache_only=true）离线跑通。
+
+backtest:
+  n_quantiles: 5
+  commission: 0.001  # 手续费率
+  risk_free_rate: 0.03
+  output_dir: "output"        # 标准化回测图（PNG）输出目录
+  save_charts: true           # 评价通过后自动生成并保存回测图
+
+rag:
+  chroma_persist_dir: "./chroma_db"
+  embedding_model: "BAAI/bge-small-zh-v1.5"
+  top_k: 5
+  # ── HuggingFace 下载配置（解决 BGE 向量模型下载超时 WinError 10060）──
+  # 国内网络访问 huggingface.co 常被阻断，改用 hf-mirror.com 镜像即可正常下载。
+  # 留空字符串 "" 则使用官方直连（海外/可直连环境）。
+  hf_endpoint: "https://hf-mirror.com"
+  hf_home: ""               # 可选：指定模型缓存目录（如 data/models）；留空则用默认 ~/.cache/huggingface
+  hf_hub_timeout: 60        # 单次下载超时（秒），默认 60，网络慢可适当调大
+  use_vector_store: true   # 默认自动启用 ChromaDB+BGE 向量检索：依赖（chromadb +
+                           # sentence-transformers）就绪时首次使用会自动下载向量模型，
+                           # 无需手动编辑本文件；设为 false 可强制关闭、改为离线 jieba 检索
+  learned_library_path: "data/learned_factors.jsonl"  # 已学习因子库（外部导入 + 自学习）
+
+agent:
+  max_iterations: 6        # 因子生成-反思最大轮数（达标或达上限后终局）
+  metrics_threshold: 0.02  # |IC| 达到该阈值视为因子有效，提前结束反思循环
+
+# ============ 因子精炼厂（六阶段冶炼流水线） ============
+# 以工业冶炼为隐喻：数据底座 → 三维生成 → RPN 评估 → 三级筛选 → AlphaPool 合成 → 方法学总结
+refinery:
+  offline: true            # 离线演示：跳过 LLM 矿场（无需 API/网络）；置 false 接入 LLM 矿场
+  use_real_data: true      # true 时 PART-01 矿石改用真实行情（需网络/akshare）；失败自动回退缓存/合成
+  cache_dir: "data/cache"  # 整矿缓存目录（与 data.cache_dir 一致），网络波动时回退
+  cache_only: false        # true 时仅读取已预备整矿缓存，绝不触网（现场答辩防断网）
+  multimodal: false        # true 时真实数据矿石纳入基本面/估值/资金流/新闻情绪多模态因子（需 akshare）
+  run_portfolio: true      # true 时执行 P0 组合级回测 + 过拟合检验 + 因子动物园（交付证据）
+  n_symbols: 200           # 中证1000 子集规模（演示）
+  train_days: 500          # 训练集 2019-2023
+  test_days: 120           # 测试集 2024 全年（独立，仅用于最终报告）
+  start: "2019-01-01"
+  n_workers: 4             # 多进程并行：特征构建/批量求值加速（34min → ~1min）
+  seed: 42
+  output_dir: output
+  transformer:             # 研磨车间 × 向量化表征
+    d_model: 128
+    nhead: 5
+    num_layers: 2
+  rl_max_len: 5            # MaskablePPO 因子组合搜索：组合上限
+  rl_candidates: 6
+  rl_backend: auto         # auto | sb3 | heuristic；auto 在装了 sb3_contrib 时启用真 MaskablePPO
+  n_pool_seed: 12          # 因子池基础候选取样数
+  max_llm_factors: 1
+  screener:                # PART-04 三级筛选（浮选）
+    use_lasso: true        # 第一级：LASSO 去冗余
+    use_human_collab: true # 第二级：人机协同（Partice 平台）
+    topk_ratio: 0.1        # 第三级：TOP 10% 截断
+    min_keep: 3
+  alpha_pool:              # PART-05 合金配比
+    ortho: true            # 正交化去冗余
+    loo: true              # leave-one-out 过拟合检验
+    iterative: true        # 迭代权重优化
+    n_iter: 20
+  rpn:                     # PART-03 研磨车间（RPN 求值引擎）
+    n_quantiles: 5
+    forward_periods: 1
+    commission: 0.001
+    risk_free_rate: 0.03
+    w_turnover_penalty: 0.2  # 目标函数：最大化 Alpha(ICIR) - 惩罚换手
+    parallel: true
+    n_workers: 4
+
+# ============ 网络代理（访问行情源 / 远程 LLM 端点） ============
+# 默认（enabled: false 且未设环境变量）强制直连，规避 Windows 不可达系统代理
+# 导致的 ProxyError（东方财富/新浪等行情源此前即因此报错）。
+# 当你有「可达的代理」时，任选一种方式启用即可（两者都会自动生效）：
+#   A. 配置文件方式（推荐，改这里）：把 enabled 改为 true 并填写 http/https 地址。
+#      常见本地代理：Clash  http://127.0.0.1:7890；v2rayN  http://127.0.0.1:10809
+#      （SOCKS5 也可，但 requests/akshare 对 socks 需 pip install pysocks）。
+#   B. 环境变量方式：在启动前设置 HTTP_PROXY / HTTPS_PROXY（见下方说明），
+#      本配置 enabled 保持 false 也会自动尊重该环境变量。
+# 无论哪种方式，localhost / 127.0.0.1 始终直连，本地 Ollama 不受影响。
+proxy:
+  enabled: false
+  http: ""          # HTTP 代理地址，如 http://127.0.0.1:7890
+  https: ""         # HTTPS 代理地址，留空则复用 http
+  no_proxy: "localhost,127.0.0.1"  # 始终直连的地址（无需修改）
