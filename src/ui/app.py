@@ -972,6 +972,83 @@ def render_stocks():
 
 
 # ----------------------------------------------------------------------
+# 因子实时监控（新增）
+# ----------------------------------------------------------------------
+def render_monitor():
+    """📡 因子实时监控：展示已学习因子的 IC 水平、类别分布与衰减趋势。"""
+    from rag.learned_library import LearnedFactorLibrary
+
+    st.title("📡 因子实时监控")
+    if st.button("🔄 刷新"):
+        st.rerun()
+
+    lib = LearnedFactorLibrary()
+    factors = lib.all()
+    if not factors:
+        st.info("暂无已学习因子。请先通过「🤖 因子挖掘 (Agent)」或「🏭 因子精炼厂」生成因子，"
+                "系统会自动将其写入学习库并出现在此看板。")
+        return
+
+    rows = []
+    for f in factors:
+        m = f.get("metrics") or {}
+        rows.append({
+            "因子": f.get("title") or f.get("name") or "未命名",
+            "类别": f.get("category") or "未知",
+            "IC": m.get("ic"),
+            "RankIC": m.get("rank_ic"),
+            "多空Sharpe": m.get("long_short_sharpe"),
+            "覆盖率": m.get("coverage"),
+        })
+    df = pd.DataFrame(rows)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("因子总数", len(df))
+    valid_ic = df["IC"].dropna()
+    c2.metric("平均 |IC|", f"{valid_ic.abs().mean():.4f}" if len(valid_ic) else "—")
+    c3.metric("弱因子(IC<0.02)", int((valid_ic.abs() < 0.02).sum()))
+
+    if df["IC"].notna().any():
+        fig = px.bar(df.dropna(subset=["IC"]), x="因子", y="IC", color="类别",
+                     title="各因子 IC 水平（样本内）", text="IC")
+        fig.update_layout(height=360)
+        fig.update_traces(texttemplate="%{text:.3f}", textposition="outside")
+        st.plotly_chart(fig, use_container_width=True)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if df["类别"].notna().any():
+            cnt = df["类别"].value_counts().reset_index()
+            cnt.columns = ["类别", "数量"]
+            fig2 = px.pie(cnt, names="类别", values="数量", title="因子类别分布")
+            st.plotly_chart(fig2, use_container_width=True)
+    with col_b:
+        st.subheader("因子健康度")
+        for _, r in df.iterrows():
+            ic = r["IC"]
+            if ic is None or (isinstance(ic, float) and pd.isna(ic)):
+                st.warning(f"{r['因子']}：缺少 IC 指标")
+            elif abs(ic) < 0.02:
+                st.warning(f"{r['因子']}：IC={ic:.4f} 偏弱，建议关注过拟合/衰减")
+            else:
+                st.success(f"{r['因子']}：IC={ic:.4f} 健康")
+
+    decay_rows = []
+    for f in factors:
+        iby = (f.get("metrics") or {}).get("ic_by_year")
+        if isinstance(iby, dict):
+            for yr, v in iby.items():
+                decay_rows.append({"因子": f.get("title") or f.get("name"), "年份": str(yr), "IC": v})
+    if decay_rows:
+        ddf = pd.DataFrame(decay_rows)
+        fig3 = px.line(ddf, x="年份", y="IC", color="因子",
+                       title="IC 随年份变化（衰减监测）", markers=True)
+        st.plotly_chart(fig3, use_container_width=True)
+    else:
+        st.caption("提示：因子若记录 `ic_by_year`，此处会展示 IC 随年份的衰减曲线。")
+
+
+# ----------------------------------------------------------------------
 # 主入口
 # ----------------------------------------------------------------------
 PAGES = {
@@ -984,6 +1061,7 @@ PAGES = {
     "📈 期货 & 期权": render_futures_options,
     "💰 基金行情": render_funds,
     "🪙 债券 / 外汇": render_bonds_forex,
+    "📡 因子监控": render_monitor,
     "📚 知识库": render_kb,
     "⚙️ 配置": render_config,
 }
@@ -997,6 +1075,9 @@ def main():
     choice = st.sidebar.radio("导航", list(PAGES.keys()))
     _render_model_panel()
     PAGES[choice]()
+    st.divider()
+    st.caption("FactorGPT · 基于 LLM 的量化因子研究 Agent · 图中 IC / Sharpe 等为样本内/样本外回测结果，"
+               "仅供研究演示，不构成投资建议。")
 
 
 if __name__ == "__main__":

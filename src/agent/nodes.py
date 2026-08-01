@@ -42,11 +42,15 @@ class FactorAgentNodes:
         mkt_cap: Optional[pd.Series] = None,
         config: Optional[dict] = None,
         learned=None,
+        train_kline: Optional[pd.DataFrame] = None,
+        test_kline: Optional[pd.DataFrame] = None,
     ) -> None:
         self.llm = llm
         self.retriever = retriever
         self.backtester = backtester
         self.kline = kline
+        self.train_kline = train_kline if train_kline is not None else kline
+        self.test_kline = test_kline  # 样本外测试集（None 表示未切分）
         self.industry = industry
         self.mkt_cap = mkt_cap
         self.config = config or {}
@@ -174,7 +178,7 @@ class FactorAgentNodes:
         if not code:
             return {"validation_ok": False, "validation_error": "无因子代码"}
 
-        sandbox = FactorSandbox()
+        sandbox = FactorSandbox(self.config)
         try:
             raw_series = sandbox.run(code, self.kline)
             processed = build_pipeline(
@@ -233,7 +237,8 @@ class FactorAgentNodes:
         if factor_series.index.duplicated().any():
             factor_series = factor_series[~factor_series.index.duplicated(keep="last")]
         try:
-            metrics = self.backtester.evaluate(self.kline, factor_series)
+            # 样本内（训练集）指标：用于生成-反思闭环与早停
+            metrics = self.backtester.evaluate(self.train_kline, factor_series)
         except Exception as e:  # noqa: BLE001
             # 回测异常不应中断整个 Agent 流程，转为可展示的错误指标
             return {"metrics": {"error": f"回测执行异常: {type(e).__name__}: {e}"},
@@ -243,9 +248,28 @@ class FactorAgentNodes:
             metrics["coverage"] = state["metrics"]["_coverage"]
         if "error" in metrics:
             return {"metrics": metrics, "error": metrics["error"]}
+        # 风险暴露归因（Barra 风格代理 + 行业中性度），用于诊断因子是否隐性押注某风格/行业
+        try:
+            from engine.risk_model import factor_risk_attribution
+            attr = factor_risk_attribution(
+                factor_series, self.train_kline, industry=self.industry, mkt_cap=self.mkt_cap
+            )
+            metrics["_style_exposure"] = attr["style"]
+            metrics["_industry_exposure"] = attr["industry"]
+            metrics["_risk_report"] = attr["report"]
+        except Exception:  # noqa: BLE001
+            pass
+
         # 生成并保存标准化回测图表（IC 序列 / 分层收益 / 多空权益 / 分层累积收益）
         chart_paths = self._save_charts(metrics, state.get("factor_name", "factor"))
-        return {"metrics": metrics, "chart_paths": chart_paths}
+        out: dict = {"metrics": metrics, "chart_paths": chart_paths}
+        # 样本外（OOS）独立验证：仅终局报告展示，不参与反思与早停，杜绝过拟合
+        if self.test_kline is not None and not self.test_kline.empty:
+            try:
+                out["metrics_oos"] = self.backtester.evaluate(self.test_kline, factor_series)
+            except Exception as e:  # noqa: BLE001
+                out["metrics_oos"] = {"error": f"OOS 回测异常: {type(e).__name__}: {e}"}
+        return out
 
     # ------------------------------------------------------------------
     # 4.1) 回测图表落盘
@@ -420,6 +444,7 @@ class FactorAgentNodes:
             validation_error=state.get("validation_error", ""),
             error=state.get("error"),
             chart_paths=state.get("chart_paths"),
+            oos_metrics=state.get("metrics_oos"),
         )
         saved = state.get("learned_saved")
         if saved:
@@ -429,6 +454,18 @@ class FactorAgentNodes:
                 f"> 本轮因子已{verb}学习库：`{saved.get('title')}`。"
                 f"后续任务可在检索中复用该因子（调用）。\n"
             )
+
+        # 因子可解释性说明卡
+        try:
+            from agent.interpret import factor_interpretability_card
+            card = factor_interpretability_card(
+                name=name, code=code, metrics=metrics, llm=self.llm
+            )
+            if card:
+                report += f"\n\n## 八、因子可解释性说明卡\n{card}\n"
+        except Exception:  # noqa: BLE001
+            pass
+
         return {"report": report}
 
 
@@ -443,6 +480,7 @@ def _fmt_val(v):
 def _build_report(
     name, desc, code, metrics, knowledge, reflections,
     validation_ok, validation_error, error, chart_paths=None,
+    oos_metrics: Optional[dict] = None,
 ) -> str:
     lines = []
     lines.append(f"# 因子挖掘报告：{name}\n")
@@ -456,7 +494,7 @@ def _build_report(
     lines.append("\n## 一、因子代码\n")
     lines.append("```python\n" + code + "\n```\n")
 
-    lines.append("\n## 二、回测指标\n")
+    lines.append("\n## 二、回测指标（样本内 / 训练集）\n")
     if metrics and "error" not in metrics:
         lines.append("| 指标 | 值 |")
         lines.append("|------|------|")
@@ -465,6 +503,26 @@ def _build_report(
                   "turnover", "coverage", "n_stocks", "n_dates"]:
             if k in metrics:
                 lines.append(f"| {k} | {_fmt_val(metrics[k])} |")
+        # —— 样本外（OOS）独立验证 ——
+        if isinstance(oos_metrics, dict):
+            if "error" not in oos_metrics:
+                lines.append("\n### 样本外（OOS）独立验证\n")
+                lines.append("> 以下指标在**训练期之外**的独立时间段计算，用于检验因子是否过拟合；"
+                             "若样本外 IC 显著低于样本内，需警惕过拟合风险。\n")
+                lines.append("| 指标 | 值 |")
+                lines.append("|------|------|")
+                for k in ["ic", "rank_ic", "icir", "ic_positive_ratio", "long_short_return",
+                          "long_short_sharpe", "long_short_cum_return", "max_drawdown",
+                          "turnover", "coverage"]:
+                    if k in oos_metrics:
+                        lines.append(f"| {k} | {_fmt_val(oos_metrics[k])} |")
+            else:
+                lines.append(f"\n> 样本外验证失败：{oos_metrics['error']}\n")
+        # —— 风险暴露归因（Barra 风格代理 + 行业中性度）——
+        risk_report = metrics.get("_risk_report")
+        if isinstance(risk_report, str) and risk_report:
+            lines.append("\n### 风险暴露归因\n")
+            lines.append(risk_report + "\n")
         # 分位数收益
         qr = metrics.get("quantile_returns")
         if isinstance(qr, dict):

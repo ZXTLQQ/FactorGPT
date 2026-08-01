@@ -82,6 +82,12 @@ backtest:
   output_dir: "output"        # 标准化回测图（PNG）输出目录
   save_charts: true           # 评价通过后自动生成并保存回测图
 
+engine:
+  sandbox:
+    subprocess: true     # true=在独立子进程中执行因子代码（加超时/隔离，防死循环卡死界面）
+    timeout: 30          # 因子执行超时（秒），超时即终止
+    memory_limit_mb: 0   # 0=不限制（Windows 暂不支持硬内存上限，靠 timeout 兜底）
+
 rag:
   chroma_persist_dir: "./chroma_db"
   embedding_model: "BAAI/bge-small-zh-v1.5"
@@ -100,6 +106,10 @@ rag:
 agent:
   max_iterations: 6        # 因子生成-反思最大轮数（达标或达上限后终局）
   metrics_threshold: 0.02  # |IC| 达到该阈值视为因子有效，提前结束反思循环
+  oos:                     # 单因子 Agent 样本外验证：防「看着答案改作业」过拟合
+    enabled: true
+    test_frac: 0.2         # 末尾 20% 交易日作为独立样本外（OOS）测试集，不参与生成-反思迭代
+    min_test_days: 60      # 测试集最少交易日，低于此值则不切分（数据量不足时）
 
 # ============ 因子精炼厂（六阶段冶炼流水线） ============
 # 以工业冶炼为隐喻：数据底座 → 三维生成 → RPN 评估 → 三级筛选 → AlphaPool 合成 → 方法学总结

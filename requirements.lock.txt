@@ -1,0 +1,442 @@
+aiohappyeyeballs @ file:///E:/VS4.4.0/install/aiohappyeyeballs-2.6.2-py3-none-any.whl#sha256=4708045e2d7a6c6bdf8aafa8ed39649eaf926a4543b54560659129e3365953c4
+aiohttp @ file:///E:/VS4.4.0/install/aiohttp-3.13.5-cp313-cp313-win_amd64.whl#sha256=69f571de7500e0557801c0b51f4780482c0ec5fe2ac851af5a92cfce1af1cb83
+aiosignal @ file:///E:/VS4.4.0/install/aiosignal-1.4.0-py3-none-any.whl#sha256=053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e
+akshare==1.18.64
+alembic==1.18.4
+alphalens-reloaded==0.4.6
+altair==6.2.2
+annotated-doc @ file:///E:/VS4.4.0/install/annotated_doc-0.0.4-py3-none-any.whl#sha256=571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320
+annotated-types @ file:///E:/VS4.4.0/install/annotated_types-0.7.0-py3-none-any.whl#sha256=1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53
+anthropic @ file:///E:/VS4.4.0/install/anthropic-0.105.2-py3-none-any.whl#sha256=e53ed5f6bf36fb1ecb9b25d8634cfd30e02fab9fb3374a0c2d5c585874757230
+anyio @ file:///E:/VS4.4.0/install/anyio-4.13.0-py3-none-any.whl#sha256=08b310f9e24a9594186fd75b4f73f4a4152069e3853f1ed8bfbf58369f4ad708
+argon2-cffi @ file:///E:/VS4.4.0/install/argon2_cffi-25.1.0-py3-none-any.whl#sha256=fdc8b074db390fccb6eb4a3604ae7231f219aa669a2652e0f20e16ba513d5741
+argon2-cffi-bindings @ file:///E:/VS4.4.0/install/argon2_cffi_bindings-25.1.0-cp39-abi3-win_amd64.whl#sha256=a98cd7d17e9f7ce244c0803cad3c23a7d379c301ba618a5fa76a67d116618b98
+arrow @ file:///E:/VS4.4.0/install/arrow-1.4.0-py3-none-any.whl#sha256=749f0769958ebdc79c173ff0b0670d59051a535fa26e8eba02953dc19eb43205
+asttokens @ file:///E:/VS4.4.0/install/asttokens-3.0.1-py3-none-any.whl#sha256=15a3ebc0f43c2d0a50eeafea25e19046c68398e487b9f1f5b517f7c0f40f976a
+async-lru @ file:///E:/VS4.4.0/install/async_lru-2.3.0-py3-none-any.whl#sha256=eea27b01841909316f2cc739807acea1c623df2be8c5cfad7583286397bb8315
+attrs @ file:///E:/VS4.4.0/install/attrs-26.1.0-py3-none-any.whl#sha256=c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309
+Authlib @ file:///E:/VS4.4.0/install/authlib-1.7.2-py2.py3-none-any.whl#sha256=3e1faedc9d87e7d56a164eca3ccb6ace0d61b94abe83e92242f8dc8bba9b4a9f
+autopep8==2.3.2
+babel @ file:///E:/VS4.4.0/install/babel-2.18.0-py3-none-any.whl#sha256=e2b422b277c2b9a9630c1d7903c2a00d0830c409c59ac8cae9081c92f1aeba35
+baostock==0.9.3
+bcrypt==5.0.0
+beautifulsoup4 @ file:///E:/VS4.4.0/install/beautifulsoup4-4.14.3-py3-none-any.whl#sha256=0918bfe44902e6ad8d57732ba310582e98da931428d231a5ecb9e7c703a735bb
+bleach @ file:///E:/VS4.4.0/install/bleach-6.3.0-py3-none-any.whl#sha256=fe10ec77c93ddf3d13a73b035abaac7a9f5e436513864ccdad516693213c65d6
+blinker==1.9.0
+boto3 @ file:///E:/VS4.4.0/install/boto3-1.43.18-py3-none-any.whl#sha256=7b62ce5c0a51428d692aa4f2adc9dc2a4a4c2989bf65a0a12834eeffa99b0b84
+botocore @ file:///E:/VS4.4.0/install/botocore-1.43.18-py3-none-any.whl#sha256=e2610fce16df9f89deab5f3c163430a814e6804034eb95bef8957c8db60b7dbc
+Bottleneck==1.6.0
+brotli @ file:///E:/VS4.4.0/install/brotli-1.2.0-cp313-cp313-win_amd64.whl#sha256=b63daa43d82f0cdabf98dee215b375b4058cce72871fd07934f179885aad16e8
+bs4 @ file:///E:/VS4.4.0/install/bs4-0.0.2-py2.py3-none-any.whl#sha256=abf8742c0805ef7f662dce4b51cca104cffe52b835238afc169142ab9b3fbccc
+build==1.5.0
+cachetools @ file:///E:/VS4.4.0/install/cachetools-5.5.0-py3-none-any.whl#sha256=02134e8439cdc2ffb62023ce1debca2944c3f289d66bb17ead3ab3dede74b292
+certifi @ file:///E:/VS4.4.0/install/certifi-2025.11.12-py3-none-any.whl#sha256=97de8790030bbd5c2d96b7ec782fc2f7820ef8dba6db909ccf95449f2d062d4b
+cffi @ file:///E:/VS4.4.0/install/cffi-2.0.0-cp313-cp313-win_amd64.whl#sha256=19f705ada2530c1167abacb171925dd886168931e0a7b78f5bffcae5c6b5be75
+chardet @ file:///E:/VS4.4.0/install/chardet-7.4.3-cp313-cp313-win_amd64.whl#sha256=e1b98790c284ff813f18f7cf7de5f05ea2435a080030c7f1a8318f3a4f80b131
+charset-normalizer @ file:///E:/VS4.4.0/install/charset_normalizer-3.4.7-cp313-cp313-win_amd64.whl#sha256=3946fa46a0cf3e4c8cb1cc52f56bb536310d34f25f01ca9b6c16afa767dab110
+chromadb==1.5.9
+clarabel==0.11.1
+click==8.4.2
+cloudpickle==3.1.2
+colorama @ file:///E:/VS4.4.0/install/colorama-0.4.6-py2.py3-none-any.whl#sha256=4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
+comm @ file:///E:/VS4.4.0/install/comm-0.2.3-py3-none-any.whl#sha256=c615d91d75f7f04f095b30d1c1711babd43bdc6419c1be9886a85f2f4e489417
+comtypes @ file:///E:/VS4.4.0/install/comtypes-1.4.16-py3-none-any.whl#sha256=e18d85179ff12955524c5a8c3bc09cb3c0d890f1da4d7123d14244c7b78f84c8
+contourpy @ file:///E:/VS4.4.0/install/contourpy-1.3.3-cp313-cp313-win_amd64.whl#sha256=1cadd8b8969f060ba45ed7c1b714fe69185812ab43bd6b86a9123fe8f99c3263
+cryptography @ file:///E:/VS4.4.0/install/cryptography-48.0.0-cp311-abi3-win_amd64.whl#sha256=5b012212e08b8dd5edc78ef54da83dd9892fd9105323b3993eff6bea65dc21d7
+curl_cffi==0.15.0
+cvxpy==1.9.1
+cycler @ file:///E:/VS4.4.0/install/cycler-0.12.1-py3-none-any.whl#sha256=85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30
+cyclopts @ file:///E:/VS4.4.0/install/cyclopts-4.16.1-py3-none-any.whl#sha256=617795392c4113a2c2cc7af716f20244900e87f23daa05442d1268d81472a592
+dashscope @ file:///E:/VS4.4.0/install/dashscope-1.25.19-py3-none-any.whl#sha256=ee8f20c9928c8889344b4be26a4f3d4fa7236c852bf2d0c9e588803c9fe5ff47
+databricks-sdk==0.117.0
+deap @ file:///E:/VS4.4.0/install/deap-1.4.2-cp313-cp313-win_amd64.whl#sha256=1abab976c75b0f18c36e81f968fcc77fac69fc9bedbab8be3323ca376f6fcfa4
+debugpy @ file:///E:/VS4.4.0/install/debugpy-1.8.20-cp313-cp313-win_amd64.whl#sha256=eb506e45943cab2efb7c6eafdd65b842f3ae779f020c82221f55aca9de135ed7
+decorator @ file:///E:/VS4.4.0/install/decorator-5.3.1-py3-none-any.whl#sha256=f47fe6fdbd2edd623ecfe36875d37aba411624e2670dd395dddae1358689bb3c
+defusedxml @ file:///E:/VS4.4.0/install/defusedxml-0.7.1-py2.py3-none-any.whl#sha256=a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
+dill==0.4.1
+distro @ file:///E:/VS4.4.0/install/distro-1.9.0-py3-none-any.whl#sha256=7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2
+dnspython @ file:///E:/VS4.4.0/install/dnspython-2.8.0-py3-none-any.whl#sha256=01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af
+docker==7.1.0
+docstring_parser @ file:///E:/VS4.4.0/install/docstring_parser-0.18.0-py3-none-any.whl#sha256=b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b
+durationpy==0.10
+easyocr==1.7.2
+ecdsa @ file:///E:/VS4.4.0/install/ecdsa-0.19.2-py2.py3-none-any.whl#sha256=840f5dc5e375c68f36c1a7a5b9caad28f95daa65185c9253c0c08dd952bb7399
+einops==0.8.2
+email-validator @ file:///E:/VS4.4.0/install/email_validator-2.3.0-py3-none-any.whl#sha256=80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4
+empyrical-reloaded==0.5.12
+et_xmlfile==2.0.0
+exceptiongroup @ file:///E:/VS4.4.0/install/exceptiongroup-1.3.1-py3-none-any.whl#sha256=a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598
+exchange_calendars @ file:///E:/VS4.4.0/install/exchange_calendars-4.11.1-py3-none-any.whl#sha256=40ec771589e5a9b96b9e09667cd0f3fde7c70444e3a7530b8989ebd0750ee478
+executing @ file:///E:/VS4.4.0/install/executing-2.2.1-py2.py3-none-any.whl#sha256=760643d3452b4d777d295bb167ccc74c64a81df23fb5e08eff250c425a4b2017
+Farama-Notifications==0.0.6
+fastapi @ file:///E:/VS4.4.0/install/fastapi-0.136.3-py3-none-any.whl#sha256=3d2a69bdf04b7e9f3afa292c3bc7a98816bbfafa10bc9b45f3f3700d2f761620
+fastjsonschema @ file:///E:/VS4.4.0/install/fastjsonschema-2.21.2-py3-none-any.whl#sha256=1c797122d0a86c5cace2e54bf4e819c36223b552017172f32c5c024a6b77e463
+fastmcp @ file:///E:/VS4.4.0/install/fastmcp-2.12.5-py3-none-any.whl#sha256=b1e542f9b83dbae7cecfdc9c73b062f77074785abda9f2306799116121344133
+filelock @ file:///E:/VS4.4.0/install/filelock-3.29.0-py3-none-any.whl#sha256=96f5f6344709aa1572bbf631c640e4ebeeb519e08da902c39a001882f30ac258
+fire==0.7.1
+Flask==3.1.3
+flask-cors==6.0.5
+flatbuffers==25.12.19
+fonttools @ file:///E:/VS4.4.0/install/fonttools-4.63.0-cp313-cp313-win_amd64.whl#sha256=ba04cb5891d4c0c21b6da95eda8d7b090021508a294fff33464fc7d241e0856b
+fqdn @ file:///E:/VS4.4.0/install/fqdn-1.5.1-py3-none-any.whl#sha256=3a179af3761e4df6eb2e026ff9e1a3033d3587bf980a0b1b2e1e5d08d7358014
+frozenlist @ file:///E:/VS4.4.0/install/frozenlist-1.8.0-cp313-cp313-win_amd64.whl#sha256=878be833caa6a3821caf85eb39c5ba92d28e85df26d57afb06b35b2efd937231
+fsspec==2026.6.0
+gitdb==4.0.12
+GitPython==3.1.50
+gm @ file:///E:/VS4.4.0/install/gm-3.0.182-cp313-cp313-win_amd64.whl#sha256=7064a15a57b9e1c91a2c14db52b64f67dad4dbf724ebd8f70d4c2cbc733f6a16
+google-auth @ file:///E:/VS4.4.0/install/google_auth-2.53.0-py3-none-any.whl#sha256=6e7449917c599b35126a99ec268ec6880301f2fea41dce198fe8fd83ff642b68
+google-genai @ file:///E:/VS4.4.0/install/google_genai-2.7.0-py3-none-any.whl#sha256=21cac381e09a869151706aba797b6a4f96cfe92c484e13204d092caee7ff11cb
+googleapis-common-protos==1.75.0
+graphene==3.4.3
+graphql-core @ file:///E:/VS4.4.0/install/graphql_core-3.2.8-py3-none-any.whl#sha256=cbee07bee1b3ed5e531723685369039f32ff815ef60166686e0162f540f1520c
+graphql-relay==3.2.0
+greenlet==3.5.2
+grpcio==1.82.1
+gym==0.26.2
+gym-notices==0.1.0
+gymnasium==1.3.0
+h11 @ file:///E:/VS4.4.0/install/h11-0.16.0-py3-none-any.whl#sha256=63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
+hf-xet==1.5.1
+highspy==1.14.0
+html5lib==1.1
+httpcore @ file:///E:/VS4.4.0/install/httpcore-1.0.9-py3-none-any.whl#sha256=2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55
+httptools==0.8.0
+httpx @ file:///E:/VS4.4.0/install/httpx-0.28.1-py3-none-any.whl#sha256=d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
+httpx-sse @ file:///E:/VS4.4.0/install/httpx_sse-0.4.3-py3-none-any.whl#sha256=0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc
+huey==3.0.3
+huggingface_hub==1.22.0
+icetcore @ file:///E:/VS4.4.0/install/icetcore-6.6.85-py3-none-any.whl#sha256=b58733eaf986a42e06a18421935d5d2eb78ffad89fb982746477d8deb8bae15a
+idna @ file:///E:/VS4.4.0/install/idna-3.17-py3-none-any.whl#sha256=466e48829084efe2548012b855df21540b96f2e20e51bd124c851536556a592c
+ImageIO==2.37.3
+importlib_metadata @ file:///E:/VS4.4.0/install/importlib_metadata-9.0.0-py3-none-any.whl#sha256=2d21d1cc5a017bd0559e36150c21c830ab1dc304dedd1b7ea85d20f45ef3edd7
+importlib_resources==7.1.0
+ipykernel @ file:///E:/VS4.4.0/install/ipykernel-7.2.0-py3-none-any.whl#sha256=3bbd4420d2b3cc105cbdf3756bfc04500b1e52f090a90716851f3916c62e1661
+ipython @ file:///E:/VS4.4.0/install/ipython-9.14.0-py3-none-any.whl#sha256=8fd984a3372c14b12790b084ba6b5cff5678c0cb063244a0034f06a51f20d6c2
+ipython_pygments_lexers @ file:///E:/VS4.4.0/install/ipython_pygments_lexers-1.1.1-py3-none-any.whl#sha256=a9462224a505ade19a605f71f8fa63c2048833ce50abc86768a0d81d876dc81c
+ipywidgets==8.1.8
+iso8601 @ file:///E:/VS4.4.0/install/iso8601-1.0.2-py3-none-any.whl#sha256=d7bc01b1c2a43b259570bb307f057abc578786ea734ba2b87b836c5efc5bd443
+isodate @ file:///E:/VS4.4.0/install/isodate-0.7.2-py3-none-any.whl#sha256=28009937d8031054830160fce6d409ed342816b543597cece116d966c6d99e15
+isoduration @ file:///E:/VS4.4.0/install/isoduration-20.11.0-py3-none-any.whl#sha256=b2904c2a4228c3d44f409c8ae8e2370eb21a26f7ac2ec5446df141dde3452042
+itsdangerous==2.2.0
+jedi @ file:///E:/VS4.4.0/install/jedi-0.20.0-py2.py3-none-any.whl#sha256=7bdd9c2634f56713299976f4cbd59cb3fa92165cc5e05ea811fb253480728b67
+jieba==0.42.1
+Jinja2 @ file:///E:/VS4.4.0/install/jinja2-3.1.6-py3-none-any.whl#sha256=85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
+jiter @ file:///E:/VS4.4.0/install/jiter-0.15.0-cp313-cp313-win_amd64.whl#sha256=b15741f501469009ae0ae90b7147958a664a7dede40aa7ff174a8a4645f546d0
+jmespath @ file:///E:/VS4.4.0/install/jmespath-1.1.0-py3-none-any.whl#sha256=a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64
+joblib==1.5.3
+joserfc @ file:///E:/VS4.4.0/install/joserfc-1.6.8-py3-none-any.whl#sha256=22fb31a69094a5e6f44632002a9df2c30c941fc6c8ce1b037e92c03de954cf9f
+json5 @ file:///E:/VS4.4.0/install/json5-0.14.0-py3-none-any.whl#sha256=56cf861bab076b1178eb8c92e1311d273a9b9acea2ccc82c276abf839ebaef3a
+jsonpatch==1.33
+jsonpath==0.82.2
+jsonpointer @ file:///E:/VS4.4.0/install/jsonpointer-3.1.1-py3-none-any.whl#sha256=8ff8b95779d071ba472cf5bc913028df06031797532f08a7d5b602d8b2a488ca
+jsonschema @ file:///E:/VS4.4.0/install/jsonschema-4.26.0-py3-none-any.whl#sha256=d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce
+jsonschema-path @ file:///E:/VS4.4.0/install/jsonschema_path-0.4.6-py3-none-any.whl#sha256=451354b5311fa955c3144e6e4e255388c751c0121c5570ec5bb9291dd42d08c9
+jsonschema-specifications @ file:///E:/VS4.4.0/install/jsonschema_specifications-2025.9.1-py3-none-any.whl#sha256=98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe
+jupyter==1.1.1
+jupyter-console==6.6.3
+jupyter-events @ file:///E:/VS4.4.0/install/jupyter_events-0.12.1-py3-none-any.whl#sha256=c366585253f537a627da52fa7ca7410c5b5301fe893f511e7b077c2d93ec8bcf
+jupyter-lsp @ file:///E:/VS4.4.0/install/jupyter_lsp-2.3.1-py3-none-any.whl#sha256=71b954d834e85ff3096400554f2eefaf7fe37053036f9a782b0f7c5e42dadb81
+jupyter_client @ file:///E:/VS4.4.0/install/jupyter_client-8.8.0-py3-none-any.whl#sha256=f93a5b99c5e23a507b773d3a1136bd6e16c67883ccdbd9a829b0bbdb98cd7d7a
+jupyter_core @ file:///E:/VS4.4.0/install/jupyter_core-5.9.1-py3-none-any.whl#sha256=ebf87fdc6073d142e114c72c9e29a9d7ca03fad818c5d300ce2adc1fb0743407
+jupyter_server @ file:///E:/VS4.4.0/install/jupyter_server-2.19.0-py3-none-any.whl#sha256=cb76591b76d7093584c2ad2ae72ac3d58614a4b597507a1bb04e1f9f683cf9ea
+jupyter_server_terminals @ file:///E:/VS4.4.0/install/jupyter_server_terminals-0.5.4-py3-none-any.whl#sha256=55be353fc74a80bc7f3b20e6be50a55a61cd525626f578dcb66a5708e2007d14
+jupyterlab==4.5.9
+jupyterlab_pygments @ file:///E:/VS4.4.0/install/jupyterlab_pygments-0.3.0-py3-none-any.whl#sha256=841a89020971da1d8693f1a99997aefc5dc424bb1b251fd6322462a1b8842780
+jupyterlab_server @ file:///E:/VS4.4.0/install/jupyterlab_server-2.28.0-py3-none-any.whl#sha256=e4355b148fdcf34d312bbbc80f22467d6d20460e8b8736bf235577dd18506968
+jupyterlab_widgets==3.0.16
+kiwisolver @ file:///E:/VS4.4.0/install/kiwisolver-1.5.0-cp313-cp313-win_amd64.whl#sha256=0bf3acf1419fa93064a4c2189ac0b58e3be7872bf6ee6177b0d4c63dc4cea276
+korean-lunar-calendar @ file:///E:/VS4.4.0/install/korean_lunar_calendar-0.3.1-py3-none-any.whl#sha256=392757135c492c4f42a604e6038042953c35c6f449dda5f27e3f86a7f9c943e5
+kubernetes==36.0.3
+langchain-core==1.4.9
+langchain-openai==1.3.5
+langchain-protocol==0.0.18
+langgraph==1.2.9
+langgraph-checkpoint==4.1.1
+langgraph-prebuilt==1.1.0
+langgraph-sdk==0.4.2
+langsmith==0.10.6
+lark @ file:///E:/VS4.4.0/install/lark-1.3.1-py3-none-any.whl#sha256=c629b661023a014c37da873b4ff58a817398d12635d3bbb2c5a03be7fe5d1e12
+lazy-loader==0.5
+lazy-object-proxy @ file:///E:/VS4.4.0/install/lazy_object_proxy-1.12.0-cp313-cp313-win_amd64.whl#sha256=7b22c2bbfb155706b928ac4d74c1a63ac8552a55ba7fff4445155523ea4067e1
+lightgbm==4.6.0
+loguru @ file:///E:/VS4.4.0/install/loguru-0.7.3-py3-none-any.whl#sha256=31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c
+lxml @ file:///E:/VS4.4.0/install/lxml-6.1.1-cp313-cp313-win_amd64.whl#sha256=a10bd2fd62e8ce916ececb342f348f190724a098c1faa056fdfb2a22ad5e8660
+Mako==1.3.12
+markdown-it-py @ file:///E:/VS4.4.0/install/markdown_it_py-4.2.0-py3-none-any.whl#sha256=9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
+MarkupSafe @ file:///E:/VS4.4.0/install/markupsafe-3.0.3-cp313-cp313-win_amd64.whl#sha256=9a1abfdc021a164803f4d485104931fb8f8c1efd55bc6b748d2f5774e78b62c5
+matplotlib @ file:///E:/VS4.4.0/install/matplotlib-3.10.9-cp313-cp313-win_amd64.whl#sha256=f4399f64b3e94cd500195490972ae1ee81170df1636fa15364d157d5bdd7b921
+matplotlib-inline @ file:///E:/VS4.4.0/install/matplotlib_inline-0.2.2-py3-none-any.whl#sha256=3c821cf1c209f59fb2d2d64abbf5b23b67bcb2210d663f9918dd851c6da1fcf6
+mcp @ file:///E:/VS4.4.0/install/mcp-1.16.0-py3-none-any.whl#sha256=ec917be9a5d31b09ba331e1768aa576e0af45470d657a0319996a20a57d7d633
+mdurl @ file:///E:/VS4.4.0/install/mdurl-0.1.2-py3-none-any.whl#sha256=84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8
+mini-racer==0.14.1
+mistune @ file:///E:/VS4.4.0/install/mistune-3.2.1-py3-none-any.whl#sha256=78cdb0ba5e938053ccf63651b352508d2efa9411dc8810bfb05f2dc5140c0048
+mlflow==3.14.0
+mlflow-skinny==3.14.0
+mlflow-tracing==3.14.0
+mmh3==5.2.1
+more-itertools @ file:///E:/VS4.4.0/install/more_itertools-11.1.0-py3-none-any.whl#sha256=4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd542125a192
+mpmath==1.3.0
+msgpack @ file:///E:/VS4.4.0/install/msgpack-1.1.2-cp313-cp313-win_amd64.whl#sha256=a465f0dceb8e13a487e54c07d04ae3ba131c7c5b95e2612596eafde1dccf64a9
+multidict @ file:///E:/VS4.4.0/install/multidict-6.7.1-cp313-cp313-win_amd64.whl#sha256=960c83bf01a95b12b08fd54324a4eb1d5b52c88932b5cba5d6e712bb3ed12eb5
+narwhals @ file:///E:/VS4.4.0/install/narwhals-2.21.2-py3-none-any.whl#sha256=7bb57c3700486039215455b9bf2d64261915cc0fd845cc30272d631df696b251
+nbclient @ file:///E:/VS4.4.0/install/nbclient-0.10.4-py3-none-any.whl#sha256=9162df5a7373d70d606527300a95a975a47c137776cd942e52d9c7e29ff83440
+nbconvert @ file:///E:/VS4.4.0/install/nbconvert-7.17.1-py3-none-any.whl#sha256=aa85c087b435e7bf1ffd03319f658e285f2b89eccab33bc1ba7025495ab3e7c8
+nbformat @ file:///E:/VS4.4.0/install/nbformat-5.10.4-py3-none-any.whl#sha256=3b48d6c8fbca4b299bf3982ea7db1af21580e4fec269ad087b9e81588891200b
+nest-asyncio @ file:///E:/VS4.4.0/install/nest_asyncio-1.6.0-py3-none-any.whl#sha256=87af6efd6b5e897c81050477ef65c62e2b2f35d51703cae01aff2905b1852e1c
+networkx==3.6.1
+ninja==1.13.0
+notebook==7.5.7
+notebook_shim @ file:///E:/VS4.4.0/install/notebook_shim-0.2.4-py3-none-any.whl#sha256=411a5be4e9dc882a074ccbcae671eda64cceb068767e9a3419096986560e1cef
+Nuitka @ file:///E:/VS4.4.0/install/nuitka-4.1.2.tar.gz#sha256=efc2359b171d7b63046ca8ec8dee57015c3466a9df74b68a049c2c1a7e93ecee
+numpy @ file:///E:/VS4.4.0/install/numpy-2.2.3-cp313-cp313-win_amd64.whl#sha256=5b732c8beef1d7bc2d9e476dbba20aaff6167bf205ad9aa8d30913859e82884b
+oauthlib==3.3.1
+ollama @ file:///E:/VS4.4.0/install/ollama-0.6.2-py3-none-any.whl#sha256=3ad7daab28e5a973445c36a73882a3ef698c2ebb00e21e308652741577509f7d
+onnxruntime==1.27.0
+openai==2.46.0
+openapi-core @ file:///E:/VS4.4.0/install/openapi_core-0.23.1-py3-none-any.whl#sha256=40eda0b6e4c2aa0d0e4fb864e1f461b68bb59c5c41fe154c03fda49bf41d2dc9
+openapi-pydantic @ file:///E:/VS4.4.0/install/openapi_pydantic-0.5.1-py3-none-any.whl#sha256=a3a09ef4586f5bd760a8df7f43028b60cafb6d9f61de2acba9574766255ab146
+openapi-schema-validator @ file:///E:/VS4.4.0/install/openapi_schema_validator-0.8.1-py3-none-any.whl#sha256=0f5859794c5bfa433d478dc5ac5e5768d50adc56b14380c8a6fd3a8113e89c9b
+openapi-spec-validator @ file:///E:/VS4.4.0/install/openapi_spec_validator-0.8.5-py3-none-any.whl#sha256=3669106361856934153991e30714616a294865a33f6411a4c25d1dc2d08cfbc2
+opencv-python-headless==5.0.0.93
+openpyxl==3.1.5
+opentelemetry-api==1.44.0
+opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
+opentelemetry-proto==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-semantic-conventions==0.65b0
+orjson @ file:///E:/VS4.4.0/install/orjson-3.11.9-cp313-cp313-win_amd64.whl#sha256=051b102c93b4f634e89f3866b07b9a9a98915ada541f4ec30f177067b2694979
+ormsgpack==1.12.2
+osqp==1.1.3
+overrides==7.7.0
+packaging @ file:///E:/VS4.4.0/install/packaging-26.2-py3-none-any.whl#sha256=5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e
+pandas @ file:///E:/VS4.4.0/install/pandas-2.2.3-cp313-cp313-win_amd64.whl#sha256=61c5ad4043f791b61dd4752191d9f07f0ae412515d59ba8f005832a532f8736d
+pandocfilters @ file:///E:/VS4.4.0/install/pandocfilters-1.5.1-py2.py3-none-any.whl#sha256=93be382804a9cdb0a7267585f157e5d1731bbe5545a85b268d6f5fe6232de2bc
+parso @ file:///E:/VS4.4.0/install/parso-0.8.7-py2.py3-none-any.whl#sha256=a8926eb2a1b915486941fdbd31e86a4baf88fe8c210f25f2f35ecec5b574ca1c
+passlib @ file:///E:/VS4.4.0/install/passlib-1.7.4-py2.py3-none-any.whl#sha256=aa6bca462b8d8bda89c70b382f0c298a20b5560af6cbfa2dce410c0a2fb669f1
+pathable @ file:///E:/VS4.4.0/install/pathable-0.5.0-py3-none-any.whl#sha256=646e3d09491a6351a0c82632a09c02cdf70a252e73196b36d8a15ba0a114f0a6
+patsy==1.0.2
+pdfminer.six==20260107
+pdfplumber==0.11.10
+peewee==3.17.3
+pillow @ file:///E:/VS4.4.0/install/pillow-12.2.0-cp313-cp313-win_amd64.whl#sha256=390ede346628ccc626e5730107cde16c42d3836b89662a115a921f28440e6a3b
+platformdirs @ file:///E:/VS4.4.0/install/platformdirs-4.10.0-py3-none-any.whl#sha256=fb516cdb12eb0d857d0cd85a7c57cea4d060bee4578d6cf5a14dfdf8cbf8784a
+plotly @ file:///E:/VS4.4.0/install/plotly-6.0.0-py3-none-any.whl#sha256=f708871c3a9349a68791ff943a5781b1ec04de7769ea69068adcd9202e57653a
+polygon-api-client @ file:///E:/VS4.4.0/install/polygon_api_client-1.16.3-py3-none-any.whl#sha256=4dec9e27fb5d17a36aacd9372d1df30af2f2b7639b4166ca10d2d48d128d2cd8
+prettytable==3.17.0
+prometheus_client @ file:///E:/VS4.4.0/install/prometheus_client-0.25.0-py3-none-any.whl#sha256=d5aec89e349a6ec230805d0df882f3807f74fd6c1a2fa86864e3c2279059fed1
+prompt_toolkit @ file:///E:/VS4.4.0/install/prompt_toolkit-3.0.52-py3-none-any.whl#sha256=9aac639a3bbd33284347de5ad8d68ecc044b91a762dc39b7c21095fcd6a19955
+propcache @ file:///E:/VS4.4.0/install/propcache-0.5.2-cp313-cp313-win_amd64.whl#sha256=dfed59d0a5aeb01e242e66ff0300bc4a265a7c05f612d30016f0b60b1017d757
+protobuf==6.33.6
+psutil @ file:///E:/VS4.4.0/install/psutil-7.2.2-cp37-abi3-win_amd64.whl#sha256=eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988
+psycopg @ file:///E:/VS4.4.0/install/psycopg-3.3.4-py3-none-any.whl#sha256=b6bbc25ccf05c8fad3b061d9db2ef0909a555171b84b07f29458a447253d679a
+psycopg-binary @ file:///E:/VS4.4.0/install/psycopg_binary-3.3.4-cp313-cp313-win_amd64.whl#sha256=dbfdb9b6cc79f31104a7b162a2b921b765fcc62af6c00540a167a8de47e4ed38
+pure_eval @ file:///E:/VS4.4.0/install/pure_eval-0.2.3-py3-none-any.whl#sha256=1db8e35b67b3d218d818ae653e27f06c3aa420901fa7b081ca98cbedc874e0d0
+pyarrow==24.0.0
+pyasn1 @ file:///E:/VS4.4.0/install/pyasn1-0.6.3-py3-none-any.whl#sha256=a80184d120f0864a52a073acc6fc642847d0be408e7c7252f31390c0f4eadcde
+pyasn1_modules @ file:///E:/VS4.4.0/install/pyasn1_modules-0.4.2-py3-none-any.whl#sha256=29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a
+pybase64==1.4.3
+pyclipper==1.4.0
+pycodestyle==2.14.0
+pycparser @ file:///E:/VS4.4.0/install/pycparser-3.0-py3-none-any.whl#sha256=b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
+pydantic @ file:///E:/VS4.4.0/install/pydantic-2.13.4-py3-none-any.whl#sha256=45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba
+pydantic-settings @ file:///E:/VS4.4.0/install/pydantic_settings-2.14.1-py3-none-any.whl#sha256=6e3c7edfd8277687cdc598f56e5cff0e9bfff0910a3749deaa8d4401c3a2b9de
+pydantic_core @ file:///E:/VS4.4.0/install/pydantic_core-2.46.4-cp313-cp313-win_amd64.whl#sha256=6b3ace8194b0e5204818c92802dcdca7fc6d88aabbb799d7c795540d9cd6d292
+pydeck==0.9.3
+Pygments @ file:///E:/VS4.4.0/install/pygments-2.20.0-py3-none-any.whl#sha256=81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176
+PyJWT @ file:///E:/VS4.4.0/install/pyjwt-2.13.0-py3-none-any.whl#sha256=66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728
+pyluach @ file:///E:/VS4.4.0/install/pyluach-2.3.0-py3-none-any.whl#sha256=4497b731aef59508b079dbf5f00bc5bf4329ac45090a6cd37b5a83756f0e69ab
+pymongo @ file:///E:/VS4.4.0/install/pymongo-4.17.0-cp313-cp313-win_amd64.whl#sha256=5960519b4d7168f1ecdd3ea10c81b2aedeb9423651aca953cfbc8e76705d3b38
+pymupdf==1.28.0
+PyMySQL @ file:///E:/VS4.4.0/install/pymysql-1.2.0-py3-none-any.whl#sha256=62169ce6d5510f08e140c5e7990ee884a9764024e4a9a27b2cc11f1099322ae0
+pyparsing @ file:///E:/VS4.4.0/install/pyparsing-3.3.2-py3-none-any.whl#sha256=850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d
+pypdfium2==5.12.1
+pyperclip @ file:///E:/VS4.4.0/install/pyperclip-1.11.0-py3-none-any.whl#sha256=299403e9ff44581cb9ba2ffeed69c7aa96a008622ad0c46cb575ca75b5b84273
+PyPika==0.51.1
+pyproject_hooks==1.2.0
+pyqlib @ file:///C:/Users/HP/qlib
+pyqtgraph @ file:///E:/VS4.4.0/install/pyqtgraph-0.13.7-py3-none-any.whl#sha256=7754edbefb6c367fa0dfb176e2d0610da3ada20aa7a5318516c74af5fb72bf7a
+PySide6 @ file:///E:/VS4.4.0/install/PySide6-6.8.2.1-cp39-abi3-win_amd64.whl#sha256=92361e41727910e3560ea5ba494fabecc76cd20892c9fcb2ced07619081c4e65
+PySide6_Addons @ file:///E:/VS4.4.0/install/PySide6_Addons-6.8.2.1-cp39-abi3-win_amd64.whl#sha256=c761cc45022aa79d8419e671e7fb34a4a3e5b3826f1e68fcb819bd6e3a387fbb
+PySide6_Essentials @ file:///E:/VS4.4.0/install/PySide6_Essentials-6.8.2.1-cp39-abi3-win_amd64.whl#sha256=18de224f09108998d194e60f2fb8a1e86367dd525dd8a6192598e80e6ada649e
+python-bidi==0.6.11
+python-dateutil @ file:///E:/VS4.4.0/install/python_dateutil-2.9.0.post0-py2.py3-none-any.whl#sha256=a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+python-docx==1.2.0
+python-dotenv @ file:///E:/VS4.4.0/install/python_dotenv-1.2.2-py3-none-any.whl#sha256=1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a
+python-jose @ file:///E:/VS4.4.0/install/python_jose-3.5.0-py2.py3-none-any.whl#sha256=abd1202f23d34dfad2c3d28cb8617b90acf34132c7afd60abd0b0b7d3cb55771
+python-json-logger @ file:///E:/VS4.4.0/install/python_json_logger-4.1.0-py3-none-any.whl#sha256=132994765cf75bf44554be9aa49b06ef2345d23661a96720262716438141b6b2
+python-multipart @ file:///E:/VS4.4.0/install/python_multipart-0.0.29-py3-none-any.whl#sha256=2ddcc971cef266225f54f552d8fa10bcfbb1f14446caec199060daac59ff2d69
+python-rapidjson @ file:///E:/VS4.4.0/install/python_rapidjson-1.23-cp313-cp313-win_amd64.whl#sha256=0ae97758fd48da3ffbb631a4769dafe5a64e0e7091a64be0b8bc081b66a447e3
+python-redis-lock==4.0.1
+pytz @ file:///E:/VS4.4.0/install/pytz-2023.3-py2.py3-none-any.whl#sha256=a151b3abb88eda1d4e34a9814df37de2a80e301e68ba0fd856fb9b46bfbbbffb
+pywin32 @ file:///E:/VS4.4.0/install/pywin32-311-cp313-cp313-win_amd64.whl#sha256=718a38f7e5b058e76aee1c56ddd06908116d35147e133427e59a3983f703a20d
+pywinpty @ file:///E:/VS4.4.0/install/pywinpty-3.0.3-cp313-cp313-win_amd64.whl#sha256=9c91dbb026050c77bdcef964e63a4f10f01a639113c4d3658332614544c467ab
+pyxll @ file:///E:/VS4.4.0/install/pyxll-5.12.1-cp313-none-any.whl#sha256=b5ff19606dd6460d38d3fd9c5a1cb6705d6df98675f2eca42c7cadda77ac1b63
+PyYAML @ file:///E:/VS4.4.0/install/pyyaml-6.0.3-cp313-cp313-win_amd64.whl#sha256=79005a0d97d5ddabfeeea4cf676af11e647e41d81c9a7722a193022accdb6b7c
+pyzmq @ file:///E:/VS4.4.0/install/pyzmq-26.3.0-cp313-cp313-win_amd64.whl#sha256=fe67291775ea4c2883764ba467eb389c29c308c56b86c1e19e49c9e1ed0cbeca
+QDarkStyle @ file:///E:/VS4.4.0/install/QDarkStyle-3.2.3-py2.py3-none-any.whl#sha256=ea980ee426d594909cf1058306832af71ff6cbad6f69237b036d1550635aefbc
+qdldl==0.1.9.post1
+qlib==0.0.2.dev20
+qrcode @ file:///E:/VS4.4.0/install/qrcode-8.2-py3-none-any.whl#sha256=16e64e0716c14960108e85d853062c9e8bba5ca8252c0b4d0231b9df4060ff4f
+QtAwesome @ file:///E:/VS4.4.0/install/qtawesome-1.4.2-py3-none-any.whl#sha256=dbf08524428fa2df73918ce362153254cd44f089380576d84bfaad8f40eece45
+QtPy @ file:///E:/VS4.4.0/install/QtPy-2.4.3-py3-none-any.whl#sha256=72095afe13673e017946cc258b8d5da43314197b741ed2890e563cf384b51aa1
+questdb @ file:///E:/VS4.4.0/install/questdb-4.1.0-cp313-cp313-win_amd64.whl#sha256=a7857d8ba4f919475e22b94011604198049e970d94ce0f1bdc7186cd1fe1b105
+redis==8.0.0
+referencing @ file:///E:/VS4.4.0/install/referencing-0.37.0-py3-none-any.whl#sha256=381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231
+regex==2026.7.10
+requests @ file:///E:/VS4.4.0/install/requests-2.34.2-py3-none-any.whl#sha256=2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+requests-oauthlib==2.0.0
+requests-toolbelt==1.0.0
+rfc3339-validator @ file:///E:/VS4.4.0/install/rfc3339_validator-0.1.4-py2.py3-none-any.whl#sha256=24f6ec1eda14ef823da9e36ec7113124b39c04d50a4d3d3a3c2859577e7791fa
+rfc3986-validator @ file:///E:/VS4.4.0/install/rfc3986_validator-0.1.1-py2.py3-none-any.whl#sha256=2f235c432ef459970b4306369336b9d5dbdda31b510ca1e327636e01f528bfa9
+rfc3987-syntax @ file:///E:/VS4.4.0/install/rfc3987_syntax-1.1.0-py3-none-any.whl#sha256=6c3d97604e4c5ce9f714898e05401a0445a641cfa276432b0a648c80856f6a3f
+rich @ file:///E:/VS4.4.0/install/rich-15.0.0-py3-none-any.whl#sha256=33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb
+rich-rst @ file:///E:/VS4.4.0/install/rich_rst-2.0.1-py3-none-any.whl#sha256=7ee15f345ce25fa02b582c272a6cdbaf0c21243e38061cea273cff659bf3ef61
+rpds-py @ file:///E:/VS4.4.0/install/rpds_py-2026.5.1-cp313-cp313-win_amd64.whl#sha256=88647f43a73c4e01be19b04ceef0c8d3a1958153604d13c773becd8016f2a0cf
+rqdatac @ file:///E:/VS4.4.0/install/rqdatac-3.5.2-cp313-cp313-win_amd64.whl#sha256=04d3fee3f791b45b2bede506dcbcc21827dbff5df2fe13509347062605b5aa25
+rsa @ file:///E:/VS4.4.0/install/rsa-4.9.1-py3-none-any.whl#sha256=68635866661c6836b8d39430f97a996acbd61bfa49406748ea243539fe239762
+ruamel.yaml==0.19.1
+s3transfer @ file:///E:/VS4.4.0/install/s3transfer-0.18.0-py3-none-any.whl#sha256=239c13b09e65ad0346e1be7348b8a202dcad44ac7ea7c6eb858fc881dce739b6
+safetensors==0.8.0
+sb3_contrib==2.9.0
+scikit-image==0.26.0
+scikit-learn==1.9.0
+scipy @ file:///E:/VS4.4.0/install/scipy-1.17.1-cp313-cp313-win_amd64.whl#sha256=37425bc9175607b0268f493d79a292c39f9d001a357bebb6b88fdfaff13f6448
+scs==3.2.11
+seaborn==0.13.2
+Send2Trash @ file:///E:/VS4.4.0/install/send2trash-2.1.0-py3-none-any.whl#sha256=0da2f112e6d6bb22de6aa6daa7e144831a4febf2a87261451c4ad849fe9a873c
+sentence-transformers==5.6.0
+setuptools==83.0.0
+setuptools-scm==10.0.5
+sgqlc @ file:///E:/VS4.4.0/install/sgqlc-18-py3-none-any.whl#sha256=7af53b5c1aab4602a98a36d6d32bd641e33f602b9b72468885f2505c59c536af
+shapely==2.1.2
+shellingham==1.5.4
+shiboken6 @ file:///E:/VS4.4.0/install/shiboken6-6.8.2.1-cp39-abi3-win_amd64.whl#sha256=1b751d47b759762b7ca31bad278d52eca4105d3028880d93979261ebbfba810c
+shinny-structlog @ file:///E:/VS4.4.0/install/shinny_structlog-0.0.4-py3-none-any.whl#sha256=989f96f484eeefae2a37a80fd262a3d3c92d14e3fe8346c218f45dff0a3412c8
+simplejson @ file:///E:/VS4.4.0/install/simplejson-4.1.1-cp313-cp313-win_amd64.whl#sha256=104d8324c34f25b4b90800bc5fa363780cbc3d8496aef061cba7ce1af9162270
+six @ file:///E:/VS4.4.0/install/six-1.17.0-py2.py3-none-any.whl#sha256=4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+skops==0.14.0
+smmap==5.0.3
+sniffio @ file:///E:/VS4.4.0/install/sniffio-1.3.1-py3-none-any.whl#sha256=2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2
+soupsieve @ file:///E:/VS4.4.0/install/soupsieve-2.8.4-py3-none-any.whl#sha256=e7e6b0769c8f51ed59acab6e994b00621096cfb1c640a7509295987388fbaf65
+spark-parser==1.9.0
+sparsediffpy==0.3.0
+SQLAlchemy==2.0.51
+sqlparse==0.5.5
+sse-starlette @ file:///E:/VS4.4.0/install/sse_starlette-3.4.4-py3-none-any.whl#sha256=3f4dd50d8aed2771a091f3a83000323fc3844541c16b4fe585ae2420cc6df973
+stable_baselines3==2.9.0
+stack-data @ file:///E:/VS4.4.0/install/stack_data-0.6.3-py3-none-any.whl#sha256=d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695
+starlette @ file:///E:/VS4.4.0/install/starlette-1.2.0-py3-none-any.whl#sha256=36e0c76ac59157e75dc4b3bdeafba97fb04eaf1878045f15dbef666a6f092ed7
+statsmodels==0.14.6
+streamlit==1.59.2
+sympy==1.14.0
+ta-lib @ file:///E:/VS4.4.0/install/ta_lib-0.6.4-cp313-cp313-win_amd64.whl#sha256=1a603084df659515d6f6107f0844678284cb2d3813eafacd4c378b0d7a6c8ffa
+tabulate==0.10.0
+taospy @ file:///E:/VS4.4.0/install/taospy-2.8.9-py3-none-any.whl#sha256=b8bf3d3eed8ed8ee2e3a7573489b5fb8f056c72d5e1540fe5b010bef3fd4817c
+tenacity @ file:///E:/VS4.4.0/install/tenacity-9.1.4-py3-none-any.whl#sha256=6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55
+termcolor==3.3.0
+terminado @ file:///E:/VS4.4.0/install/terminado-0.18.1-py3-none-any.whl#sha256=a4468e1b37bb318f8a86514f65814e1afc977cf29b3992a4500d9dd305dcceb0
+threadpoolctl==3.6.0
+tifffile==2026.7.14
+tiktoken==0.13.0
+tinycss2 @ file:///E:/VS4.4.0/install/tinycss2-1.4.0-py3-none-any.whl#sha256=3a49cf47b7675da0b15d0c6e1df8df4ebd96e9394bb905a5775adb0d884c5289
+tokenizers==0.22.2
+toml==0.10.2
+toolz @ file:///E:/VS4.4.0/install/toolz-1.1.0-py3-none-any.whl#sha256=15ccc861ac51c53696de0a5d6d4607f99c210739caf987b5d2054f3efed429d8
+torch==2.13.0
+torchvision==0.28.0
+tornado @ file:///E:/VS4.4.0/install/tornado-6.5.6-cp39-abi3-win_amd64.whl#sha256=6739bf1e8eb09230f1280ddbd3236f0309db70f2c551a8dbc40f62babdf82f79
+tqdm @ file:///E:/VS4.4.0/install/tqdm-4.67.1-py3-none-any.whl#sha256=26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2
+tqsdk @ file:///E:/VS4.4.0/install/tqsdk-3.10.0-py3-none-any.whl#sha256=c75a02877c868c84929a1d60aee4312c8ea7adb053570fba9a851bacaae65e44
+tqsdk-ctpse @ file:///E:/VS4.4.0/install/tqsdk_ctpse-1.1.0-py3-none-win_amd64.whl#sha256=0acd0557765a68932394776578ca0a48da6bff80ecd201c9ba7a9f15bdedc965
+tqsdk-sm @ file:///E:/VS4.4.0/install/tqsdk_sm-1.0.5-py3-none-win_amd64.whl#sha256=f0e7a1cc7ce58dd1d5261a8a7da7d64902bfece9e819be600c0d2ce0b81de518
+traitlets @ file:///E:/VS4.4.0/install/traitlets-5.15.0-py3-none-any.whl#sha256=fb36a18867a6803deab09f3c5e0fa81bb7b26a5c9e82501c9933f759166eff40
+transformers==5.14.1
+tspytsl @ file:///E:/VS4.4.0/install/tspytsl-1.9-cp313-cp313-win_amd64.whl#sha256=65c8f97225cc32a8b01e923d9677a389b84d797d1c2407505354d015b5c15128
+tushare @ file:///E:/VS4.4.0/install/tushare-1.4.29-py3-none-any.whl#sha256=82554af953ea5ac3d8771d42330493181031c7e68dccce03a491c7356e9ba4b2
+typer==0.27.0
+typing @ file:///E:/VS4.4.0/install/typing-3.7.4.3.tar.gz#sha256=1187fb9c82fd670d10aa07bbb6cfcfe4bdda42d6fab8d5134f04e8c4d0b71cc9
+typing-inspection @ file:///E:/VS4.4.0/install/typing_inspection-0.4.2-py3-none-any.whl#sha256=4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7
+typing_extensions @ file:///E:/VS4.4.0/install/typing_extensions-4.14.1-py3-none-any.whl#sha256=d1e1e3b58374dc93031d6eda2420a48ea44a36c2b4766a4fdeb3710755731d76
+tzdata @ file:///E:/VS4.4.0/install/tzdata-2023.3-py2.py3-none-any.whl#sha256=7e65763eef3120314099b6939b5546db7adce1e7d6f2e179e3df563c70511eda
+tzlocal @ file:///E:/VS4.4.0/install/tzlocal-5.3.1-py3-none-any.whl#sha256=eb1a66c3ef5847adf7a834f1be0800581b683b5608e74f86ecbcef8ab91bb85d
+uncompyle6==3.9.3
+uri-template @ file:///E:/VS4.4.0/install/uri_template-1.3.0-py3-none-any.whl#sha256=a44a133ea12d44a0c0f06d7d42a52d71282e77e2f937d8abd5655b8d56fc1363
+urllib3 @ file:///E:/VS4.4.0/install/urllib3-2.7.0-py3-none-any.whl#sha256=9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
+uuid_utils==0.17.0
+uvicorn @ file:///E:/VS4.4.0/install/uvicorn-0.48.0-py3-none-any.whl#sha256=48097851328b87ec36117d3d575234519eb58c2b22d79666e9bbc6c49a761dad
+vcs-versioning==1.1.1
+veighna_station @ file:///E:/VS4.4.0/install/veighna_station-4.4.0-py313-none-any.whl#sha256=41e8a90365a1a1dc529590eb81e7fede2aa47ce4d718ccb53bc23dcf3374a94b
+vnag @ file:///E:/VS4.4.0/install/vnag-0.9.0-py3-none-any.whl#sha256=2e9cc65dacb2c651f4d53639a2ad3473cd35728133aa8609db200ee2f01a458c
+vnpy @ file:///E:/VS4.4.0/install/vnpy-4.4.0-py3-none-any.whl#sha256=e496e63a6b6954c2313396ace3a5ffac9d86b354c0da5900dcbcd8bef60dae06
+vnpy-sec @ file:///E:/VS4.4.0/install/vnpy_sec-1.0.3-py3-none-any.whl#sha256=c2e2e9c61d537ea92e0e6ecc0fcc8356a9159281a6eaefb2166a9af9c499be62
+vnpy-tinysoft @ file:///E:/VS4.4.0/install/vnpy_tinysoft-2023.2.24-py3-none-any.whl#sha256=fe58f72b8ad796877b59cc2d2da303568b2ca70b4509881e3913c086e09558a2
+vnpy_algotrading @ file:///E:/VS4.4.0/install/vnpy_algotrading-1.1.0-py3-none-any.whl#sha256=f2649bfb289cadc4d8abeb8ceac477b9603cd9b6ec65c4348afae02e112be294
+vnpy_chartwizard @ file:///E:/VS4.4.0/install/vnpy_chartwizard-1.1.0-py3-none-any.whl#sha256=0ff775d65256b68aba283fb87c21229557bb62630a59e0668c26cf27057bdfe2
+vnpy_ctabacktester @ file:///E:/VS4.4.0/install/vnpy_ctabacktester-1.3.0-py3-none-any.whl#sha256=d3685c07d572c9a8b0866edb167c30c58757c988bc85e83f415b84fe38cce7e6
+vnpy_ctastrategy @ file:///E:/VS4.4.0/install/vnpy_ctastrategy-1.4.1-py3-none-any.whl#sha256=d625ebbff1fcf1a61794bf7c75c13f4bcfea333b3d80d0ada36292a09100288f
+vnpy_ctp @ file:///E:/VS4.4.0/install/vnpy_ctp-6.7.11.3-cp313-cp313-win_amd64.whl#sha256=967ed7361502987d95fce7fe81962d7c89079c8c4e9bfe53a0c03115f55ccf90
+vnpy_ctptest @ file:///E:/VS4.4.0/install/vnpy_ctptest-6.7.2.1-cp313-cp313-win_amd64.whl#sha256=29434c25f4ba20b60077cf14f3f29339293ede95ea4e89a6a0f56eed21b79122
+vnpy_da @ file:///E:/VS4.4.0/install/vnpy_da-1.18.2.5.2-py3-none-any.whl#sha256=3f06c485b7e76266193c5d3782f656b8a8f1e0a7a6d728ac5339223a93e408c5
+vnpy_datamanager @ file:///E:/VS4.4.0/install/vnpy_datamanager-1.2.0-py3-none-any.whl#sha256=6720d5581242ed45e6c83549e641160d88f6cce28d9579a2a5551c3609c28041
+vnpy_datarecorder @ file:///E:/VS4.4.0/install/vnpy_datarecorder-1.1.1-py3-none-any.whl#sha256=1f54f1f11008c74a2631e74f2b9efba7c1aad72acdedc8b25a6af626b2e7772e
+vnpy_esunny @ file:///E:/VS4.4.0/install/vnpy_esunny-9.0.3.16.3-cp313-cp313-win_amd64.whl#sha256=bb7ae2fc41f4622f967c2b6b9392d02d81ab3343920a0c49c44d7cf4b0acbb0f
+vnpy_excelrtd @ file:///E:/VS4.4.0/install/vnpy_excelrtd-1.1.0-py3-none-any.whl#sha256=7e0f117fa4b23195d5a232045abebbc6b746b63e6c3f25d0283c1bd0db1fecef
+vnpy_femas @ file:///E:/VS4.4.0/install/vnpy_femas-1.0.3-cp313-cp313-win_amd64.whl#sha256=6ce1f1771b91a889777e4b76b7d70ae10862d0a0d74446e0ab472c476c1ec222
+vnpy_gm @ file:///E:/VS4.4.0/install/vnpy_gm-1.2.0-py3-none-any.whl#sha256=ebcb92da09598a900f3b8be6d629b79a1dd4cb6195c14012f4700faeae2e9905
+vnpy_hts @ file:///E:/VS4.4.0/install/vnpy_hts-1.0.3-cp313-cp313-win_amd64.whl#sha256=2fa7b0da3df92c35329cf13856c9688be335e06be666699a8b4aecd2e3ddaff4
+vnpy_ib @ file:///E:/VS4.4.0/install/vnpy_ib-10.40.1.2-py3-none-any.whl#sha256=e19bfa16210e28b2368030873690abc5e6f6778d9968e59eb476e3796f00805c
+vnpy_ifind @ file:///E:/VS4.4.0/install/vnpy_ifind-1.1.0-py3-none-any.whl#sha256=d801b820f71f557b25ef06c8911ea51736bb88370558d1bcadcae9d7b5264eed
+vnpy_jees @ file:///E:/VS4.4.0/install/vnpy_jees-6.6.1.1-cp313-cp313-win_amd64.whl#sha256=2c7ecd3e56c62d1ebc522d469db0dab694a270f094e66257fa7d3558950ee1da
+vnpy_lstar @ file:///E:/VS4.4.0/install/vnpy_lstar-6.3.15.1-cp313-cp313-win_amd64.whl#sha256=194bcce77b62f38944ccf566a823bb8a537324dbeebd1cd1699b63e6c3e65b04
+vnpy_mcdata @ file:///E:/VS4.4.0/install/vnpy_mcdata-1.0.5-py3-none-any.whl#sha256=5fd2da710d8204edadd69fa2abf79533dced761a3c4a07ca7a25eac7f06095c0
+vnpy_mini @ file:///E:/VS4.4.0/install/vnpy_mini-1.6.3.3-cp313-cp313-win_amd64.whl#sha256=79a6fd5654ecac9074536c31c31237be3bcc022a9c0ada51cc715153a0b18d56
+vnpy_mongodb @ file:///E:/VS4.4.0/install/vnpy_mongodb-1.1.0-py3-none-any.whl#sha256=ba9707ad9edbee58164385313a3c3127821c2980d92109c88f546f495ba2e319
+vnpy_mysql @ file:///E:/VS4.4.0/install/vnpy_mysql-1.1.1-py3-none-any.whl#sha256=3332043d39aabcff39e036ed240a917af1c0b9e0f4e3728b263b2df9ed18455b
+vnpy_optionmaster @ file:///E:/VS4.4.0/install/vnpy_optionmaster-1.3.0-py3-none-any.whl#sha256=26a98a5da6b78e1e007eed21ccf8acf3dd84bf59826d37ea677cc53fd1029fb5
+vnpy_paperaccount @ file:///E:/VS4.4.0/install/vnpy_paperaccount-1.0.6-py3-none-any.whl#sha256=c3ae0cb402dd2ac4ed0357530962f59c0f9be7f8d1c016c8390a0bc817cf6005
+vnpy_polygon @ file:///E:/VS4.4.0/install/vnpy_polygon-1.0.0-py3-none-any.whl#sha256=9c3d6817ac2e927272c5260697e8d700bfdbe08277440a0255c1fd00e61ae6c9
+vnpy_portfoliomanager @ file:///E:/VS4.4.0/install/vnpy_portfoliomanager-1.1.0-py3-none-any.whl#sha256=c4cacbc1abfe072313070765d1481161fb52db8375ab396c4c75d396b30d74ec
+vnpy_portfoliostrategy @ file:///E:/VS4.4.0/install/vnpy_portfoliostrategy-1.3.0-py3-none-any.whl#sha256=b4471aa5d5fed47f419b9a3f42514a59e2efc9a2e2ab710ddd40cea23d42fc47
+vnpy_postgresql @ file:///E:/VS4.4.0/install/vnpy_postgresql-1.1.2-py3-none-any.whl#sha256=cd18bfe99d0e1534c1a76093d307d7dae7b4e9f2a396d94e5e375128c1639fa5
+vnpy_questdb @ file:///E:/VS4.4.0/install/vnpy_questdb-1.0.0-py3-none-any.whl#sha256=1afc0c1b1a6ec1d5c1df01f89fc27c58f25e5dc3c09a43a8c3dff433e21aaaef
+vnpy_riskmanager @ file:///E:/VS4.4.0/install/vnpy_riskmanager-2.0.0-cp313-cp313-win_amd64.whl#sha256=43934f4f319b06c1fde7b644b88c9b34f495ef26d0221ec843d42cfa183fdb8e
+vnpy_rohon @ file:///E:/VS4.4.0/install/vnpy_rohon-6.7.2.5-cp313-cp313-win_amd64.whl#sha256=488bd719f622102c6b47650f2a8677f1412b999b76732091d75829cbe544fc39
+vnpy_rpcservice @ file:///E:/VS4.4.0/install/vnpy_rpcservice-1.1.0-py3-none-any.whl#sha256=7e64ca5a8d5b2b99cd6e35246bf015bc386a7485f56ca4847d15e032bd798541
+vnpy_rqdata @ file:///E:/VS4.4.0/install/vnpy_rqdata-3.4.7.8-py3-none-any.whl#sha256=a0ff0a68e1c33d5aa9b8066f458a66e8ffbca89c8918f172f72fc0857c15d59d
+vnpy_scripttrader @ file:///E:/VS4.4.0/install/vnpy_scripttrader-1.2.0-py3-none-any.whl#sha256=1545ca11c1c0abe05a6312e8c06d1d541570c45cf94757502fe09c84d88579d0
+vnpy_sopt @ file:///E:/VS4.4.0/install/vnpy_sopt-3.7.1.2-cp313-cp313-win_amd64.whl#sha256=139827746bc30fa0c21a84f7e064da72f5096106bee9eda5bffd749f232965c6
+vnpy_spreadtrading @ file:///E:/VS4.4.0/install/vnpy_spreadtrading-1.4.0-py3-none-any.whl#sha256=704c7bb0fb2f0201212711e46c7449625df005d17feb77fdb08e4ca21b1b799d
+vnpy_sqlite @ file:///E:/VS4.4.0/install/vnpy_sqlite-1.1.3-py3-none-any.whl#sha256=50f80c45737ef9a491aeebb9bfac0cec57f087461b6d7867838ef678cfbe67bb
+vnpy_taos @ file:///E:/VS4.4.0/install/vnpy_taos-1.1.1-py3-none-any.whl#sha256=a403967d7d57a726dec61318b6cdb56e9c087986d6281e8be0a0f67baf72b351
+vnpy_tap @ file:///E:/VS4.4.0/install/vnpy_tap-9.4.11-cp313-cp313-win_amd64.whl#sha256=e79a6b30fed91a850cba4db8bc2f3908e9b3dae9d59746162b53ce5c2a7e6d75
+vnpy_tora @ file:///E:/VS4.4.0/install/vnpy_tora-2026.5.14-cp313-cp313-win_amd64.whl#sha256=64a84abede3f66c74bc023389fe1fcaac9ab6751b8a3a0981eb829773233b56d
+vnpy_tqsdk @ file:///E:/VS4.4.0/install/vnpy_tqsdk-3.8.6.0-py3-none-any.whl#sha256=5f9f6f76f821a9568dd19353517820427efd0d32cace8aaf853566a4015c0fc3
+vnpy_tts @ file:///E:/VS4.4.0/install/vnpy_tts-6.7.11.0-cp313-cp313-win_amd64.whl#sha256=3c783a69800505d45039942dcc0e55fea9b5c27e469c97dfdcc1dfa4d3de612f
+vnpy_tushare @ file:///E:/VS4.4.0/install/vnpy_tushare-1.4.21.0-py3-none-any.whl#sha256=3e947e6a31a52ce5bcba9a311a83240f22b77ab729b4d2a7d015a7562d3f42f0
+vnpy_uft @ file:///E:/VS4.4.0/install/vnpy_uft-3.7.4.1004.2-cp313-cp313-win_amd64.whl#sha256=2cb69d97fadd3c372084f6c9aa475af29f3ebdc9d8e749565eec3acb615bd036
+vnpy_webtrader @ file:///E:/VS4.4.0/install/vnpy_webtrader-1.1.0-py3-none-any.whl#sha256=cf5b81268767ca20069b2073a32abacfe2eac21c3b09486dec47abc171ff0b16
+vnpy_wind @ file:///E:/VS4.4.0/install/vnpy_wind-1.1.0-py3-none-any.whl#sha256=02c7b49c775e0d525b6bc14f281a7c5383d8e02cd0d851e3888de29727e8df52
+vnpy_xt @ file:///E:/VS4.4.0/install/vnpy_xt-1.4.6-py3-none-any.whl#sha256=f0cee2834cbddaa849f2432f4f3119e61d10937f51b6e2cb5ecdcbff69142a4c
+vnpy_xtp @ file:///E:/VS4.4.0/install/vnpy_xtp-2.2.32.2.3-cp313-cp313-win_amd64.whl#sha256=3651b82e8eb128a32b06b06470dbef10dd42a9a35bcdba3e38b87ca77d18c03d
+waitress==3.0.2
+watchdog==6.0.0
+watchfiles==1.2.0
+wcwidth @ file:///E:/VS4.4.0/install/wcwidth-0.7.0-py3-none-any.whl#sha256=5d69154c429a82910e241c738cd0e2976fac8a2dd47a1a805f4afed1c0f136f2
+webcolors @ file:///E:/VS4.4.0/install/webcolors-25.10.0-py3-none-any.whl#sha256=032c727334856fc0b968f63daa252a1ac93d33db2f5267756623c210e57a4f1d
+webencodings @ file:///E:/VS4.4.0/install/webencodings-0.5.1-py2.py3-none-any.whl#sha256=a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78
+websocket-client @ file:///E:/VS4.4.0/install/websocket_client-1.9.0-py3-none-any.whl#sha256=af248a825037ef591efbf6ed20cc5faa03d3b47b9e5a2230a529eeee1c1fc3ef
+websockets==15.0.1
+Werkzeug @ file:///E:/VS4.4.0/install/werkzeug-3.1.8-py3-none-any.whl#sha256=63a77fb8892bf28ebc3178683445222aa500e48ebad5ec77b0ad80f8726b1f50
+wheel @ file:///E:/VS4.4.0/install/wheel-0.47.0-py3-none-any.whl#sha256=212281cab4dff978f6cedd499cd893e1f620791ca6ff7107cf270781e587eced
+widgetsnbextension==4.0.15
+win-inet-pton @ file:///E:/VS4.4.0/install/win_inet_pton-1.1.0-py2.py3-none-any.whl#sha256=eaf0193cbe7152ac313598a0da7313fb479f769343c0c16c5308f64887dc885b
+win32_setctime @ file:///E:/VS4.4.0/install/win32_setctime-1.2.0-py3-none-any.whl#sha256=95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390
+WMI @ file:///E:/VS4.4.0/install/WMI-1.5.1-py2.py3-none-any.whl#sha256=1d6b085e5c445141c475476000b661f60fff1aaa19f76bf82b7abb92e0ff4942
+xdis==6.1.7
+xlrd==2.0.2
+xtquant @ file:///E:/VS4.4.0/install/xtquant-250516.1.1-py3-none-any.whl#sha256=f8461b0a295fa9b13ead33acca8675f7961fe1b4488a319b5549853142a89014
+xxhash==3.8.1
+yarl @ file:///E:/VS4.4.0/install/yarl-1.24.2-cp313-cp313-win_amd64.whl#sha256=7d37fb7c38f2b6edab0f845c4f85148d4c44204f52bc127021bd2bc9fdbf1656
+zipp @ file:///E:/VS4.4.0/install/zipp-4.1.0-py3-none-any.whl#sha256=25ad4e16390cd314347dd8f1de67a2ac538ae658ed4ab9db16029c07c188e97f
+zstandard==0.25.0
