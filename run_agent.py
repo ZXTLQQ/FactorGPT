@@ -110,6 +110,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="FactorGPT 因子挖掘 / 精炼厂")
     parser.add_argument("requirement", nargs="*", help="因子挖掘需求描述")
     parser.add_argument("--refinery", action="store_true", help="运行六阶段因子精炼厂流水线")
+    parser.add_argument("--vibe", action="store_true", help="Vibe-Trading 自然语言策略模式")
+    parser.add_argument("--vibe-native", action="store_true", dest="vibe_native",
+                        help="Vibe-Trading 优先调用原生 vibetrading 引擎（加密货币，需联网）")
     parser.add_argument("--offline", action="store_true", dest="offline", default=None,
                         help="精炼厂离线模式（默认）")
     parser.add_argument("--no-offline", action="store_false", dest="offline",
@@ -121,11 +124,39 @@ def main() -> None:
 
     config = load_config()
 
-    if args.refinery:
+    if args.vibe:
+        run_vibe(config, " ".join(args.requirement), use_native=args.vibe_native)
+    elif args.refinery:
         offline = True if args.offline is None else args.offline
         run_refinery(config, " ".join(args.requirement), offline)
     else:
         run_single_factor(config, user_input)
+
+
+def run_vibe(config, user_input: str, use_native: bool = False) -> None:
+    from agent.vibe_trading import vibe_run
+
+    strategy = user_input or \
+        "低估值、高 ROE 且现金流稳健的质量因子，做行业中性，持有约 20 个交易日"
+
+    print("=" * 60)
+    print("FactorGPT · Vibe-Trading 自然语言策略模式")
+    print(f"策略想法：{strategy}")
+    print(f"原生引擎：{'优先' if use_native else '关闭（使用 FactorGPT 引擎）'}")
+    print("=" * 60)
+
+    result = vibe_run(strategy, config=config, use_native=use_native)
+
+    print("\n" + "=" * 60)
+    print(f"引擎：{result.get('vibe_engine')}")
+    print("=" * 60)
+    for k, v in (result.get("metrics") or {}).items():
+        print(f"  {k}: {v}")
+
+    print("\n" + "=" * 60)
+    print("最终报告：")
+    print("=" * 60)
+    print(result.get("report", ""))
 
 
 if __name__ == "__main__":

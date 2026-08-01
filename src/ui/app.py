@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from agent.graph import FactorAgent   # noqa: E402
+from agent.vibe_trading import VibeTradingSession  # noqa: E402
 from ui.methodologist import run_methodologist, get_factor_name_from_report  # noqa: E402
 from ui.market_hub import render_market_hub  # noqa: E402
 from rag.chroma_store import ensure_chroma  # noqa: E402
@@ -976,6 +977,7 @@ def render_stocks():
 # ----------------------------------------------------------------------
 def render_monitor():
     """📡 因子实时监控：展示已学习因子的 IC 水平、类别分布与衰减趋势。"""
+    import plotly.express as px
     from rag.learned_library import LearnedFactorLibrary
 
     st.title("📡 因子实时监控")
@@ -1051,8 +1053,36 @@ def render_monitor():
 # ----------------------------------------------------------------------
 # 主入口
 # ----------------------------------------------------------------------
+def render_vibe_trading():
+    st.title("🚀 Vibe Trading")
+    st.caption("用自然语言描述交易想法，Agent 借助 Vibe-Trading 量化 Alpha 库生成并回测因子。"
+               "可选调用原生 vibetrading 引擎（加密货币，需安装并联网）。")
+    user_input = st.text_area(
+        "交易策略描述（自然语言）",
+        value="低估值、高 ROE 且现金流稳健的质量因子，做行业中性，持有约 20 个交易日",
+        height=90,
+    )
+    col1, col2 = st.columns(2)
+    with col1:
+        seed_lib = st.checkbox("将 Vibe-Trading Alpha 库注入 RAG", value=True)
+    with col2:
+        use_native = st.checkbox("优先调用原生 vibetrading 引擎", value=False)
+    auto_method = st.checkbox("自动生成方法学解读", value=True)
+    run_btn = st.button("🚀 运行 Vibe Trading", type="primary")
+
+    if run_btn and user_input.strip():
+        agent = get_agent()
+        _apply_model(agent)
+        session = VibeTradingSession(agent)
+        with st.spinner("Vibe Trading 正在将想法转化为可回测因子..."):
+            result = session.run(user_input, use_native=use_native, seed_library=seed_lib)
+        d = _build_agent_dict(result, with_method=auto_method)
+        _render_agent_dict(d, with_method=auto_method)
+
+
 PAGES = {
     "🏠 概览": render_overview,
+    "🚀 Vibe Trading": render_vibe_trading,
     "🤖 因子挖掘 (Agent)": render_factor_agent,
     "💬 Agent 对话": render_agent_chat,
     "🏭 因子精炼厂": render_refinery,

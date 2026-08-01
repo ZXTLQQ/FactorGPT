@@ -167,3 +167,16 @@ llm:
 - **接入精炼厂因子池**：在 refinery PART-01 之后调用 `from src.kronos import attach_kronos_factor; attach_kronos_factor(ore, cfg)`，即把 `KRONOS_PRED`（Kronos 预测的未来收益）作为候选因子参与 RPN 求值与合成。Kronos 依赖缺失或下载失败时，自动降级 stub 并告警，流水线照常可跑。
 
 > 说明：代码生成环节（因子代码、反思）仍由上面 `llm` 段的模型负责；Ollama 等本地模型仅承担该角色，Kronos 负责「未来价格预测」维度的信号增强。
+
+## Vibe-Trading 集成
+
+FactorGPT 已接入 Vibe-Trading 的自然语言策略范式：
+
+- 知识层：内置 `data/vibe_trading_alpha_catalog.json`（Vibe-Trading / HKUDS 风格量化 Alpha 信号），可在「🚀 Vibe Trading」页面一键注入 RAG 已学习因子库，参与检索与模板复用。
+- 工作流层：用自然语言描述交易想法，Agent 借助 Alpha 参考库生成并回测选股因子（describe → factor → backtest）。
+- 原生引擎（可选）：`pip install -r requirements.vibe.txt` 后，可在页面 / `--vibe-native` 优先调用 `vibetrading` 包的加密货币策略回测流程；不可用或离线时自动降级到 FactorGPT 引擎。
+
+用法：
+
+- Web：侧边栏选择「🚀 Vibe Trading」，输入策略描述后运行。
+- CLI：`python run_agent.py --vibe "低估值高 ROE 的质量因子，行业中性"`。

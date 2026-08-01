@@ -156,9 +156,3 @@ if __name__ == "__main__":
             failed += 1
     print(f"\n=== passed={passed} skipped={skipped} failed={failed} ===")
     sys.exit(1 if failed else 0)
-
-    kline, dates, syms = _make_panel(n_days=120, seed=5)
-    rng = np.random.default_rng(9)
-    fac = _factor_series(rng.normal(0, 1, len(dates) * len(syms)), dates, syms)
-    m = FactorBacktester().evaluate(kline, fac)
-    assert isinstance(m["ic"], float)

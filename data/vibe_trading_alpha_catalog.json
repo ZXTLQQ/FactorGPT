@@ -1,0 +1,166 @@
+[
+  {
+    "title": "12-1 月动量",
+    "category": "动量",
+    "formula": "rank( ts_mean(pct_chg, 252) - pct_chg_1m )",
+    "description": "过去 12 个月剔除最近 1 个月的累计收益横截面排序，捕捉中期价格惯性。源自经典动量异象。",
+    "source": "vibe_trading",
+    "code": "def alpha_factor(df):\n    df = df.sort_values(['symbol', 'date'])\n    m12 = df.groupby('symbol')['close'].pct_change(252)\n    m1 = df.groupby('symbol')['close'].pct_change(21)\n    f = (m12 - m1).groupby(df['symbol']).rank(pct=True)\n    return f"
+  },
+  {
+    "title": "短期反转",
+    "category": "反转",
+    "formula": "-rank( ts_mean(pct_chg, 5) )",
+    "description": "最近 5 日收益的横截面负值排序，捕捉短期超买后的均值回归。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "隔夜反转",
+    "category": "反转",
+    "formula": "-rank( open / prev_close - 1 )",
+    "description": "以开盘相对前收的跳空方向取反，捕捉隔夜情绪的日内反转。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "成交量加权反转",
+    "category": "反转",
+    "formula": "-rank( ts_sum(pct_chg * volume, 20) )",
+    "description": "用成交量加权近 20 日收益并取反，降低低流动性噪声干扰。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "市盈率倒数 EP",
+    "category": "价值",
+    "formula": "rank( 1 / pe_ttm )",
+    "description": "盈利收益率（E/P）横截面排序，低估值股票相对占优的价值因子。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "市净率倒数 BP",
+    "category": "价值",
+    "formula": "rank( 1 / pb )",
+    "description": "账面价值相对市值的低估程度排序，经典价值因子。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "现金流市值比",
+    "category": "价值",
+    "formula": "rank( cfo / market_cap )",
+    "description": "经营现金流相对市值的溢价，比会计盈利更难操纵。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "资产收益率 ROA",
+    "category": "质量",
+    "formula": "rank( net_income / total_asset )",
+    "description": "单位资产创利能力，质量因子核心指标。",
+    "source": "vibe_trading",
+    "code": "def alpha_factor(df):\n    f = (df['net_income'] / df['total_asset']).groupby(df['symbol']).rank(pct=True)\n    return f"
+  },
+  {
+    "title": "毛利率",
+    "category": "质量",
+    "formula": "rank( (rev - cogs) / rev )",
+    "description": "产品定价能力与企业护城河的体现。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "应计利润异常",
+    "category": "质量",
+    "formula": "-rank( (net_income - cfo) / total_asset )",
+    "description": "应计利润越高，盈余质量越低，未来收益常反转（应计异象）。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "财务杠杆低",
+    "category": "质量",
+    "formula": "-rank( total_liability / total_asset )",
+    "description": "低杠杆公司抗风险更强，质量维度稳健性信号。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "盈利增长",
+    "category": "成长",
+    "formula": "rank( ts_mean(net_income_yoy, 4) )",
+    "description": "近 4 期净利润同比均值排序，持续成长溢价。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "营收增长",
+    "category": "成长",
+    "formula": "rank( ts_mean(rev_yoy, 4) )",
+    "description": "收入端的持续成长，比单期增长更稳健。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "历史波动率",
+    "category": "波动率",
+    "formula": "-rank( ts_std(pct_chg, 60) )",
+    "description": "近 60 日收益标准差取反，低波动异象（低波溢价）。",
+    "source": "vibe_trading",
+    "code": "def alpha_factor(df):\n    df = df.sort_values(['symbol', 'date'])\n    vol = df.groupby('symbol')['close'].pct_change().groupby(df['symbol']).transform(lambda s: s.rolling(60).std())\n    f = (-vol).groupby(df['symbol']).rank(pct=True)\n    return f"
+  },
+  {
+    "title": "下行波动率",
+    "category": "波动率",
+    "formula": "-rank( ts_std(min(pct_chg,0), 60) )",
+    "description": "仅对负收益取波动，更贴合风险厌恶的下行风险度量。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "特质波动率",
+    "category": "波动率",
+    "formula": "-rank( std(resid) )  resid = pct_chg - beta*mkt_ret",
+    "description": "市场模型回归残差波动，剔除系统性风险后的个股特质风险。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "Amihud 非流动性",
+    "category": "流动性",
+    "formula": "-rank( ts_mean(|pct_chg| / amount, 20) )",
+    "description": "单位成交额带来的价格冲击，值越大越不流动，低流动性溢价。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "换手率因子",
+    "category": "流动性",
+    "formula": "-rank( ts_mean(volume / float_shares, 20) )",
+    "description": "低换手反映稳定持有，异常高换手常伴随投机与未来反转。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "市值规模",
+    "category": "规模",
+    "formula": "-rank( log(market_cap) )",
+    "description": "小市值溢价（size effect），对市值取负排序。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "分析师评级上调",
+    "category": "情绪",
+    "formula": "rank( #上调 - #下调 )",
+    "description": "卖方一致预期上修动量，情绪面催化信号。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "资金净流入",
+    "category": "情绪",
+    "formula": "rank( ts_sum(main_net_inflow, 20) )",
+    "description": "近 20 日主力资金净流入累积，捕捉聪明钱方向。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "行业中性化处理",
+    "category": "风险约束",
+    "formula": "f_neutral = f - ts_mean(f) within industry",
+    "description": "在行业内对原始因子去均值，消除行业暴露，降低行业集中风险（Barra 风格约束）。",
+    "source": "vibe_trading"
+  },
+  {
+    "title": "市值中性化处理",
+    "category": "风险约束",
+    "formula": "f_neutral = resid(f ~ log(market_cap))",
+    "description": "对因子做市值对数回归取残差，剔除规模暴露，避免小市值混杂。",
+    "source": "vibe_trading"
+  }
+]

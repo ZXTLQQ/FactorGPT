@@ -1,0 +1,5 @@
+# 可选依赖：Vibe-Trading 原生引擎（VibeTradingLabs/vibetrading，PyPI 包）
+# 仅用于「🚀 Vibe Trading」页面 / --vibe-native 的加密货币策略回测，需联网获取行情。
+# FactorGPT 默认离线运行，不强制安装；按需在独立虚拟环境中安装：
+#   pip install -r requirements.vibe.txt
+vibetrading
