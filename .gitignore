@@ -53,4 +53,5 @@ models/
 # 数据产物（整矿缓存 / 导入产物 / 图片型 PDF / OCR 知识语料）
 data/cache/
 data/knowledge/
+data/experiments/
 data/*.jsonl

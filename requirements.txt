@@ -26,3 +26,11 @@ torch>=2.1.0
 stable-baselines3>=2.2.0
 sb3-contrib>=2.2.0
 gymnasium>=0.29.0
+
+# ── 工程化与可复现性（方向二，可选依赖，按需安装） ──
+mlflow>=2.10.0          # 实验追踪（backend=mlflow）；不装则自动降级本地 JSONL
+optuna>=3.5.0           # 超参搜索（src/engine/hpo.py）；不装则提示安装
+# ── 因子生成升级（方向三，蒸馏专用，可选重依赖，按需安装） ──
+# peft>=0.10.0         # LoRA 微调（scripts/distill_factors.py 蒸馏用）
+# transformers>=4.40.0 # 微调基座（蒸馏用，体积大）
+# datasets>=2.18.0     # 训练数据集加载（蒸馏用）

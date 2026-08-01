@@ -72,6 +72,67 @@ def portfolio_turnover(factor_series: pd.Series, kline: pd.DataFrame, top_frac: 
         return None
 
 
+def _ic_series(panel: pd.DataFrame, method: str = "pearson") -> pd.Series:
+    """向量化计算逐日 IC 序列（比 groupby.apply 更快，适合大规模数据）。
+
+    返回以 date 为索引的 Series。pearson 用 numpy 批量计算；spearman 退化为
+    逐日秩相关。截面样本不足或因子/收益为常数时返回 nan。
+    """
+    dates = panel["date"].to_numpy()
+    f = panel["factor"].to_numpy(dtype=float)
+    y = panel["fwd_ret"].to_numpy(dtype=float)
+    uniq = np.unique(dates)
+    out = np.empty(len(uniq), dtype=float)
+    out[:] = np.nan
+    for i, d in enumerate(uniq):
+        m = dates == d
+        xv, yv = f[m].copy(), y[m].copy()
+        if len(xv) < 2 or np.nanstd(xv) == 0 or np.nanstd(yv) == 0:
+            continue
+        if method == "spearman":
+            xv = pd.Series(xv).rank().to_numpy()
+            yv = pd.Series(yv).rank().to_numpy()
+        c = np.corrcoef(xv, yv)[0, 1]
+        out[i] = c if np.isfinite(c) else np.nan
+    return pd.Series(out, index=pd.Index(uniq, name="date")).dropna()
+
+
+def batch_evaluate(
+    kline: pd.DataFrame,
+    factors: Dict[str, pd.Series],
+    n_quantiles: int = 5,
+    forward_periods: int = 1,
+    n_jobs: int = -1,
+    verbose: bool = True,
+) -> Dict[str, dict]:
+    """并行回测多个因子（factors: name -> 因子 Series）。
+
+    用 joblib 并行（可选依赖），未安装时退化为串行。返回 name -> 指标字典。
+    """
+    names = list(factors.keys())
+    bt = FactorBacktester(n_quantiles=n_quantiles, forward_periods=forward_periods)
+
+    def _one(name):
+        try:
+            return name, bt.evaluate(kline, factors[name], verbose=False)
+        except Exception as e:  # 单因子失败不影响其余
+            return name, {"error": str(e)}
+
+    try:
+        from joblib import Parallel, delayed
+        use_joblib = True
+    except Exception:
+        use_joblib = False
+    if use_joblib:
+        res = Parallel(n_jobs=n_jobs)(delayed(_one)(n) for n in names)
+    else:
+        res = [_one(n) for n in names]
+    out = {n: m for n, m in res}
+    if verbose:
+        print(f"[batch_evaluate] 完成 {len(out)} 个因子回测（{'joblib' if use_joblib else 'serial'} 后端）")
+    return out
+
+
 class FactorBacktester:
     """因子回测器：输入行情长表与因子长表，输出评价指标与图表。"""
 
@@ -118,7 +179,7 @@ class FactorBacktester:
     # ------------------------------------------------------------------
     # 评价指标
     # ------------------------------------------------------------------
-    def evaluate(self, kline: pd.DataFrame, factor: pd.Series) -> dict:
+    def evaluate(self, kline: pd.DataFrame, factor: pd.Series, verbose: bool = True) -> dict:
         """执行回测并返回指标字典。
 
         Args:
@@ -139,20 +200,8 @@ class FactorBacktester:
         # 防御：截面样本不足（<2）或因子/收益为常量时相关系数无定义，直接返回
         # nan 并抑制 numpy/scipy 的 RuntimeWarning 与 ConstantInputWarning，
         # 避免刷屏，并保证无有效数据时回测仍可产出指标字典。
-        def _safe_corr(g, method="pearson"):
-            import warnings
-
-            x = g["factor"]
-            y = g["fwd_ret"]
-            if len(x) < 2 or x.std() == 0 or y.std() == 0:
-                return float("nan")
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                with np.errstate(all="ignore"):
-                    return x.corr(y, method=method)
-
-        ic_series = panel.groupby("date").apply(_safe_corr)
-        rankic_series = panel.groupby("date").apply(lambda g: _safe_corr(g, "spearman"))
+        ic_series = _ic_series(panel, "pearson")
+        rankic_series = _ic_series(panel, "spearman")
         ic_series = ic_series.dropna()
         rankic_series = rankic_series.dropna()
 

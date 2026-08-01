@@ -26,7 +26,9 @@ import pandas as pd
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 from engine.factor_builder import FactorSandbox, build_pipeline, generate_from_keywords
+from engine.tracking import ExperimentTracker
 from llm.client import extract_code_block, extract_json
+from llm.router import LLMRouter
 
 
 class FactorAgentNodes:
@@ -55,6 +57,19 @@ class FactorAgentNodes:
         self.mkt_cap = mkt_cap
         self.config = config or {}
         self.learned = learned  # 已学习因子库（LearnedFactorLibrary 实例）
+
+        # 实验追踪：记录每次因子评估，支撑可审计/可复现（见 src/engine/tracking.py）
+        self.tracker = ExperimentTracker(config)
+
+        # 多 LLM 路由（可选）：若 config 启用 llm.router 且配置了 draft/critic，
+        # 则用路由层替换单一 LLM，实现「小模型海选 + 强模型精炼」（调用处无需改动）
+        rc = (self.config.get("llm", {}) or {}).get("router", {}) or {}
+        if rc.get("enabled") and (rc.get("draft") or rc.get("critic")):
+            try:
+                self.llm = LLMRouter(config=config)
+                print("[nodes] 已启用多 LLM 路由（draft 海选 + critic 精炼）")
+            except Exception as e:
+                print(f"[nodes] 路由初始化失败，沿用单一 LLM：{e}")
 
     # ------------------------------------------------------------------
     # 1) 知识检索
@@ -263,6 +278,23 @@ class FactorAgentNodes:
         # 生成并保存标准化回测图表（IC 序列 / 分层收益 / 多空权益 / 分层累积收益）
         chart_paths = self._save_charts(metrics, state.get("factor_name", "factor"))
         out: dict = {"metrics": metrics, "chart_paths": chart_paths}
+
+        # 实验追踪：记录本次因子评估（因子代码 + 指标 + git commit），支撑可审计/可复现
+        try:
+            self.tracker.log_factor(
+                name=str(state.get("factor_name") or "custom_factor"),
+                code=str(state.get("factor_code") or ""),
+                metrics=metrics,
+                params={
+                    "iteration": int(state.get("iteration", 0)),
+                    "train_n_dates": int(self.train_kline["date"].nunique()) if self.train_kline is not None else None,
+                    "has_oos": self.test_kline is not None,
+                },
+                tags={"stage": "evaluate", "source": state.get("factor_source", "llm")},
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[tracking] 记录失败: {e}")
+
         # 样本外（OOS）独立验证：仅终局报告展示，不参与反思与早停，杜绝过拟合
         if self.test_kline is not None and not self.test_kline.empty:
             try:

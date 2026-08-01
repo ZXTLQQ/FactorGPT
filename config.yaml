@@ -12,6 +12,23 @@ llm:
   #   FACTORGPT_LLM_BASE_URL / FACTORGPT_LLM_API_KEY / FACTORGPT_LLM_MODEL / FACTORGPT_LLM_PROVIDER
   use_env_override: false
 
+  # 多 LLM 路由（可选，默认关闭）：draft 小模型海选 + critic 强模型精炼。
+  # 启用后，FactorAgentNodes 自动把 self.llm 切换为路由层，调用处无需改动。
+  # 典型组合：draft 用本地 Ollama 小模型（低成本高吞吐），critic 用云端强模型（保证质量）。
+  router:
+    enabled: false
+    draft:                       # 小模型：快速海选候选因子
+      provider: ollama
+      model: qwen2.5-coder:7b
+      base_url: "http://localhost:11434/v1"
+      api_key: "ollama"
+      temperature: 0.5
+    critic:                      # 强模型：评估并精炼成最终代码
+      provider: deepseek
+      model: deepseek-chat
+      api_key: "${DEEPSEEK_API_KEY}"
+      temperature: 0.3
+
 # Kronos 金融时序预测基础模型 (morrisluo/kronos, HuggingFace: NeoQuasar/Kronos-*)
 # 该模型为 decoder-only 的 K 线序列预测模型, 非聊天 LLM, 因此作为"预测因子"集成:
 # 用其未来 OHLCV 预测构造选股因子, 不参与代码生成(代码生成仍由上面的 LLM 负责)。
@@ -170,3 +187,11 @@ proxy:
   http: ""          # HTTP 代理地址，如 http://127.0.0.1:7890
   https: ""         # HTTPS 代理地址，留空则复用 http
   no_proxy: "localhost,127.0.0.1"  # 始终直连的地址（无需修改）
+
+# ============ 实验追踪与因子版本管理（可审计 / 可复现） ============
+# 记录每次因子评估（因子代码 + 指标 + git commit），直接回应「为什么信这个因子」。
+# backend: local（默认，零依赖，JSONL 落盘）| mlflow（需 pip install mlflow，额外推到 MLflow UI）
+experiment_tracking:
+  backend: local
+  dir: "data/experiments"
+  experiment_name: factorgpt
