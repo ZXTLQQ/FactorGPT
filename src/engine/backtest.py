@@ -46,6 +46,32 @@ except ImportError:  # pragma: no cover
     _HAS_PLOT = False
 
 
+def portfolio_turnover(factor_series: pd.Series, kline: pd.DataFrame, top_frac: float = 0.1) -> Optional[float]:
+    """多头组合实际换手率，口径与 FactorBacktester.realistic_portfolio 完全一致。
+
+    每日截面取因子值最高的 top_frac 等权做多，按「日内权重变动绝对值之和」求日度换手，
+    再跨日平均。替代 evaluate() 中基于排名差的近似换手，使两个口径可比。
+    """
+    if factor_series is None or kline is None or kline.empty:
+        return None
+    try:
+        f = factor_series.rename("factor").reset_index()
+        merged = kline[["date", "symbol", "pct_chg"]].merge(f, on=["date", "symbol"], how="inner")
+        if merged.empty:
+            return None
+        merged = merged.sort_values(["date", "factor"], ascending=[True, False])
+        merged["rank_in_date"] = merged.groupby("date").cumcount()
+        n_per = merged.groupby("date")["symbol"].transform("count")
+        k = (n_per * top_frac).clip(lower=1).astype(int)
+        merged["weight"] = np.where(merged["rank_in_date"] < k, 1.0 / k, 0.0)
+        merged = merged.sort_values(["symbol", "date"])
+        merged["w_prev"] = merged.groupby("symbol")["weight"].shift(1).fillna(0.0)
+        day_turn = merged.groupby("date").apply(lambda g: float(np.abs(g["weight"] - g["w_prev"]).sum()))
+        return float(day_turn.mean()) if len(day_turn) else None
+    except Exception:
+        return None
+
+
 class FactorBacktester:
     """因子回测器：输入行情长表与因子长表，输出评价指标与图表。"""
 
@@ -166,11 +192,14 @@ class FactorBacktester:
         else:
             max_dd = float("nan")
 
-        # 换手率（用因子排名变化近似）
-        panel_sorted = panel.sort_values(["symbol", "date"]).copy()
-        panel_sorted["_rank"] = panel_sorted.groupby("symbol")["factor"].rank(pct=True)
-        panel_sorted["_prev_rank"] = panel_sorted.groupby("symbol")["_rank"].shift(1)
-        turnover = float((panel_sorted["_rank"] - panel_sorted["_prev_rank"]).abs().mean())
+        # 换手率：与 realistic_portfolio 口径一致的「多头组合实际换手」
+        turnover = portfolio_turnover(factor, kline, top_frac=0.1)
+        if turnover is None:
+            # 极端情况下（数据不足）回退到因子排名变化近似
+            panel_sorted = panel.sort_values(["symbol", "date"]).copy()
+            panel_sorted["_rank"] = panel_sorted.groupby("symbol")["factor"].rank(pct=True)
+            panel_sorted["_prev_rank"] = panel_sorted.groupby("symbol")["_rank"].shift(1)
+            turnover = float((panel_sorted["_rank"] - panel_sorted["_prev_rank"]).abs().mean())
 
         coverage = float(factor.notna().mean())
 

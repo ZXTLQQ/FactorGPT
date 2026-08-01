@@ -17,7 +17,13 @@
 
 from __future__ import annotations
 
+import ast
 import builtins
+import os
+import pickle
+import subprocess
+import sys
+import tempfile
 from typing import Dict, Optional
 
 import numpy as np
@@ -51,18 +57,77 @@ _SAFE_BUILTINS = {
 }
 
 
+def analyze_lookahead(code: str) -> list:
+    """静态扫描因子代码，检测常见的前视偏差（未来函数）模式。
+
+    返回问题列表；为空表示未发现问题。覆盖两类高风险模式：
+      1) 非正的 shift 位移量：shift(0)/shift(-1) 等直接泄漏未来信息；
+      2) 引用明确代表「未来收益/标签」的变量名（fwd_ret / future_ret 等）。
+    """
+    issues: list = []
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return [f"代码语法错误，无法做前视检查：{e}"]
+    future_names = ("fwd_ret", "forward_ret", "future_ret", "next_ret", "target_ret")
+    for node in ast.walk(tree):
+        # 1) 非正 shift 位移量
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "shift":
+            args = node.args
+            if args:
+                a = args[0]
+                val = None
+                if isinstance(a, ast.Constant) and isinstance(a.value, (int, float)):
+                    val = a.value
+                elif isinstance(a, ast.UnaryOp) and isinstance(a.op, ast.USub) and isinstance(a.operand, ast.Constant):
+                    val = -a.operand.value
+                if val is not None and val <= 0:
+                    issues.append(
+                        f"检测到 shift({val})：非正位移量会引入未来信息（前视偏差），"
+                        "应使用 shift(1) 或更大的正整数。"
+                    )
+        # 2) 未来/标签变量名（含 df['fwd_ret'] 这类下标字面量）
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            name = node.id if isinstance(node, ast.Name) else node.attr
+            if name and any(fn in name.lower() for fn in future_names):
+                issues.append(f"因子引用了疑似未来/标签变量 '{name}'，存在前视偏差风险。")
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            low = node.value.lower()
+            if any(fn in low for fn in future_names):
+                issues.append(f"因子引用了疑似未来/标签变量 '{node.value}'，存在前视偏差风险。")
+    # 去重（同一变量可能在多处被扫描）
+    seen = set()
+    uniq = []
+    for i in issues:
+        if i not in seen:
+            seen.add(i)
+            uniq.append(i)
+    return uniq
+
+
 class FactorSandbox:
     """受限执行环境：安全地运行用户/LLM 提供的因子代码。"""
 
-    def __init__(self) -> None:
+    def __init__(self, config: Optional[dict] = None) -> None:
         self.globals: Dict = {
             "__builtins__": _SAFE_BUILTINS,
             "pd": pd,
             "np": np,
         }
+        cfg = config or {}
+        sandbox_cfg = {}
+        if isinstance(cfg, dict):
+            sandbox_cfg = cfg.get("engine", {}).get("sandbox", {}) or {}
+        # 是否在独立子进程中执行因子代码：加超时与隔离，避免死循环卡死界面
+        self.use_subprocess = bool(sandbox_cfg.get("subprocess", True))
+        self.timeout = float(sandbox_cfg.get("timeout", 30))
+        self.memory_limit_mb = int(sandbox_cfg.get("memory_limit_mb", 0))
 
     def run(self, code: str, df: pd.DataFrame) -> pd.Series:
         """在沙箱中执行因子代码并返回因子 Series。
+
+        流程：先做前视偏差静态检查（AST），再在（可选）独立子进程中执行，
+        避免死循环 / 超大数据卡死主进程。
 
         Args:
             code: 因子计算代码（定义 alpha_factor 函数或直接给出 factor）。
@@ -74,6 +139,24 @@ class FactorSandbox:
         Raises:
             ValueError: 代码不可执行、无因子输出或形状不合法。
         """
+        if not isinstance(code, str) or not code.strip():
+            raise ValueError("因子代码为空。")
+        # —— 前视偏差静态检查（AST）——
+        la_issues = analyze_lookahead(code)
+        if la_issues:
+            raise ValueError(
+                "前视偏差静态检查未通过（疑似使用未来信息）：\n" + "\n".join(la_issues)
+            )
+        if self.use_subprocess:
+            try:
+                return self._run_subprocess(code, df)
+            except (RuntimeError, OSError) as e:  # 仅子进程基础设施故障时回退
+                print(f"[sandbox] 子进程不可用，回退进程内执行：{e}")
+                return self._run_inprocess(code, df)
+        return self._run_inprocess(code, df)
+
+    def _run_inprocess(self, code: str, df: pd.DataFrame) -> pd.Series:
+        """进程内执行（兜底 / 子进程不可用时）。"""
         local_globals = dict(self.globals)
         local_globals["df"] = df.copy()
         try:
@@ -93,6 +176,42 @@ class FactorSandbox:
         else:
             raise ValueError("因子代码未定义 alpha_factor() 函数，也未产出 'factor' 变量")
 
+        return self._normalize(result, df)
+
+    def _run_subprocess(self, code: str, df: pd.DataFrame) -> pd.Series:
+        """在独立子进程中执行因子代码（带超时与隔离）。
+
+        通过 pickle 传递行情数据，子进程复用同一套受限 globals 执行，
+        执行完成后返回原始结果，由父进程统一做 _normalize。
+        """
+        runner = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_sandbox_runner.py")
+        if not os.path.exists(runner):
+            raise RuntimeError("沙箱子进程运行脚本缺失：_sandbox_runner.py")
+        with tempfile.TemporaryDirectory() as td:
+            code_path = os.path.join(td, "code.py")
+            in_path = os.path.join(td, "in.pkl")
+            out_path = os.path.join(td, "out.pkl")
+            with open(code_path, "w", encoding="utf-8") as f:
+                f.write(code)
+            with open(in_path, "wb") as f:
+                pickle.dump(df, f)
+            try:
+                proc = subprocess.run(
+                    [sys.executable, runner, code_path, in_path, out_path],
+                    capture_output=True, text=True, timeout=self.timeout,
+                    cwd=os.path.dirname(os.path.abspath(__file__)),
+                )
+            except subprocess.TimeoutExpired:
+                raise TimeoutError(
+                    f"因子执行超时（>{int(self.timeout)}s），可能存在死循环或超大数据，已终止。"
+                )
+            if proc.returncode != 0:
+                err = (proc.stderr or proc.stdout or "").strip()[-2000:]
+                raise ValueError(f"沙箱子进程执行失败：\n{err}")
+            if not os.path.exists(out_path):
+                raise ValueError("沙箱子进程未产出结果文件。")
+            with open(out_path, "rb") as f:
+                result = pickle.load(f)
         return self._normalize(result, df)
 
     @staticmethod

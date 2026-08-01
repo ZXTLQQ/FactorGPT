@@ -38,6 +38,10 @@ env/
 err_norm.txt
 norm_err.txt
 norm_out.txt
+
+# 知识库自动更新 / 因子衰减监测的运行时产物（非源码）
+data/auto_knowledge.jsonl
+data/factor_decay.json
 verify_out.txt
 scripts/_ocr_status.txt
 scripts/_ocr_pdf.log

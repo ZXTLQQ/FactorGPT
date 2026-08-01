@@ -63,6 +63,9 @@ class FactorAgent:
         )
         # 数据准备
         self.kline, self.industry, self.mkt_cap = self._load_data()
+        # 样本外（OOS）切分：训练集用于生成-反思闭环，测试集仅做独立验证，
+        # 杜绝「看着答案改作业」式过拟合（配置见 config.agent.oos）。
+        self.train_kline, self.test_kline = self._split_oos(self.kline)
         # 节点集合
         self.nodes = FactorAgentNodes(
             llm=self.llm,
@@ -73,6 +76,8 @@ class FactorAgent:
             mkt_cap=self.mkt_cap,
             config=self.config,
             learned=self.learned,
+            train_kline=self.train_kline,
+            test_kline=self.test_kline,
         )
         self.max_iterations = int(self.config.get("agent", {}).get("max_iterations", 3))
         self.metrics_threshold = float(
@@ -196,6 +201,28 @@ class FactorAgent:
         if kline is None or kline.empty:
             raise RuntimeError("同花顺网关未返回日K线数据")
         return kline
+
+    @staticmethod
+    def _split_oos(kline, test_frac: float = 0.2, min_test_days: int = 60):
+        """将行情按时间切分为训练集与样本外（OOS）测试集。
+
+        训练集用于因子生成-反思闭环，测试集仅用于最终独立验证，
+        以避免 Agent 在回测窗口内反复调参导致过拟合。
+        """
+        if kline is None or kline.empty or "date" not in kline.columns:
+            return kline, None
+        dates = np.sort(pd.to_datetime(kline["date"]).unique())
+        n_test = max(min_test_days, int(round(len(dates) * test_frac)))
+        if n_test >= len(dates) - 1:
+            # 数据量不足以切分，退回全量（不报 OOS）
+            return kline, None
+        split = dates[-n_test]
+        mask = pd.to_datetime(kline["date"]) >= split
+        test = kline[mask].copy()
+        train = kline[~mask].copy()
+        print(f"[FactorAgent] 样本外切分：训练 {train['date'].nunique()} 日 / "
+              f"样本外 {test['date'].nunique()} 日（切分日 {pd.Timestamp(split).date()}）")
+        return train, test
 
     @staticmethod
     def _synthetic_data(n_symbols: int, start: str, end: str):
