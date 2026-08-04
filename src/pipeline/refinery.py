@@ -20,7 +20,7 @@ import os
 import pickle
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -40,6 +40,22 @@ logger = logging.getLogger("factor_gpt.refinery")
 
 DATE = "date"
 SYMBOL = "symbol"
+
+
+@dataclass
+class RefineryContext:
+    """PART-01~03 完成后的中间态快照。
+
+    人机协同筛选（PART-04 第二级）需要「暂停等待人工评审」，而 Web UI 是无状态的
+    请求-响应模型，无法在一次调用里阻塞等待。故将流水线拆为两段：
+    `run_to_review()` 产出本上下文并暂停，人工在界面上勾选保留/剔除后，
+    再由 `resume_from_review()` 携带评审结果续跑 PART-04~06。
+    """
+    requirement: str
+    ore: OreStock
+    candidates: List[CandidateFactor]
+    trace: List[dict] = field(default_factory=list)
+    t0: float = 0.0
 
 
 @dataclass
@@ -84,6 +100,16 @@ class RefineryPipeline:
 
     # -- 总入口 ---------------------------------------------------------- #
     def run(self, requirement: str = "", review_callback: Optional[Callable] = None) -> RefineryResult:
+        """一次性跑完六道工序（无人值守模式）。
+
+        人机协同筛选若需真人介入，请改用 `run_to_review()` + `resume_from_review()`
+        两段式调用；此处 `review_callback` 仍保留，便于脚本注入自动化评审规则。
+        """
+        ctx = self.run_to_review(requirement)
+        return self.resume_from_review(ctx, review_callback=review_callback)
+
+    # -- 第一段：PART-01~03（产出候选并暂停，等待人工评审） ---------------- #
+    def run_to_review(self, requirement: str = "") -> RefineryContext:
         t0 = time.time()
         trace = []
 
@@ -109,6 +135,31 @@ class RefineryPipeline:
         candidates = self._stage03_evaluate(candidates, ore)
         trace.append(_stage("PART-03 研磨车间(RPN)", time.time() - t0,
                             "完成 Rank IC/IR/ICIR + 稳定性评估"))
+
+        return RefineryContext(requirement=requirement, ore=ore,
+                               candidates=candidates, trace=trace, t0=t0)
+
+    # -- 第二段：PART-04~06（携带人工评审结果续跑） ------------------------ #
+    def resume_from_review(self, ctx: RefineryContext,
+                           review_callback: Optional[Callable] = None,
+                           keep_names: Optional[Iterable[str]] = None) -> RefineryResult:
+        """从人机协同评审点续跑。
+
+        `keep_names` 为人工在界面上勾选保留的因子名集合；给定后会构造评审回调，
+        真实作用于 PART-04 第二级筛选的 `screened` 结果（而非仅作展示）。
+        """
+        t0 = ctx.t0 or time.time()
+        trace = ctx.trace
+        ore = ctx.ore
+        candidates = ctx.candidates
+        requirement = ctx.requirement
+
+        if keep_names is not None:
+            keep_set = {str(n) for n in keep_names}
+
+            def review_callback(cands, _keep=keep_set):  # noqa: F811
+                # 评审回调约定返回「保留的因子名列表」
+                return [c.name for c in cands if c.name in _keep]
 
         # PART-04 三级筛选
         screener = Screener(self.config.screener)
@@ -175,6 +226,7 @@ class RefineryPipeline:
             ic_by_year=ic_year, benchmark_comparison=bench_cmp, factor_zoo=zoo,
             multimodal_factors=ore.meta.get("multimodal_factors"),
             eval_set=eval_set,
+            screen_audit=dict(getattr(screener, "audit", {}) or {}),
         )
 
         # P1 产品化交付：导出因子表达式 / 调仓 CSV / 可解释 HTML+PDF 报告
@@ -413,7 +465,7 @@ class RefineryPipeline:
         df = df.sort_values(["symbol", "date"])
         g = df.groupby("symbol")
         base = df[["date", "symbol"]].copy()
-        for i in range(1, MINUTE_FEATURES + 1):
+        for i in range(1, len(MINUTE_FEATURES) + 1):
             if i <= 10:
                 base[f"min_ret_{i}"] = g["close"].transform(lambda x: x.pct_change(i - 1))
             else:

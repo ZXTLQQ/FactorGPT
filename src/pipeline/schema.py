@@ -75,3 +75,5 @@ class RefineryResult:
     multimodal_factors: Optional[List[str]] = None  # 纳入因子池的多模态因子名
     # 评估窗口：复合因子性能指标所用的数据集，"test"=样本外 / "train"=样本内回退
     eval_set: str = "train"
+    # PART-04 三级筛选审计留痕（LASSO / 人机协同 / TOP-K 各级进出数量与人工剔除明细）
+    screen_audit: Dict = field(default_factory=dict)

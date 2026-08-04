@@ -120,10 +120,19 @@ class FeatureForge:
         """多进程并行构建因子池（Daily 多进程并行计算）。"""
         dates = list(dates)
         args = [(n, dates, symbols, self.seed + i * 7) for i, n in enumerate(names)]
-        if self.n_workers > 1 and len(names) > 1:
-            with mp.Pool(processes=min(self.n_workers, len(names))) as pool:
-                res = pool.map(_build_factor_chunk, args)
+        from engine.rpn_engine import multiprocessing_safe
+
+        safe, reason = multiprocessing_safe()
+        if self.n_workers > 1 and len(names) > 1 and safe:
+            try:
+                with mp.Pool(processes=min(self.n_workers, len(names))) as pool:
+                    res = pool.map(_build_factor_chunk, args)
+            except Exception as e:  # noqa: BLE001  # 进程池不可用时兜底串行
+                logger.warning("因子池并行构建失败（%s），已回退串行", e)
+                res = [_build_factor_chunk(a) for a in args]
         else:
+            if self.n_workers > 1 and len(names) > 1:
+                logger.info("因子池构建退化为串行：%s", reason)
             res = [_build_factor_chunk(a) for a in args]
         return dict(res)
 

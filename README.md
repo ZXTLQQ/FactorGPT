@@ -24,6 +24,27 @@ python run_agent.py --refinery "混合日频与月频，结合短期反转与流
 python run_agent.py --refinery --no-offline "混合日频与月频，结合短期反转与流动性"
 ```
 
+### 演示前自检（断网可用性一键体检）
+
+现场答辩最怕断网与依赖缺失。运行自检脚本可在 10 秒内确认「离线是否演得完整」：
+
+```bash
+# 只体检：核对 RL 依赖、Ollama 本地模型、行情整矿缓存、向量库、沙箱开关
+python scripts/preflight_check.py
+
+# 体检并一键切到离线演示档位（把所有 cache_only 置为 true）
+python scripts/preflight_check.py --offline
+```
+
+体检覆盖五类风险：① `torch/sb3/sb3-contrib` 是否齐备（决定 PART-02 跑真 MaskablePPO 还是降级启发式）；
+② 本地 Ollama 端点与目标模型是否就绪（决定断网时能否继续生成因子）；
+③ `data/cache/real_ore.pkl` 整矿与分级缓存是否齐备（决定 `cache_only=true` 能否零联网跑通）；
+④ ChromaDB / BGE / 已学习因子库是否可用；⑤ 子进程沙箱与 Kronos 权重是否会在断网时抛错中断。
+脚本对「会中断演示」的项判为 FAIL 并给出修复命令，对「可接受降级」的项判为 WARN 并提示答辩时如何说明。
+
+演示前的标准动作是：先联网执行 `python scripts/prefetch_data.py` 预备真实行情整矿，
+再执行 `python scripts/preflight_check.py --offline` 切离线档位，最后拔网跑一遍完整闭环。
+
 ## 因子挖掘 Agent 工作流
 
 Agent 基于 LangGraph 编排，形成「检索 → 生成 → 校验 → 评价 → 反思」闭环：
@@ -44,7 +65,7 @@ Agent 基于 LangGraph 编排，形成「检索 → 生成 → 校验 → 评价
 | PART-01 | 矿石原料仓（数据底座） | `FeatureForge` | 28 分钟级原始特征 + 50+ 时序/截面因子池 + 9 行业/3 风格维度；多进程并行构建 |
 | PART-02 | 采矿作业层（三维生成） | `TransformerEncoder` + `FactorRLSearch` + LLM 矿场 | Transformer(d_model=128,2层,5头) 向量化表征；MaskablePPO 动作屏蔽式因子组合搜索；LLM 矿脉探索 |
 | PART-03 | 研磨车间（RPN 引擎） | `RPNEngine` | Rank IC / IR / ICIR 量化有效性度量 + 稳定性评估 + 多进程并行批量求值 |
-| PART-04 | 三级筛选（浮选） | `Screener` | 第一级 LASSO 去冗余 → 第二级 人机协同 → 第三级 TOP 10% 截断 |
+| PART-04 | 三级筛选（浮选） | `Screener` | 第一级 LASSO 去冗余 → 第二级 人机协同评审（Web 端勾选保留/剔除，真实作用于入选集并留痕）→ 第三级 TOP 10% 截断 |
 | PART-05 | 合金配比（AlphaPool） | `AlphaPool` | ICIR 加权 + 正交化合成 + leave-one-out 过拟合检验 + 迭代优化 |
 | PART-06 | 提交（方法学总结） | `MethodologyReport` | 自动产出方法学报告（构建逻辑/参数依据/交叉验证），一键导出 MD + JSON |
 
@@ -73,7 +94,7 @@ Agent 基于 LangGraph 编排，形成「检索 → 生成 → 校验 → 评价
 - `test_agent_quick.py` — 离线集成测试（桩 LLM + 合成数据）
 - `src/pipeline/refinery.py` — 六阶段精炼厂编排（`RefineryPipeline` + `build_refinery_config`）
 - `src/pipeline/schema.py` — 阶段间数据契约（`OreStock` / `CandidateFactor` / `RefineryResult`）
-- `src/pipeline/screener.py` — PART-04 三级筛选（LASSO + 人机协同 + TOP 10%）
+- `src/pipeline/screener.py` — PART-04 三级筛选（LASSO + 人机协同评审 + TOP 10%，含三级审计留痕 `screen_audit`）
 - `src/pipeline/alpha_pool.py` — PART-05 AlphaPool 合成（正交化 + leave-one-out）
 - `src/pipeline/methodology.py` — PART-06 方法学总结报告生成与导出
 - `src/engine/rpn_engine.py` — PART-03 RPN 求值引擎（可插拔指标 + 稳定性 + 并行）

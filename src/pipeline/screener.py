@@ -45,6 +45,8 @@ class Screener:
 
     def __init__(self, config: Optional[ScreenerConfig] = None):
         self.config = config or ScreenerConfig()
+        # 三级筛选审计留痕：记录每一级的进出数量与人工评审明细，供方法学报告与交付物追溯
+        self.audit: Dict[str, object] = {}
 
     # -- 第一级：LASSO ---------------------------------------------------- #
     def lasso_filter(self, candidates: List[CandidateFactor], kline: pd.DataFrame) -> List[CandidateFactor]:
@@ -95,14 +97,34 @@ class Screener:
         review_callback: Optional[Callable[[List[CandidateFactor]], List[str]]] = None,
     ) -> List[CandidateFactor]:
         if not self.config.use_human_collab:
+            self.audit["human_collab"] = {"mode": "disabled", "in": len(candidates), "out": len(candidates)}
             return candidates
         # 生成可视化统计（供 Partice 协同平台展示）
         stats = self._viz_stats(candidates)
         logger.info("人机协同筛选候选：\n%s", stats)
         if review_callback is None:
+            self.audit["human_collab"] = {
+                "mode": "auto",  # 无人值守：本级透传，实际由 LASSO + TOP-K 决定
+                "in": len(candidates), "out": len(candidates), "rejected": [],
+            }
             return candidates  # 默认全保留（无人介入时）
-        keep_names = set(review_callback(candidates))
-        return [c for c in candidates if c.name in keep_names]
+        keep_names = {str(n) for n in (review_callback(candidates) or [])}
+        kept = [c for c in candidates if c.name in keep_names]
+        if not kept:
+            # 人工全部剔除会使后续合成无米下炊：留痕告警并回退全保留，保证流水线不中断
+            logger.warning("人机协同评审剔除了全部候选，已回退为全保留以维持流水线可用性")
+            self.audit["human_collab"] = {
+                "mode": "human", "in": len(candidates), "out": len(candidates),
+                "rejected": [], "warning": "评审结果为空，已回退全保留",
+            }
+            return candidates
+        rejected = [c.name for c in candidates if c.name not in keep_names]
+        logger.info("人机协同筛选：%d → %d（人工剔除 %d 个）", len(candidates), len(kept), len(rejected))
+        self.audit["human_collab"] = {
+            "mode": "human", "in": len(candidates), "out": len(kept),
+            "kept": [c.name for c in kept], "rejected": rejected,
+        }
+        return kept
 
     @staticmethod
     def _viz_stats(candidates) -> str:
@@ -130,7 +152,14 @@ class Screener:
         kline: pd.DataFrame,
         review_callback: Optional[Callable[[List[CandidateFactor]], List[str]]] = None,
     ) -> List[CandidateFactor]:
+        self.audit = {"input": len(candidates)}
         out = self.lasso_filter(candidates, kline)
+        self.audit["lasso"] = {"in": len(candidates), "out": len(out),
+                               "mode": "lasso" if (self.config.use_lasso and _HAS_SKLEARN) else "corr_fallback"}
         out = self.human_collab_filter(out, review_callback)
+        n_before_topk = len(out)
         out = self.topk_truncation(out)
+        self.audit["topk"] = {"in": n_before_topk, "out": len(out),
+                              "ratio": self.config.topk_ratio, "min_keep": self.config.min_keep}
+        self.audit["output"] = len(out)
         return out

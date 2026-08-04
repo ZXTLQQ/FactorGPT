@@ -449,6 +449,15 @@ def render_refinery():
         return
 
     cfg = load_config().get("refinery", {})
+    mode = st.radio(
+        "运行模式",
+        ["无人值守（一键跑完六道工序）", "人机协同评审（PART-04 第二级人工介入）"],
+        horizontal=True,
+        help="人机协同模式会在 PART-03 评估完成后暂停，由研究员在下方表格勾选保留/剔除，"
+             "评审结果真实作用于 PART-04 第二级筛选，再续跑 PART-05/06。",
+    )
+    human_mode = mode.startswith("人机协同")
+
     with st.form("refinery_form"):
         desc = st.text_input("复合因子目标描述", value="混合日频与月频，结合短期反转与流动性")
         seed = st.number_input("基础因子候选取样数", min_value=4, max_value=40,
@@ -457,26 +466,102 @@ def render_refinery():
                                value=int(cfg.get("rl_candidates", 6)))
         backend = st.selectbox("RL 后端", ["auto", "sb3", "heuristic"],
                                index=["auto", "sb3", "heuristic"].index(cfg.get("rl_backend", "auto")))
-        submitted = st.form_submit_button("🚀 运行精炼厂", type="primary")
+        submitted = st.form_submit_button(
+            "🔎 生成并评估候选（进入评审）" if human_mode else "🚀 运行精炼厂", type="primary")
+
+    def _build_pipe():
+        from pipeline.refinery import RefineryPipeline, build_refinery_config
+
+        merged = dict(cfg)
+        merged.update({"n_pool_seed": seed, "rl_candidates": cand, "rl_backend": backend})
+        return RefineryPipeline(build_refinery_config(merged))
 
     if submitted and desc.strip():
-        with st.spinner("精炼厂运行中（RL 训练 + RAG + Transformer）..."):
-            try:
-                from pipeline.refinery import RefineryPipeline, build_refinery_config
+        # 清空上一轮评审态，避免参数变更后仍沿用旧候选
+        st.session_state.pop("refinery_ctx", None)
+        st.session_state.pop("refinery_pipe", None)
+        st.session_state.pop("refinery_result", None)
+        if human_mode:
+            with st.spinner("PART-01~03 运行中（矿石 → 三维生成 → RPN 评估）..."):
+                try:
+                    pipe = _build_pipe()
+                    ctx = pipe.run_to_review(desc)
+                except Exception as e:
+                    st.exception(e)
+                    return
+            st.session_state["refinery_pipe"] = pipe
+            st.session_state["refinery_ctx"] = ctx
+        else:
+            with st.spinner("精炼厂运行中（RL 训练 + RAG + Transformer）..."):
+                try:
+                    st.session_state["refinery_result"] = _build_pipe().run(desc)
+                except Exception as e:
+                    st.exception(e)
+                    return
 
-                merged = dict(cfg)
-                merged.update(
-                    {"n_pool_seed": seed, "rl_candidates": cand, "rl_backend": backend}
-                )
-                rcfg = build_refinery_config(merged)
-                pipe = RefineryPipeline(rcfg)
-                result = pipe.run(desc)
-            except Exception as e:
-                st.exception(e)
-                return
+    # ── 人机协同评审面板（PART-04 第二级）────────────────────────────────
+    ctx = st.session_state.get("refinery_ctx")
+    if ctx is not None and st.session_state.get("refinery_result") is None:
+        st.subheader("🧑‍🔬 PART-04 第二级 · 人机协同评审")
+        st.caption("勾选「保留」的因子将进入 TOP-K 截断与 AlphaPool 合成；取消勾选即被人工剔除。"
+                   "评审结果会写入方法学报告的审计留痕。")
+        rows = []
+        for c in ctx.candidates:
+            m = c.metrics or {}
+            rows.append({
+                "保留": True,
+                "因子": c.name,
+                "来源": c.source,
+                "ICIR": round(float(m.get("icir", 0) or 0), 4),
+                "RankIC均值": round(float(m.get("rank_ic_mean", m.get("ic_mean", 0)) or 0), 4),
+                "稳定性": round(float(m.get("stability_score", 0) or 0), 4),
+                "换手": round(float(m.get("turnover", 0) or 0), 4),
+                "说明": (c.description or c.rationale or "")[:60],
+            })
+        df_review = pd.DataFrame(rows).sort_values("ICIR", ascending=False, ignore_index=True)
+        edited = st.data_editor(
+            df_review,
+            use_container_width=True,
+            hide_index=True,
+            disabled=["因子", "来源", "ICIR", "RankIC均值", "稳定性", "换手", "说明"],
+            column_config={"保留": st.column_config.CheckboxColumn("保留", help="取消勾选表示人工剔除")},
+            key="refinery_review_editor",
+        )
+        keep_names = [str(r["因子"]) for _, r in edited.iterrows() if bool(r["保留"])]
+        st.write(f"当前保留 **{len(keep_names)}** / {len(edited)} 个候选因子")
+        col_a, col_b = st.columns([1, 1])
+        with col_a:
+            go = st.button("✅ 按我的评审继续冶炼（PART-04~06）", type="primary")
+        with col_b:
+            if st.button("↩️ 放弃本次评审"):
+                st.session_state.pop("refinery_ctx", None)
+                st.session_state.pop("refinery_pipe", None)
+                st.rerun()
+        if go:
+            if not keep_names:
+                st.warning("至少需保留 1 个因子，否则无法进行 AlphaPool 合成。")
+            else:
+                with st.spinner("PART-04~06 运行中（三级筛选 → 合金配比 → 方法学报告）..."):
+                    try:
+                        pipe = st.session_state["refinery_pipe"]
+                        st.session_state["refinery_result"] = pipe.resume_from_review(
+                            ctx, keep_names=keep_names)
+                    except Exception as e:
+                        st.exception(e)
+                        return
+                st.session_state.pop("refinery_ctx", None)
+                st.rerun()
+
+    # ── 结果展示 ──────────────────────────────────────────────────────
+    result = st.session_state.get("refinery_result")
+    if result is not None:
         st.success(f"精炼厂完成：候选 {len(result.candidates)} → 入选 {len(result.screened)}")
         ic = result.composite_metrics.get("icir")
         st.metric("复合 ICIR", f"{ic:.4f}" if isinstance(ic, (int, float)) else str(ic))
+        audit = getattr(result, "screen_audit", None)
+        if audit:
+            with st.expander("三级筛选审计留痕", expanded=False):
+                st.json(audit)
         if result.composite is not None:
             import matplotlib.pyplot as plt
 

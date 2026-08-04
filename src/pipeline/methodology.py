@@ -131,6 +131,33 @@ class MethodologyReport:
                          f"{m.get('stability_score', 0):.3f} | {m.get('turnover', 0):.3f} |")
         lines.append("")
 
+        # 三-附：三级筛选审计留痕（可追溯「谁在哪一级剔除了什么」）
+        audit = getattr(result, "screen_audit", None) or {}
+        if audit:
+            lines.append("### 三级筛选审计留痕")
+            lines.append("")
+            lines.append("| 层级 | 输入 | 输出 | 模式 |")
+            lines.append("|------|------|------|------|")
+            for key, label in (("lasso", "第一级 LASSO 去冗余"),
+                               ("human_collab", "第二级 人机协同"),
+                               ("topk", "第三级 TOP-K 截断")):
+                st_ = audit.get(key) or {}
+                if st_:
+                    lines.append(f"| {label} | {st_.get('in', '-')} | {st_.get('out', '-')} "
+                                 f"| {st_.get('mode', 'auto')} |")
+            hc = audit.get("human_collab") or {}
+            if hc.get("mode") == "human":
+                rej = hc.get("rejected") or []
+                lines.append("")
+                lines.append(f"- 人工评审：保留 {hc.get('out')} 个，剔除 {len(rej)} 个"
+                             + (f"（{', '.join(map(str, rej[:12]))}）" if rej else ""))
+                if hc.get("warning"):
+                    lines.append(f"- 提示：{hc['warning']}")
+            elif hc:
+                lines.append("")
+                lines.append("- 本次为无人值守模式：人机协同层透传，实际筛选由 LASSO 与 TOP-K 截断决定。")
+            lines.append("")
+
         # 四、交叉验证（训练 / 测试）
         lines.append("## 四、交叉验证（训练集 / 测试集）")
         lines.append("")

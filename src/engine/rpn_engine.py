@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import logging
 import multiprocessing as mp
+import os
+import re
+import sys
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -25,6 +28,43 @@ logger = logging.getLogger("factor_gpt.rpn")
 
 DATE = "date"
 SYMBOL = "symbol"
+
+
+def multiprocessing_safe() -> Tuple[bool, str]:
+    """判断当前上下文能否安全启用多进程池。
+
+    Windows / macOS 默认 spawn 启动方式会在子进程中「重新导入主模块」。若主模块
+    没有 ``if __name__ == "__main__":`` 保护（例如 Streamlit 脚本、Jupyter、
+    无守卫的一次性脚本），子进程会重跑整条流水线，轻则算力翻倍、重则界面卡死。
+    因此并行前先做安全检测，不安全时静默退化为串行，保证「宁慢勿崩」。
+
+    Returns
+    -------
+    (safe, reason) : 是否安全，以及不安全的原因（用于日志与答辩说明）
+    """
+    if os.environ.get("FACTORGPT_FORCE_SERIAL", "").lower() in {"1", "true", "yes"}:
+        return False, "环境变量 FACTORGPT_FORCE_SERIAL 已强制串行"
+    if mp.get_start_method(allow_none=True) == "fork":
+        return True, ""
+    try:
+        if mp.parent_process() is not None:
+            return False, "当前已处于子进程中，禁止再派生进程池"
+    except Exception:  # noqa: BLE001  # Python <3.8 无该 API
+        pass
+    if "streamlit" in sys.modules:
+        return False, "运行于 Streamlit 脚本上下文，spawn 会重跑整个页面"
+    main = sys.modules.get("__main__")
+    path = getattr(main, "__file__", None)
+    if not path:
+        return False, "主模块无文件路径（交互式/嵌入式环境）"
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            src = f.read()
+    except OSError:
+        return False, "主模块源码不可读，无法确认 __main__ 守卫"
+    if not re.search(r"if\s+__name__\s*==\s*[\"']__main__[\"']", src):
+        return False, f"主模块 {os.path.basename(path)} 缺少 __main__ 守卫"
+    return True, ""
 
 
 @dataclass
@@ -119,14 +159,23 @@ class RPNEngine:
         if not self.config.parallel or len(factors) <= 1:
             return {name: self.evaluate(f, kline) for name, f in factors.items()}
 
+        safe, reason = multiprocessing_safe()
+        if not safe:
+            logger.info("并行求值已退化为串行：%s", reason)
+            return {name: self.evaluate(f, kline) for name, f in factors.items()}
+
         items = list(factors.items())
         args = [
             (name, f, kline, self.config.n_quantiles, self.config.forward_periods,
              self.config.commission, self.config.risk_free_rate)
             for name, f in items
         ]
-        with mp.Pool(processes=min(self.config.n_workers, len(items))) as pool:
-            results = pool.map(_eval_worker, args)
+        try:
+            with mp.Pool(processes=min(self.config.n_workers, len(items))) as pool:
+                results = pool.map(_eval_worker, args)
+        except Exception as e:  # noqa: BLE001  # 进程池不可用时兜底串行，保证流程不中断
+            logger.warning("多进程求值失败（%s），已回退串行计算", e)
+            return {name: self.evaluate(f, kline) for name, f in items}
         return {name: m for name, m in zip([n for n, _ in items], results)}
 
     # -- 目标函数 / 排序 --------------------------------------------------- #

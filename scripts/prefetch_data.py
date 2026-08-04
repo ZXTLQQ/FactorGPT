@@ -33,7 +33,9 @@ def main() -> int:
     try:
         ore = pipe.prepare_real_ore()
     except Exception as e:  # noqa: BLE001
+        import traceback
         print(f"[prefetch] 预备失败：{e}")
+        traceback.print_exc()
         print("[prefetch] 请检查网络 / akshare 可用性；或确认 data.cache_only 未误开。")
         return 1
 
