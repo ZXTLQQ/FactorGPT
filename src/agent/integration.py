@@ -17,8 +17,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from ..engine.factor_library import FactorLibrary, create_default_library, mass_produce_factors
-from ..engine.traditional_factors import (
+from engine.factor_library import FactorLibrary, create_default_library, mass_produce_factors
+from engine.traditional_factors import (
     FactorDef,
     ALL_CATEGORIES,
     CATEGORY_LABELS,
@@ -26,9 +26,9 @@ from ..engine.traditional_factors import (
     get_factors_by_category,
     search_factors,
 )
-from ..engine.transformer_coupling import TransformerCoupling
-from ..engine.genetic_enhanced import EnhancedFactorEvolver, FactorCluster, EventWindow
-from ..engine.unstructured_miner import (
+from engine.transformer_coupling import TransformerCoupling
+from engine.genetic_enhanced import EnhancedFactorEvolver, FactorCluster, EventWindow
+from engine.unstructured_miner import (
     TextAnalyzer,
     DataUploadParser,
     AlternativeDataManager,
