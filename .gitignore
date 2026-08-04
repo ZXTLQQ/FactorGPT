@@ -47,6 +47,10 @@ scripts/_ocr_status.txt
 scripts/_ocr_pdf.log
 scripts/_ocr_pdf.err
 
+# 申报书与项目报告（文字类文档，不入库）
+*作品申报书*
+*项目报告*
+
 # 模型权重（大体积，下载产物，非源码）
 models/
 
