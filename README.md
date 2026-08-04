@@ -1,10 +1,12 @@
-# FactorGPT — LLM 金融因子挖掘 Agent
+# FactorGPT — LLM 金融因子挖掘 Agent (v4.x)
 
 浙江省大学生金融创新大赛（A类：金融创新产品设计）参赛项目。
 
 ## 项目简介
 
-FactorGPT 是一个基于大语言模型（LLM）的智能金融因子挖掘 Agent，将自然语言理解与量化金融因子工程深度融合，支持从非结构化数据中自动提取、验证与组合优化金融因子。
+FactorGPT 是一个基于大语言模型（LLM）的智能金融因子工业化平台，将自然语言理解与量化金融因子工程深度融合，支持从结构化/非结构化数据中自动提取、验证、组合优化与工业化生产金融因子。
+
+v4.x 较 v3.x 新增六大因子工程模块：61 个预置传统因子库、因子库管理器（CRUD/批量生产）、增强遗传规划（因子簇+岛屿模型+事件窗口）、非结构化数据因子挖掘（文本→Alpha 信号）、Transformer-Agent 深度耦合（向量化推理闭环）、以及 17 页一体化 Web 前端。
 
 ## 快速开始
 
@@ -102,6 +104,69 @@ Agent 基于 LangGraph 编排，形成「检索 → 生成 → 校验 → 评价
 - `src/agent/transformer_encoder.py` — PART-02 Transformer 向量化表征（numpy 降级）
 - `src/agent/rl_search.py` — PART-02 MaskablePPO 动作屏蔽因子组合搜索（集束降级）
 - `scripts/verify_refinery_pipeline.py` — 精炼厂端到端验证（合成数据，无需网络）
+
+## v4.x 新增：六大因子工程模块
+
+v4.x 将因子生产体系从 Agent 管线扩展为完整的「因子工业化平台」，新增以下六大核心模块：
+
+### 1. 61 个预置传统因子库 (`src/engine/traditional_factors.py`)
+
+覆盖五大方向的专家级现成因子池，无需 LLM 即可参与分析与回测：
+
+| 方向 | 数量 | 业务含义 |
+|------|------|----------|
+| 价格趋势 (PRICE_TREND) | 18 | SMA/EMA 交叉、布林带、ADX、ATR |
+| 波动率 (VOLATILITY) | 9 | 历史/已实现波动率、Parkinson/GK/RS 极值波动率 |
+| 交易强弱 (TRADING_DIFFICULTY) | 15 | VWAP、OBV/多周期、MFI、筹码分布、威廉、PSY 多周期 |
+| 量价 (PRICE_VOLUME) | 10 | 量比/多周期、换手率/多周期、VROC |
+| 成交量派生 (VOLUME_FORMULA) | 9 | 经典量价公式、量价背离/级别、量加速、OBV-ATR 归一 |
+
+每个因子定义为 `FactorDef` 数据类，包含名称、类别、标签、公式（Markdown+LaTeX）、Pandas 参考实现代码。支持按类别/关键词搜索、批量导出为 dict，可直接对接前端表格展示。
+
+### 2. 因子库管理器 (`src/engine/factor_library.py`)
+
+`FactorLibrary` 统一管理三个知识来源的因子：传统因子库（61个）、已学习因子（`data/learned_factors.jsonl`）、外部导入因子（如飞书因子字典）。提供 CRUD（增删改查）、统计概览、参数簇扩增（按周期/参数自动裂变）、批量生产（`mass_produce_factors` 对多个标的并发生成）等能力，为前端因子管理页面提供后端支撑。
+
+### 3. 增强遗传规划因子挖掘 (`src/engine/genetic_enhanced.py`)
+
+在传统遗传规划基础上引入三大增强机制：
+- **因子簇 (FactorCluster)**：将相似因子分组管理，维护簇内多样性，避免收敛到同质化解。
+- **岛屿模型 (Island Model)**：多子种群独立演化，周期性迁移精英个体，提升全局搜索能力。
+- **事件窗口 (EventWindow)**：定义触发因子重组/淘汰的特定市场条件，让因子进化与市场状态联动。
+
+内置 15 个运算符（算术、比较、时序变换、截面排名），支持自定义适应度函数（IC、Sharpe、ICIR），`EnhancedFactorEvolver` 封装完整的「初始化→选择→交叉→变异→精英保留→收敛判断」演化循环。
+
+### 4. 非结构化数据因子挖掘 (`src/engine/unstructured_miner.py`)
+
+突破传统结构化行情因子边界，从多模态文本数据中提取 Alpha 信号：
+- **TextAnalyzer**：对新闻、公告、研报文本进行分词、实体识别与情感极性量化。
+- **AlternativeDataManager**：管理另类数据集（供应链、舆情、卫星遥感文本描述等），支持版本化与元数据检索。
+- **DataUploadParser**：解析用户上传的 CSV/JSON/Excel/TXT 非结构化数据，自动推断字段语义。
+- **UnstructuredFactorIntegrator**：将文本信号与结构化因子融合，生成混合因子并评估增量信息贡献。
+
+与 LLM Agent 无缝衔接：用户上传文件后，Agent 自动调用 TextAnalyzer 提取信号，经 UnstructuredFactorIntegrator 融合后交付给回测流水线。
+
+### 5. Transformer-Agent 深度耦合 (`src/engine/transformer_coupling.py`)
+
+将 PART-02 的 Transformer 向量化表征与 Agent 认知环路深度耦合，实现「感知→推理→行动」的闭环：
+- **TransformerCoupling**：管理 Transformer 编码器实例，将原始特征矩阵映射为向量嵌入。
+- **CouplingScheduler**：控制耦合强度与频率，决定哪些 Agent 决策步骤需要向量化上下文。
+- **AgentContextBuilder**：将 Transformer 嵌入与因子库检索结果融合为 Agent 可消费的结构化上下文。
+- **AttentionVisualizer**：可视化注意力权重，支撑 Agent 对因子选择过程的「可解释推理」。
+- **CouplingAuditTrail**：完整记录每一步耦合决策，用于审计与复现。
+
+该模块将量化模型的隐式知识（Transformer 嵌入）与 Agent 的显式推理（LLM 思维链）融为一体，显著提升因子发现的深度与可解释性。
+
+### 6. Agent-前端集成层 (`src/agent/integration.py` + UI 页面)
+
+一站式桥接层，将上述五个引擎模块全部注入 Streamlit 17 页导航：
+
+- 「📊 传统因子探索」— 五大类 61 因子一览、搜索、详情查看
+- 「📚 因子库管理」— CRUD、外部导入、批量生产
+- 「🧬 遗传规划」— 开始/停止演化、簇/岛屿可视化
+- 「📄 非结构化挖掘」— 上传文件、提取信号、融合评估
+- 「🔗 Transformer 耦合」— 注意力热力图、耦合审计
+- 「因子生成 (Agent v4)」— 全部模块驱动的增强 Agent 工作流
 
 ## 配置说明（config.yaml）
 

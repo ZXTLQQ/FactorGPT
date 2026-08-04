@@ -6,11 +6,16 @@ __pycache__/
 # 数据与向量库（本地产物，非源码）
 chroma_db/
 data/*.db
+data/*.db-shm
+data/*.db-wal
 data/*.sqlite3
 output/
 
 # 日志
 *.log
+prefetch_log.txt
+preflight_output.txt
+test_log.txt
 
 # 密钥与本地配置（切勿入库）
 .env
