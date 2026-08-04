@@ -1176,7 +1176,7 @@ def render_vibe_trading():
 def render_traditional_factors():
     st.title("📊 传统因子库")
     st.caption("五大方向 · 55+ 预置因子 · 因子簇参数扩增 · 与遗传规划/LLM 联动")
-    from src.engine.traditional_factors import CATEGORY_LABELS, ALL_CATEGORIES, get_factors_by_category, export_all_to_dict
+    from src.engine.traditional_factors import CATEGORY_LABELS, ALL_CATEGORIES, get_factors_by_category, get_all_factors, export_all_to_dict
 
     # 统计卡片
     library = get_library()
