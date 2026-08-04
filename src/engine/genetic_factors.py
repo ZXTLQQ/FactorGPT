@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from engine.factor_builder import analyze_lookahead
+from .factor_builder import analyze_lookahead
 
 _COLS = ["open", "high", "low", "close", "volume", "amount", "pct_chg"]
 _ROL_W = [3, 5, 10, 20, 60]

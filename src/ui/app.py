@@ -36,6 +36,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from agent.graph import FactorAgent   # noqa: E402
 from agent.vibe_trading import VibeTradingSession  # noqa: E402
+from agent.integration import (
+    get_library, get_coupling, get_unstructured_manager, get_text_analyzer,
+    query_to_factor_suggestions, build_enriched_knowledge,
+    mass_produce_from_library, analyze_unstructured_file,
+)
 from ui.methodologist import run_methodologist, get_factor_name_from_report  # noqa: E402
 from ui.market_hub import render_market_hub  # noqa: E402
 from rag.chroma_store import ensure_chroma  # noqa: E402
@@ -1165,12 +1170,240 @@ def render_vibe_trading():
         _render_agent_dict(d, with_method=auto_method)
 
 
+# ----------------------------------------------------------------------
+# 页面：传统因子库浏览器
+# ----------------------------------------------------------------------
+def render_traditional_factors():
+    st.title("📊 传统因子库")
+    st.caption("五大方向 · 55+ 预置因子 · 因子簇参数扩增 · 与遗传规划/LLM 联动")
+    from src.engine.traditional_factors import CATEGORY_LABELS, ALL_CATEGORIES, get_factors_by_category, export_all_to_dict
+
+    # 统计卡片
+    library = get_library()
+    stats = library.statistics()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("因子总数", stats["total"])
+    c2.metric("预置因子", stats["by_source"]["static"])
+    c3.metric("GP 挖掘", stats["by_source"]["generated"])
+    c4.metric("用户定义", stats["by_source"]["user"])
+
+    st.divider()
+
+    # 分类筛选
+    tabs = st.tabs([CATEGORY_LABELS[c] for c in ALL_CATEGORIES] + ["全量因子"])
+    for idx, tab in enumerate(tabs):
+        with tab:
+            if idx < len(ALL_CATEGORIES):
+                cat = ALL_CATEGORIES[idx]
+                factors = get_factors_by_category(cat)
+                st.subheader(f"{CATEGORY_LABELS[cat]}（{len(factors)} 个）")
+                for f in factors[:12]:
+                    with st.expander(f"{f.display_name} — {f.name}"):
+                        st.caption(f"[{f.direction}] 质量分: {f.quality_score:.2f}")
+                        st.text(f.description)
+                        st.code(f.code[:500] + ("..." if len(f.code) > 500 else ""), language="python")
+                        st.caption(f"标签: {' · '.join(f.tags)}")
+            else:
+                all_f = [f.to_dict() for f in get_all_factors()]
+                query = st.text_input("搜索因子", key="all_factor_search")
+                filtered = [f for f in all_f if query.lower() in f["name"].lower() or query.lower() in f["display_name"].lower()] if query else all_f
+                st.subheader(f"共 {len(filtered)} 个因子")
+                df = pd.DataFrame(filtered)[["name", "display_name", "category_label", "direction", "quality_score", "tags"]]
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # 因子簇扩增
+    st.subheader("📈 批量参数扩增")
+    col_a, col_b = st.columns([3, 1])
+    with col_a:
+        windows = st.multiselect("扩增窗口期", [3, 5, 10, 20, 30, 60, 120], default=[5, 10, 20, 30, 60])
+    with col_b:
+        expand_btn = st.button("执行扩增", type="primary")
+    if expand_btn and windows:
+        with st.spinner(f"正在按 {len(windows)} 个窗口扩增..."):
+            expanded = library.cluster_expand_all(windows=windows)
+        st.success(f"新增 {len(expanded)} 个因子变体")
+        new_stats = library.statistics()
+        st.metric("因子总数", new_stats["total"])
+
+
+# ----------------------------------------------------------------------
+# 页面：遗传规划因子挖掘
+# ----------------------------------------------------------------------
+def render_gp_mining():
+    st.title("🧬 遗传规划因子挖掘")
+    st.caption("因子簇驱动演化 · 岛屿模型 · 事件窗口感知 · 批量海量生产")
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        generations = st.slider("演化代数", 3, 20, 8)
+        pop_size = st.slider("每簇种群大小", 10, 80, 30)
+    with col2:
+        top_k = st.slider("保留顶级因子数", 5, 50, 15)
+        auto_save = st.checkbox("自动入库", value=True)
+
+    run_btn = st.button("🧬 启动 GP 演化", type="primary")
+
+    if run_btn:
+        library = get_library()
+        from src.engine.genetic_enhanced import EnhancedFactorEvolver
+
+        st.info("GP 挖掘需要行情数据。请在下方输入股票代码或选择缓存数据。")
+        st.caption("提示：若当前环境有 real_ore.pkl 缓存，将自动使用。")
+
+    st.divider()
+
+    # 批量生产一键盘
+    st.subheader("🏭 一键批量生产")
+    st.caption("组合参数扩增 + GP演化 + 质量筛选 + 去重融合，全流程自动化")
+    mass_btn = st.button("🚀 开始批量生产", type="primary", use_container_width=True)
+    if mass_btn:
+        with st.spinner("正在批量生产因子（参数扩增 → GP 演化 → 质量筛选 → 去重入库）..."):
+            result = mass_produce_from_library(kline=None, generations=6, windows=[5, 10, 20, 30, 60])
+            st.success(f"生产完成：{result['total_in_library']} 个因子在库中")
+            st.json(result["stats"])
+
+
+# ----------------------------------------------------------------------
+# 页面：非结构化数据挖掘
+# ----------------------------------------------------------------------
+def render_unstructured():
+    st.title("📄 非结构化数据挖掘")
+    st.caption("上传新闻/研报/公告/财务数据 · 自动解析 · 情感因子 · 另类数据源")
+
+    tab1, tab2, tab3 = st.tabs(["文件上传", "另类数据源", "文本分析"])
+
+    with tab1:
+        st.subheader("上传数据文件")
+        st.caption("支持格式：CSV (.csv)、Excel (.xlsx/.xls)、JSON (.json)、TXT (.txt)、PDF (.pdf)")
+
+        uploaded = st.file_uploader("选择文件", type=["csv", "xlsx", "xls", "json", "txt", "pdf"])
+        if uploaded is not None:
+            # 保存到临时目录
+            tmp_dir = Path("data/uploads")
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = tmp_dir / uploaded.name
+            with open(tmp_path, "wb") as f:
+                f.write(uploaded.getbuffer())
+
+            with st.spinner("正在解析文件..."):
+                result = analyze_unstructured_file(str(tmp_path))
+
+            st.success(f"解析完成：{result['meta']['shape'][0]} 行 × {result['meta']['shape'][1]} 列")
+            st.json(result["meta"]["column_mapping"])
+
+            if result.get("sentiment"):
+                s = result["sentiment"]
+                c1, c2, c3 = st.columns(3)
+                c1.metric("情感均值", f"{s['mean']:.3f}")
+                c2.metric("正面词命中", s["pos_hits"])
+                c3.metric("负面词命中", s["neg_hits"])
+                if s.get("industries"):
+                    st.caption(f"涉及行业：{' · '.join(set(s['industries']))}")
+
+            if result.get("factor_ready"):
+                st.success("因子时序就绪，可投入回测")
+
+            st.subheader("数据预览")
+            st.dataframe(pd.DataFrame(result["preview"]), use_container_width=True)
+
+    with tab2:
+        st.subheader("另类数据源管理")
+        mgr = get_unstructured_manager()
+        sources = mgr.list_sources()
+
+        if not sources:
+            st.info("暂无注册的另类数据源。请先在「文件上传」Tab 中上传数据。")
+
+        # 模拟数据源注册
+        mock_sources = [
+            {"id": "social_media", "type": "social_media", "description": "社交媒体热词讨论热度（需接入 API）"},
+            {"id": "supply_chain", "type": "supply_chain", "description": "供应链关系图谱数据"},
+            {"id": "search_trends", "type": "search_trends", "description": "搜索趋势指数（需接入 API）"},
+            {"id": "satellite", "type": "satellite", "description": "卫星图像经济活跃度特征"},
+        ]
+        for src in mock_sources:
+            with st.expander(f"{src['id']} — {src['type']}"):
+                st.text(src["description"])
+                st.button(f"注册 {src['id']}", key=f"reg_{src['id']}", disabled=True if src['id'] in sources else False)
+
+    with tab3:
+        st.subheader("中文文本情感分析")
+        st.caption("基于关键词 + 规则的中文金融文本分析引擎（零 NLP 模型依赖）")
+        sample_text = st.text_area(
+            "输入文本",
+            value="宁德时代2024年净利润同比增长30%，超出市场预期。分析师普遍看好其储能业务增长前景，"
+                  "但需关注上游锂价波动风险。公司近期宣布回购10亿元股份，提振市场信心。",
+            height=120,
+        )
+        if st.button("分析情感"):
+            analyzer = get_text_analyzer()
+            result = analyzer.analyze(sample_text)
+            sentiment_color = "🟢" if result["sentiment"] > 0.1 else ("🔴" if result["sentiment"] < -0.1 else "🟡")
+            st.subheader(f"{sentiment_color} 情感分数: {result['sentiment']:.4f}")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("正面词", result["pos_hits"])
+            c2.metric("负面词", result["neg_hits"])
+            c3.metric("不确定词", result["uncertainty_hits"])
+            if result["industries"]:
+                st.caption(f"行业：{' · '.join(result['industries'])}")
+            if result["entities"]:
+                st.caption(f"实体：{' · '.join(result['entities'])}")
+
+
+# ----------------------------------------------------------------------
+# 页面：Transformer 分析
+# ----------------------------------------------------------------------
+def render_transformer():
+    st.title("🧠 Transformer-Agent 深度耦合分析")
+    st.caption("因子编码 · 自注意力融合 · 模式记忆 · 多样性指导")
+
+    coupling = get_coupling()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("因子模式记忆库")
+        diversity = coupling.memory.get_diversity_guidance([])
+        st.info(f"已记录 {len(coupling.memory._winners)} 个成功模式, {len(coupling.memory._losers)} 个失败模式")
+
+        if diversity.get("explored_regions"):
+            st.caption("已探索区域")
+            for r in diversity["explored_regions"]:
+                st.text(r)
+
+        if diversity.get("underexplored_hints"):
+            st.caption("建议探索方向")
+            for h in diversity["underexplored_hints"]:
+                st.text(h)
+
+    with col2:
+        st.subheader("Agent 智能推荐")
+        query = st.text_input("输入研究需求", value="低波动动量因子，20天窗口")
+        if st.button("获取推荐"):
+            from src.agent.integration import build_enhanced_context as build_ctx
+            ctx = build_ctx({"requirement": query}, library=get_library(), coupling=coupling)
+
+            recs = ctx.get("factor_suggestions", [])
+            st.caption(f"找到 {len(recs)} 个相关因子模板")
+            for r in recs[:8]:
+                st.text(f"- {r['display_name']} ({r['name']}) [{r['direction']}]")
+
+            if ctx.get("knowledge_text"):
+                with st.expander("先验知识文本"):
+                    st.text(ctx["knowledge_text"][:1000])
+
+
 PAGES = {
     "🏠 概览": render_overview,
     "🚀 Vibe Trading": render_vibe_trading,
     "🤖 因子挖掘 (Agent)": render_factor_agent,
     "💬 Agent 对话": render_agent_chat,
     "🏭 因子精炼厂": render_refinery,
+    "📊 传统因子库": render_traditional_factors,
+    "🧬 GP因子挖掘": render_gp_mining,
+    "📄 非结构化数据": render_unstructured,
+    "🧠 Transformer分析": render_transformer,
     "📦 产品交付": render_delivery,
     "📈 行情中心": render_market_hub,
     "📈 期货 & 期权": render_futures_options,
