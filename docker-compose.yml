@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  factorgpt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: factorgpt:latest
+    container_name: factorgpt
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      # Persistent data: factor library, cache, experiments
+      - factorgpt_data:/app/data
+      # Persistent ChromaDB vector store
+      - factorgpt_chroma:/app/chroma_db
+    environment:
+      # LLM configuration (optional — defaults to offline/synthetic mode)
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}
+      - FACTORGPT_LLM_PROVIDER=${FACTORGPT_LLM_PROVIDER:-ollama}
+      - FACTORGPT_LLM_MODEL=${FACTORGPT_LLM_MODEL:-qwen2.5-coder:7b}
+      - HF_ENDPOINT=${HF_ENDPOINT:-https://hf-mirror.com}
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  factorgpt_data:
+    name: factorgpt_data
+  factorgpt_chroma:
+    name: factorgpt_chroma

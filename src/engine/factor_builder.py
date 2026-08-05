@@ -60,9 +60,12 @@ _SAFE_BUILTINS = {
 def analyze_lookahead(code: str) -> list:
     """静态扫描因子代码，检测常见的前视偏差（未来函数）模式。
 
-    返回问题列表；为空表示未发现问题。覆盖两类高风险模式：
+    返回问题列表；为空表示未发现问题。覆盖三类高风险模式：
       1) 非正的 shift 位移量：shift(0)/shift(-1) 等直接泄漏未来信息；
-      2) 引用明确代表「未来收益/标签」的变量名（fwd_ret / future_ret 等）。
+      2) 引用明确代表「未来收益/标签」的变量名（fwd_ret / future_ret 等）；
+      3) close/pct_chg/ret 等价格/收益列作为因子核心信号时未做 shift(1)：
+         检测 df.close、df.pct_chg 等直接参与算术/比较运算且未被
+         shift(1) 或 rolling().shift(1) 包裹的模式。
     """
     issues: list = []
     try:
@@ -70,16 +73,48 @@ def analyze_lookahead(code: str) -> list:
     except SyntaxError as e:
         return [f"代码语法错误，无法做前视检查：{e}"]
     future_names = ("fwd_ret", "forward_ret", "future_ret", "next_ret", "target_ret")
+    # 需要检查是否被 shift(>=1) 包裹的价格/收益列
+    price_cols = ("close", "pct_chg", "ret", "open", "high", "low")
+
+    # 第一遍：建立父节点映射
+    parent_map: dict = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parent_map[id(child)] = parent
+
+    # 第二遍：收集所有被 shift(>=1) 包裹的子节点 id
+    safe_shifted_ids: set = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                and node.func.attr == "shift":
+            args = node.args
+            shift_ok = False
+            if args:
+                a = args[0]
+                val = None
+                if isinstance(a, ast.Constant) and isinstance(a.value, (int, float)):
+                    val = a.value
+                elif isinstance(a, ast.UnaryOp) and isinstance(a.op, ast.USub) \
+                        and isinstance(a.operand, ast.Constant):
+                    val = -a.operand.value
+                if val is not None and val >= 1:
+                    shift_ok = True
+            if shift_ok:
+                for inner in ast.walk(node.func.value):
+                    safe_shifted_ids.add(id(inner))
+
     for node in ast.walk(tree):
         # 1) 非正 shift 位移量
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "shift":
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                and node.func.attr == "shift":
             args = node.args
             if args:
                 a = args[0]
                 val = None
                 if isinstance(a, ast.Constant) and isinstance(a.value, (int, float)):
                     val = a.value
-                elif isinstance(a, ast.UnaryOp) and isinstance(a.op, ast.USub) and isinstance(a.operand, ast.Constant):
+                elif isinstance(a, ast.UnaryOp) and isinstance(a.op, ast.USub) \
+                        and isinstance(a.operand, ast.Constant):
                     val = -a.operand.value
                 if val is not None and val <= 0:
                     issues.append(
@@ -95,6 +130,16 @@ def analyze_lookahead(code: str) -> list:
             low = node.value.lower()
             if any(fn in low for fn in future_names):
                 issues.append(f"因子引用了疑似未来/标签变量 '{node.value}'，存在前视偏差风险。")
+        # 3) 未 shift 的价格/收益列出现在算术/比较运算中
+        if isinstance(node, ast.Attribute) and node.attr in price_cols \
+                and id(node) not in safe_shifted_ids:
+            parent = parent_map.get(id(node))
+            if parent is not None and isinstance(parent, (ast.BinOp, ast.Compare, ast.UnaryOp, ast.Call)):
+                issues.append(
+                    f"价格列 '{node.attr}' 在运算中使用但未被 shift(1) 包裹，"
+                    "可能引入前视偏差。若该列用作信号源，请对其 .shift(1)。"
+                )
+
     # 去重（同一变量可能在多处被扫描）
     seen = set()
     uniq = []
@@ -179,10 +224,13 @@ class FactorSandbox:
         return self._normalize(result, df)
 
     def _run_subprocess(self, code: str, df: pd.DataFrame) -> pd.Series:
-        """在独立子进程中执行因子代码（带超时与隔离）。
+        """在独立子进程中执行因子代码（带超时与内存限制）。
 
         通过 pickle 传递行情数据，子进程复用同一套受限 globals 执行，
         执行完成后返回原始结果，由父进程统一做 _normalize。
+
+        超时与内存限制由配置 engine.sandbox.timeout / memory_limit_mb 控制。
+        子进程隔离可防止死循环、内存溢出或 OOM 导致主进程崩溃。
         """
         runner = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_sandbox_runner.py")
         if not os.path.exists(runner):
@@ -195,11 +243,16 @@ class FactorSandbox:
                 f.write(code)
             with open(in_path, "wb") as f:
                 pickle.dump(df, f)
+            # 向子进程传递内存限制参数（通过环境变量，跨平台）
+            env = os.environ.copy()
+            if self.memory_limit_mb > 0:
+                env["SANDBOX_MEMORY_LIMIT_MB"] = str(self.memory_limit_mb)
             try:
                 proc = subprocess.run(
                     [sys.executable, runner, code_path, in_path, out_path],
                     capture_output=True, text=True, timeout=self.timeout,
                     cwd=os.path.dirname(os.path.abspath(__file__)),
+                    env=env,
                 )
             except subprocess.TimeoutExpired:
                 raise TimeoutError(

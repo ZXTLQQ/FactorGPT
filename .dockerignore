@@ -1,0 +1,55 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+*.egg-info
+dist
+build
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Data (large files)
+data/cache/*
+data/learned_factors.jsonl
+
+# Node (if any)
+node_modules
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+*.md
+docs/
+!README.md
+
+# Tests
+tests/
+_smoke_review.py
+norm_test.py
+
+# Temp
+chromium_install.txt
+dep_check*.txt
+pw_*.txt
+
+# Large dependencies
+*.tar.gz
+*.zip

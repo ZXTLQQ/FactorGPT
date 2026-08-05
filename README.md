@@ -1,268 +1,366 @@
-# FactorGPT — LLM 金融因子挖掘 Agent (v4.x)
+# FactorGPT — LLM-Powered Quantitative Factor Mining & Industrialization Platform
 
-浙江省大学生金融创新大赛（A类：金融创新产品设计）参赛项目。
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker)](https://hub.docker.com/)
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit)](https://streamlit.io/)
+[![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-orange)](https://github.com/langchain-ai/langgraph)
+[![Status](https://img.shields.io/badge/Status-Active-brightgreen.svg)](https://github.com/factor-gpt/factor-gpt)
 
-## 项目简介
+**FactorGPT** is an LLM-powered intelligent financial factor industrialization platform that deeply integrates natural language understanding with quantitative finance factor engineering. It supports automated factor extraction, validation, combination optimization, and production-grade deployment from both structured and unstructured data sources — all driven by natural language commands.
 
-FactorGPT 是一个基于大语言模型（LLM）的智能金融因子工业化平台，将自然语言理解与量化金融因子工程深度融合，支持从结构化/非结构化数据中自动提取、验证、组合优化与工业化生产金融因子。
+> **Keywords**: Quantitative Finance, Alpha Factor Mining, LLM Agent, Factor Backtesting, Factor Library, Genetic Programming, Reinforcement Learning, Alternative Data, Streamlit, A-Share, Financial AI, FactorGPT, Factor Refinery, RPN Engine, IC Analysis, Multi-factor Model, LangGraph, Python Quant
 
-v4.x 较 v3.x 新增六大因子工程模块：61 个预置传统因子库、因子库管理器（CRUD/批量生产）、增强遗传规划（因子簇+岛屿模型+事件窗口）、非结构化数据因子挖掘（文本→Alpha 信号）、Transformer-Agent 深度耦合（向量化推理闭环）、以及 17 页一体化 Web 前端。
+---
 
-## 快速开始
+## What Problem Does FactorGPT Solve?
+
+Traditional quantitative factor research faces three major pain points: **high barrier to entry** (requires extensive domain expertise and programming skills), **slow iteration cycles** (manual factor design, coding, and backtesting loops take days to weeks), and **siloed workflows** (data, generation, evaluation, and deployment are disconnected).
+
+FactorGPT addresses these challenges by:
+
+1. **Natural Language to Factor Code**: Describe your investment idea in plain language, and the LLM Agent generates, validates, and backtests factor code automatically. The system includes a built-in knowledge base of 61 traditional factors as reference context.
+
+2. **End-to-End Industrial Pipeline**: The "Six-Stage Factor Refinery" mimics an industrial smelting process — from raw data ore to finished factor products — with built-in quality control at every stage.
+
+3. **Safety and Reliability**: A sandboxed execution environment with white-listed imports, lookahead bias detection (AST-based), automatic winsorization/neutralization/standardization, and out-of-sample validation ensures production-ready factor quality.
+
+4. **Multi-Model Support**: Works with DeepSeek, OpenAI, Qwen, local Ollama models, and any OpenAI-compatible endpoint. The system auto-degrades gracefully when dependencies are missing, ensuring it runs in any environment.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- **Python**: 3.11 or higher
+- **OS**: Linux, macOS, or Windows
+- **Memory**: 8GB RAM minimum (16GB recommended for Transformer/RL modules)
+- **Disk**: ~5GB for dependencies + model weights
+
+### Option 1: Docker One-Click Deployment (Recommended)
 
 ```bash
-# 安装依赖
-pip install -r requirements.txt
+# Clone the repository
+git clone https://github.com/factor-gpt/factor-gpt.git
+cd factor-gpt
 
-# 运行 Web 界面（含「🤖 因子挖掘 (Agent)」页面）
+# Build and start
+docker-compose up -d
+
+# Open browser at http://localhost:8501
+```
+
+The Docker image comes pre-configured with all dependencies, synthetic sample data, and a fully offline-capable demonstration environment. No API keys or network access required.
+
+### Option 2: Local Installation
+
+```bash
+# 1. Clone and enter directory
+git clone https://github.com/factor-gpt/factor-gpt.git
+cd factor-gpt
+
+# 2. Create virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+
+# 3. Install dependencies (locked versions for reproducibility)
+pip install -r requirements.lock.txt
+
+# 4. (Optional) Prefetch real market data for offline use
+python scripts/prefetch_data.py
+
+# 5. Launch the web interface
 streamlit run src/ui/app.py
-
-# 或命令行无界面运行因子挖掘 Agent（离线可用，自动回退到合成数据）
-python run_agent.py "请构建一个 20 日动量因子"
-
-# 运行「六阶段因子精炼厂」流水线（离线演示，无需 API/网络）
-python run_agent.py --refinery "混合日频与月频，结合短期反转与流动性"
-# 接入 LLM 矿场（需配置 API Key 与行情数据）：
-python run_agent.py --refinery --no-offline "混合日频与月频，结合短期反转与流动性"
 ```
 
-### 演示前自检（断网可用性一键体检）
+Open your browser at `http://localhost:8501` to access the 17-page integrated web dashboard.
 
-现场答辩最怕断网与依赖缺失。运行自检脚本可在 10 秒内确认「离线是否演得完整」：
+### Quick Test (No Network Required)
 
 ```bash
-# 只体检：核对 RL 依赖、Ollama 本地模型、行情整矿缓存、向量库、沙箱开关
+# Single factor mining (offline, auto-fallback to synthetic data)
+python run_agent.py "Build a 20-day momentum factor"
+
+# Six-stage refinery pipeline (offline demo)
+python run_agent.py --refinery "Mix daily and monthly frequency, combine short-term reversal with liquidity"
+
+# Run preflight check (10-second health check for offline presentation readiness)
 python scripts/preflight_check.py
+```
 
-# 体检并一键切到离线演示档位（把所有 cache_only 置为 true）
+---
+
+## Project Highlights
+
+### 1. Intelligent Factor Mining Agent (LangGraph Orchestration)
+
+The core Agent follows a **Retrieve → Generate → Validate → Evaluate → Reflect** closed loop:
+
+- **Knowledge Retrieval**: Searches factor knowledge base (ChromaDB + BGE embeddings, or jieba fallback) for relevant academic factor literature as LLM context
+- **Factor Generation**: LLM generates factor code following strict safety protocols (`alpha_factor(df) -> DataFrame[date, symbol, factor]`)
+- **Sandbox Validation**: Secure execution in isolated subprocess with timeout/memory limits, whitelist imports, and AST-based lookahead bias detection
+- **Factor Post-processing**: Winsorization → Industry/Market-cap Neutralization → Standardization
+- **Backtest Evaluation**: IC, RankIC, ICIR, IC positivity ratio, quantile returns, long-short Sharpe/MDD, turnover, coverage
+- **Reflection & Improvement**: If IC threshold not met, LLM reflects on backtest metrics and iteratively improves the factor definition
+
+### 2. Six-Stage Factor Refinery (Industrial Pipeline)
+
+An end-to-end factor production line modeled after industrial smelting:
+
+| Stage | Process | Component | Purpose |
+|-------|---------|-----------|---------|
+| PART-01 | Ore Warehouse | `FeatureForge` | 28 raw features + 50+ time-series/cross-sectional factor pools, multi-process parallel construction |
+| PART-02 | Mining Layer | `TransformerEncoder` + `FactorRLSearch` + LLM | Transformer (d_model=128, 2 layers, 5 heads) vectorization + MaskablePPO factor combination search + LLM vein exploration |
+| PART-03 | Grinding Workshop | `RPNEngine` | Rank IC/IR/ICIR quantification + stability assessment + parallel batch evaluation |
+| PART-04 | Three-Tier Screening | `Screener` | LASSO de-redundancy → Human-AI collaborative review → TOP 10% cutoff |
+| PART-05 | Alloy Blending | `AlphaPool` | ICIR-weighted + orthogonalization synthesis + leave-one-out overfitting test |
+| PART-06 | Methodology Report | `MethodologyReport` | Automated methodology report (build logic/parameter justification/cross-validation), one-click MD + JSON export |
+
+### 3. 61 Built-in Traditional Factors
+
+A ready-to-use factor library covering five categories: Price Trend (18), Volatility (9), Trading Strength (15), Price-Volume (10), and Volume-Derived (9). Each factor includes name, category, tags, formula (Markdown + LaTeX), and reference Pandas implementation code. Supports search by category/keyword and batch export.
+
+### 4. Enhanced Genetic Programming
+
+Introduces three enhancements over traditional GP: **Factor Clusters** (maintain intra-cluster diversity), **Island Model** (multi-population independent evolution with periodic elite migration), and **Event Windows** (market-condition-triggered factor recombination/elimination). Built-in 15 operators (arithmetic, comparison, time-series, cross-sectional ranking).
+
+### 5. Unstructured Data Factor Mining
+
+Extracts Alpha signals from multi-modal text data: `TextAnalyzer` (tokenization, entity recognition, sentiment quantification), `AlternativeDataManager` (supply chain, sentiment, satellite text), and `UnstructuredFactorIntegrator` (fusion with structured factors, incremental information contribution evaluation).
+
+### 6. Transformer-Agent Deep Coupling
+
+Deeply couples Transformer vector representations with the Agent's cognitive loop: `TransformerCoupling`, `CouplingScheduler`, `AgentContextBuilder`, and `AttentionVisualizer` form a "perception → reasoning → action" closed loop, significantly enhancing factor discovery depth and interpretability.
+
+### 7. Local Deployment & Offline Resilience
+
+- **Ollama Integration**: One-click script switches to local LLM (qwen2.5-coder:7b, llama3.1:8b, etc.) — no API key needed
+- **Kronos Integration**: Financial time-series forecasting model as predictive factor enhancement
+- **Graceful Degradation**: All heavy dependencies (Transformer, RL, ChromaDB) auto-degrade to numpy/heuristic/keyword fallbacks, ensuring zero-dependency-offline operation
+- **Preflight Check**: Built-in health check script for conference presentation readiness
+- **Data Caching**: Multi-source auto-fallback (EastMoney → Sina → Tushare → THS → Synthetic), with local cache for complete offline operation
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   Streamlit Web UI (17 Pages)            │
+├─────────────────────────────────────────────────────────┤
+│  Factor Mining Agent (LangGraph)                         │
+│  Retrieve → Generate → Validate → Evaluate → Reflect     │
+├─────────────────────────────────────────────────────────┤
+│  Six-Stage Factor Refinery Pipeline                      │
+│  Ore → Mining → Grinding → Screening → Blending → Report │
+├──────────────┬──────────────┬────────────────────────────┤
+│  LLM Layer   │  Data Layer  │  Engine Layer               │
+│  DeepSeek    │  AKShare     │  Sandbox (Subprocess)       │
+│  OpenAI      │  Tushare     │  Backtester (IC/Quantile)   │
+│  Ollama      │  Sina/THS    │  RPN Engine                 │
+│  vLLM        │  Baostock    │  Genetic Programming        │
+├──────────────┴──────────────┴────────────────────────────┤
+│  Knowledge Base: ChromaDB + BGE Embeddings + 61 Factors   │
+│  Experiment Tracking: MLflow / Local JSONL                │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Screenshots & Visualizations
+
+### Backtest Analysis Charts
+
+<p align="center">
+  <img src="docs/assets/ic_series.png" alt="IC Time Series" width="48%">
+  <img src="docs/assets/quantile_returns.png" alt="Quantile Returns" width="48%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/quantile_cum.png" alt="Quantile Cumulative Returns" width="48%">
+  <img src="docs/assets/long_short.png" alt="Long-Short Cumulative Returns" width="48%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/portfolio_nav.png" alt="Portfolio NAV" width="48%">
+  <img src="docs/assets/factor_ic_bars.png" alt="Multi-Factor IC Comparison" width="48%">
+</p>
+
+### Web Interface Screenshots
+
+<p align="center">
+  <img src="docs/assets/ui_overview.png" alt="System Overview" width="48%">
+  <img src="docs/assets/ui_refinery.png" alt="Factor Refinery" width="48%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/ui_library.png" alt="Factor Library" width="48%">
+  <img src="docs/assets/ui_sysbuild.png" alt="Factor System Builder" width="48%">
+</p>
+
+---
+
+## Environment Requirements
+
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| Python | 3.11 | 3.12+ |
+| RAM | 8 GB | 16 GB |
+| Disk Space | 3 GB | 5 GB (with model weights) |
+| GPU | Not required | CUDA-compatible GPU for Transformer/RL |
+| OS | Linux / macOS / Windows | Ubuntu 22.04+ |
+
+### Optional Dependencies
+
+- **LLM Backend**: Ollama (local), DeepSeek API, OpenAI API, or any OpenAI-compatible endpoint
+- **Data Sources**: AKShare (free, no registration), Tushare Pro (free token), Baostock (free)
+- **Heavy Modules**: PyTorch (Transformer encoder), stable-baselines3 + sb3-contrib (MaskablePPO), MLflow (experiment tracking) — all auto-degrade if missing
+
+---
+
+## Docker Deployment
+
+### One-Click Start
+
+```bash
+# Clone and start
+git clone https://github.com/factor-gpt/factor-gpt.git
+cd factor-gpt
+docker-compose up -d
+```
+
+### Build from Source
+
+```bash
+docker build -t factorgpt:latest .
+docker run -d -p 8501:8501 --name factorgpt factorgpt:latest
+```
+
+### Docker Compose Configuration
+
+The included `docker-compose.yml` provides:
+- Persistent volume for data cache and ChromaDB
+- Environment variable configuration for API keys and data sources
+- Automatic port mapping (8501 for Streamlit)
+- Resource limits (4GB memory, 2 CPU cores)
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DEEPSEEK_API_KEY` | DeepSeek API key | - |
+| `TUSHARE_TOKEN` | Tushare Pro token | - |
+| `FACTORGPT_LLM_PROVIDER` | Override LLM provider | ollama |
+| `FACTORGPT_LLM_MODEL` | Override LLM model | qwen2.5-coder:7b |
+| `HF_ENDPOINT` | HuggingFace mirror endpoint | https://hf-mirror.com |
+
+---
+
+## Sample Data
+
+The repository includes sample data and can generate synthetic data for offline demonstration:
+
+- **Synthetic Data**: Automatically generated with controlled signal-to-noise ratio for testing and CI
+- **Real Data**: Use `python scripts/prefetch_data.py` to pull real A-share market data (CSI 800 constituents, daily frequency, 2019-2024)
+- **Factor Library**: `data/learned_factors.jsonl` — a growing library of learned and imported factors
+- **Vibe-Trading Catalog**: `data/vibe_trading_alpha_catalog.json` — natural language Alpha signal reference catalog
+
+---
+
+## Project Structure
+
+```
+factor-gpt/
+├── src/
+│   ├── agent/          # LangGraph Agent (graph, nodes, state, integration)
+│   ├── engine/         # Factor builder, backtester, optimizer, traditional factors
+│   ├── data/           # Data fetcher, cleaner, feature forge
+│   ├── pipeline/       # Six-stage refinery pipeline
+│   ├── rag/            # Knowledge base (ChromaDB + retrieval)
+│   ├── llm/            # LLM client (DeepSeek/OpenAI/Ollama compatible)
+│   ├── ui/             # Streamlit web interface (17 pages)
+│   ├── store/          # SQLite persistence (memory, chat, experiments)
+│   └── kronos/         # Kronos financial forecasting model integration
+├── scripts/            # Utilities (data prefetch, health check, import, setup)
+├── docs/assets/        # Documentation screenshots and charts
+├── data/               # Sample data, factor library, experiment tracking
+├── config.yaml         # Main configuration file
+├── run_agent.py        # CLI entry point
+├── Dockerfile          # Docker build file
+├── docker-compose.yml  # Docker Compose orchestration
+├── requirements.txt    # Python dependencies
+└── requirements.lock.txt  # Locked dependencies with hashes (reproducible)
+```
+
+---
+
+## Configuration
+
+All settings are centralized in `config.yaml`:
+
+- **llm**: Model provider (deepseek/openai/qwen/ollama), API key, endpoint, temperature, multi-LLM routing
+- **data**: Primary data source (akshare/tushare/sina), date range, caching, synthetic fallback
+- **backtest**: Quantile count, commission rate, risk-free rate, chart output
+- **rag**: Vector store toggle (ChromaDB+BGE or jieba fallback), embedding model, HF mirror
+- **agent**: Max iterations, IC threshold, OOS validation
+- **refinery**: Six-stage pipeline configuration (Transformer, RL, screening, AlphaPool)
+- **proxy**: HTTP/HTTPS proxy for mainland China network environments
+- **experiment_tracking**: Experiment logging (local JSONL or MLflow)
+
+---
+
+## Offline & Conference-Ready
+
+FactorGPT is designed for reliable offline demonstrations:
+
+```bash
+# Step 1: Prefetch real data (with network)
+python scripts/prefetch_data.py
+
+# Step 2: Run health check
 python scripts/preflight_check.py --offline
+
+# Step 3: Disconnect network and run
+streamlit run src/ui/app.py
+python run_agent.py --refinery "Momentum + Quality factors"
 ```
 
-体检覆盖五类风险：① `torch/sb3/sb3-contrib` 是否齐备（决定 PART-02 跑真 MaskablePPO 还是降级启发式）；
-② 本地 Ollama 端点与目标模型是否就绪（决定断网时能否继续生成因子）；
-③ `data/cache/real_ore.pkl` 整矿与分级缓存是否齐备（决定 `cache_only=true` 能否零联网跑通）；
-④ ChromaDB / BGE / 已学习因子库是否可用；⑤ 子进程沙箱与 Kronos 权重是否会在断网时抛错中断。
-脚本对「会中断演示」的项判为 FAIL 并给出修复命令，对「可接受降级」的项判为 WARN 并提示答辩时如何说明。
+The system checks five risk categories: RL dependencies, local Ollama models, cached market data, ChromaDB availability, and sandbox stability — all with clear pass/fail/warn outputs.
 
-演示前的标准动作是：先联网执行 `python scripts/prefetch_data.py` 预备真实行情整矿，
-再执行 `python scripts/preflight_check.py --offline` 切离线档位，最后拔网跑一遍完整闭环。
+---
 
-## 因子挖掘 Agent 工作流
+## Roadmap
 
-Agent 基于 LangGraph 编排，形成「检索 → 生成 → 校验 → 评价 → 反思」闭环：
+- [ ] Multi-market support (US stocks, Hong Kong stocks, crypto)
+- [ ] Real-time factor monitoring dashboard with alerting
+- [ ] Factor decay analysis and lifecycle management
+- [ ] Collaborative factor review workflow
+- [ ] REST API for programmatic factor mining
+- [ ] Integration with backtesting frameworks (Zipline, Backtrader)
 
-1. **知识检索**：根据用户需求，从因子知识库（ChromaDB+BGE 或 jieba 关键词）检索动量、反转、质量、波动率等经典因子文献作为 LLM 上下文。
-2. **因子生成**：LLM 依据需求与知识，生成遵守安全契约的 `alpha_factor(df) -> DataFrame[date,symbol,factor]` 因子代码。若 LLM 不可用，自动回退到内置关键词模板因子。
-3. **沙箱校验与计算**：在受限执行沙箱中安全运行代码（白名单导入、禁用危险内置、强制 `shift(1)` 防前视），计算因子值。
-4. **因子后处理**：截面缩尾（Winsorize）→ 行业/市值中性化 → 标准化（复用 `DataCleaner`）。
-5. **回测评价**：计算 IC、RankIC、ICIR、IC 为正比例、分位数收益、多空对冲收益/夏普/最大回撤、换手率、覆盖率。
-6. **反思改进**：若 |IC| 未达阈值，LLM 结合回测指标反思并改进因子定义，循环直至达标或达到最大轮数；最终输出因子代码、指标与报告。
+---
 
-## 因子精炼厂（六阶段冶炼流水线）
+## Contributing
 
-在单因子 Agent 之上，系统以「工业冶炼」为隐喻，构建端到端闭环的因子生产线，把因子开发抽象为从「矿石开采」到「成品交付」的六道工序：
+Contributions are welcome! Please see the issues page for open tasks or submit a pull request with your improvements.
 
-| 阶段 | 工序 | 核心组件 | 作用 |
-|------|------|----------|------|
-| PART-01 | 矿石原料仓（数据底座） | `FeatureForge` | 28 分钟级原始特征 + 50+ 时序/截面因子池 + 9 行业/3 风格维度；多进程并行构建 |
-| PART-02 | 采矿作业层（三维生成） | `TransformerEncoder` + `FactorRLSearch` + LLM 矿场 | Transformer(d_model=128,2层,5头) 向量化表征；MaskablePPO 动作屏蔽式因子组合搜索；LLM 矿脉探索 |
-| PART-03 | 研磨车间（RPN 引擎） | `RPNEngine` | Rank IC / IR / ICIR 量化有效性度量 + 稳定性评估 + 多进程并行批量求值 |
-| PART-04 | 三级筛选（浮选） | `Screener` | 第一级 LASSO 去冗余 → 第二级 人机协同评审（Web 端勾选保留/剔除，真实作用于入选集并留痕）→ 第三级 TOP 10% 截断 |
-| PART-05 | 合金配比（AlphaPool） | `AlphaPool` | ICIR 加权 + 正交化合成 + leave-one-out 过拟合检验 + 迭代优化 |
-| PART-06 | 提交（方法学总结） | `MethodologyReport` | 自动产出方法学报告（构建逻辑/参数依据/交叉验证），一键导出 MD + JSON |
+---
 
-设计要点（产品壁垒）：
-- **可插拔式评估**：`RPNEngine` 暴露指标注册表（`register_metric`），评估指标可灵活扩展。
-- **动作屏蔽 RL**：`FactorEnv` 内置 `action_masks()`，屏蔽已选/超长动作避免错误探索；后端可选 `MaskablePPO`（需 `sb3_contrib`）或自动降级「动作屏蔽 + 集束搜索」启发式。
-- **强鲁棒性**：`TransformerEncoder` / RL / LASSO 均在依赖缺失时自动降级（numpy 投影 / 集束搜索 / 相关性去重），保证任意环境可跑通。
-- **训练/测试隔离**：测试集仅用于最终方法学报告，不参与生成与筛选，杜绝前视泄露。
-- **一键复现**：方法学报告连同 JSON 原子产物导出，供审计与复现。
+## License
 
-流水线入口：`run_agent.py --refinery`（或 Streamlit「🏭 因子精炼厂」页面）；核心编排见 `src/pipeline/refinery.py`。
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-## 项目结构
+---
 
-- `src/agent/graph.py` — `FactorAgent`：LangGraph 状态图编排（检索/生成/校验/评价/反思/终局）
-- `src/agent/nodes.py` — 各节点实现（知识检索、代码生成、沙箱校验、回测评价、反思、报告）
-- `src/agent/state.py` — Agent 状态定义
-- `src/engine/factor_builder.py` — 受限代码沙箱、因子后处理流水线、关键词模板因子
-- `src/engine/backtest.py` — 因子回测与评价引擎（IC/RankIC/分位数/多空）
-- `src/engine/optimizer.py` — 多因子合成（IC 加权、正交化、筛选）
-- `src/data/` — 数据获取（`DataFetcher`）与清洗（`DataCleaner`）
-- `src/rag/` — 因子知识库（`paper_index` 知识语料 + `retriever` 检索，含 jieba 兜底）
-- `src/llm/` — LLM 客户端封装（DeepSeek/OpenAI 兼容）
-- `src/ui/app.py` — Streamlit 前端（含因子挖掘 Agent 页面）
-- `run_agent.py` — 命令行演示入口（单因子 Agent / 六阶段精炼厂）
-- `test_agent_quick.py` — 离线集成测试（桩 LLM + 合成数据）
-- `src/pipeline/refinery.py` — 六阶段精炼厂编排（`RefineryPipeline` + `build_refinery_config`）
-- `src/pipeline/schema.py` — 阶段间数据契约（`OreStock` / `CandidateFactor` / `RefineryResult`）
-- `src/pipeline/screener.py` — PART-04 三级筛选（LASSO + 人机协同评审 + TOP 10%，含三级审计留痕 `screen_audit`）
-- `src/pipeline/alpha_pool.py` — PART-05 AlphaPool 合成（正交化 + leave-one-out）
-- `src/pipeline/methodology.py` — PART-06 方法学总结报告生成与导出
-- `src/engine/rpn_engine.py` — PART-03 RPN 求值引擎（可插拔指标 + 稳定性 + 并行）
-- `src/data/feature_forge.py` — PART-01 特征冶炼厂（多进程并行因子池构建）
-- `src/agent/transformer_encoder.py` — PART-02 Transformer 向量化表征（numpy 降级）
-- `src/agent/rl_search.py` — PART-02 MaskablePPO 动作屏蔽因子组合搜索（集束降级）
-- `scripts/verify_refinery_pipeline.py` — 精炼厂端到端验证（合成数据，无需网络）
+## Disclaimer
 
-## v4.x 新增：六大因子工程模块
+FactorGPT is an academic research tool for quantitative finance education and research purposes. It does not constitute financial advice. All factor outputs, backtest results, and investment signals are for reference only. Past performance does not guarantee future results. Users should make independent investment decisions based on their own risk tolerance and due diligence.
 
-v4.x 将因子生产体系从 Agent 管线扩展为完整的「因子工业化平台」，新增以下六大核心模块：
+---
 
-### 1. 61 个预置传统因子库 (`src/engine/traditional_factors.py`)
-
-覆盖五大方向的专家级现成因子池，无需 LLM 即可参与分析与回测：
-
-| 方向 | 数量 | 业务含义 |
-|------|------|----------|
-| 价格趋势 (PRICE_TREND) | 18 | SMA/EMA 交叉、布林带、ADX、ATR |
-| 波动率 (VOLATILITY) | 9 | 历史/已实现波动率、Parkinson/GK/RS 极值波动率 |
-| 交易强弱 (TRADING_DIFFICULTY) | 15 | VWAP、OBV/多周期、MFI、筹码分布、威廉、PSY 多周期 |
-| 量价 (PRICE_VOLUME) | 10 | 量比/多周期、换手率/多周期、VROC |
-| 成交量派生 (VOLUME_FORMULA) | 9 | 经典量价公式、量价背离/级别、量加速、OBV-ATR 归一 |
-
-每个因子定义为 `FactorDef` 数据类，包含名称、类别、标签、公式（Markdown+LaTeX）、Pandas 参考实现代码。支持按类别/关键词搜索、批量导出为 dict，可直接对接前端表格展示。
-
-### 2. 因子库管理器 (`src/engine/factor_library.py`)
-
-`FactorLibrary` 统一管理三个知识来源的因子：传统因子库（61个）、已学习因子（`data/learned_factors.jsonl`）、外部导入因子（如飞书因子字典）。提供 CRUD（增删改查）、统计概览、参数簇扩增（按周期/参数自动裂变）、批量生产（`mass_produce_factors` 对多个标的并发生成）等能力，为前端因子管理页面提供后端支撑。
-
-### 3. 增强遗传规划因子挖掘 (`src/engine/genetic_enhanced.py`)
-
-在传统遗传规划基础上引入三大增强机制：
-- **因子簇 (FactorCluster)**：将相似因子分组管理，维护簇内多样性，避免收敛到同质化解。
-- **岛屿模型 (Island Model)**：多子种群独立演化，周期性迁移精英个体，提升全局搜索能力。
-- **事件窗口 (EventWindow)**：定义触发因子重组/淘汰的特定市场条件，让因子进化与市场状态联动。
-
-内置 15 个运算符（算术、比较、时序变换、截面排名），支持自定义适应度函数（IC、Sharpe、ICIR），`EnhancedFactorEvolver` 封装完整的「初始化→选择→交叉→变异→精英保留→收敛判断」演化循环。
-
-### 4. 非结构化数据因子挖掘 (`src/engine/unstructured_miner.py`)
-
-突破传统结构化行情因子边界，从多模态文本数据中提取 Alpha 信号：
-- **TextAnalyzer**：对新闻、公告、研报文本进行分词、实体识别与情感极性量化。
-- **AlternativeDataManager**：管理另类数据集（供应链、舆情、卫星遥感文本描述等），支持版本化与元数据检索。
-- **DataUploadParser**：解析用户上传的 CSV/JSON/Excel/TXT 非结构化数据，自动推断字段语义。
-- **UnstructuredFactorIntegrator**：将文本信号与结构化因子融合，生成混合因子并评估增量信息贡献。
-
-与 LLM Agent 无缝衔接：用户上传文件后，Agent 自动调用 TextAnalyzer 提取信号，经 UnstructuredFactorIntegrator 融合后交付给回测流水线。
-
-### 5. Transformer-Agent 深度耦合 (`src/engine/transformer_coupling.py`)
-
-将 PART-02 的 Transformer 向量化表征与 Agent 认知环路深度耦合，实现「感知→推理→行动」的闭环：
-- **TransformerCoupling**：管理 Transformer 编码器实例，将原始特征矩阵映射为向量嵌入。
-- **CouplingScheduler**：控制耦合强度与频率，决定哪些 Agent 决策步骤需要向量化上下文。
-- **AgentContextBuilder**：将 Transformer 嵌入与因子库检索结果融合为 Agent 可消费的结构化上下文。
-- **AttentionVisualizer**：可视化注意力权重，支撑 Agent 对因子选择过程的「可解释推理」。
-- **CouplingAuditTrail**：完整记录每一步耦合决策，用于审计与复现。
-
-该模块将量化模型的隐式知识（Transformer 嵌入）与 Agent 的显式推理（LLM 思维链）融为一体，显著提升因子发现的深度与可解释性。
-
-### 6. Agent-前端集成层 (`src/agent/integration.py` + UI 页面)
-
-一站式桥接层，将上述五个引擎模块全部注入 Streamlit 17 页导航：
-
-- 「📊 传统因子探索」— 五大类 61 因子一览、搜索、详情查看
-- 「📚 因子库管理」— CRUD、外部导入、批量生产
-- 「🧬 遗传规划」— 开始/停止演化、簇/岛屿可视化
-- 「📄 非结构化挖掘」— 上传文件、提取信号、融合评估
-- 「🔗 Transformer 耦合」— 注意力热力图、耦合审计
-- 「因子生成 (Agent v4)」— 全部模块驱动的增强 Agent 工作流
-
-## 配置说明（config.yaml）
-
-- `llm`：模型供应商、API Key、模型名、接口地址（默认 DeepSeek）。
-- `data`：`primary_source`（akshare/tushare）、默认指数与日期区间；`force_synthetic: true` 可跳过网络、使用合成数据离线演示。
-- `backtest`：分位数个数、手续费率、无风险利率。
-- `rag`：`use_vector_store` 控制是否启用 ChromaDB+BGE 向量检索（默认 `true`）；`embedding_model` 为向量模型名（默认 `BAAI/bge-small-zh-v1.5`）；`learned_library_path` 指定已学习因子库路径。
-
-### 国内下载 BGE 向量模型（WinError 10060 解决）
-
-知识库首次启用时会从 HuggingFace 拉取 BGE 向量模型权重。国内网络访问 `huggingface.co` 常被阻断，导致 `WinError 10060` 连接超时。已内置两种解法，无需手动改代码：
-
-1. **镜像自动生效**：`config.yaml` 的 `rag.hf_endpoint` 默认指向 `https://hf-mirror.com`，代码在加载模型前会自动注入 `HF_ENDPOINT` 环境变量并覆盖 `huggingface_hub` 已捕获的常量；启动脚本 `start.ps1` 也会在启动 Streamlit 前注入，双重保险。海外/可直连环境可将 `rag.hf_endpoint` 设为 `""`（空字符串）恢复官方直连。
-2. **完全离线降级**：若网络无法访问任何 HuggingFace 源，将 `config.yaml` 的 `rag.use_vector_store` 设为 `false`，知识库会自动降级为 jieba 关键词检索，无需下载任何向量模型，系统照常可用。
-
-模型下载一次后会缓存在 `~/.cache/huggingface`（或 `rag.hf_home` 指定目录），之后运行完全离线、不再触网。
-- `agent`：`max_iterations` 反思轮数、`metrics_threshold` 有效因子 IC 阈值。
-- `refinery`：六阶段精炼厂配置，含 `offline`（离线演示开关）、`n_symbols/train_days/test_days`（中证1000 子集规模与训练/测试切分）、`n_workers`（多进程并行）、`transformer`（d_model/nhead/num_layers）、`rl_max_len/rl_candidates`（MaskablePPO 组合上限与候选数）、`screener`（LASSO/人机协同/TOP 比例）、`alpha_pool`（正交化/LOO/迭代）、`rpn`（分位数/预测周期/换手惩罚/并行）。置 `refinery.offline: false` 接入 LLM 矿场。
-
-## 学习库（自主学习 + 外部因子字典导入）
-
-Agent 内置「已学习因子库」（`data/learned_factors.jsonl`），实现两个闭环能力：
-
-1. **自主学习**：每轮因子经沙箱校验通过且回测无错误后，自动写入学习库（记录名称、代码、回测指标），后续任务可在检索中复用该因子。
-2. **外部导入 / 调用**：可将飞书因子字典等外部因子批量导入；导入后既参与知识检索（学习），其中含代码的因子还会在生成阶段作为可复用模板被 Agent 直接调用（改写/沿用），加速收敛并保证可运行。
-
-导入外部因子字典（飞书表格导出为 CSV/Excel/JSON 均可）：
-
-```bash
-python scripts/import_factors.py data/feishu_factors.csv feishu
-```
-
-- 列名中英文均可识别：因子名称(title)、类别(category)、公式(formula)、描述(description)、代码(code，可选但建议提供以便"调用")。
-- 也可在 Streamlit 的「📚 学习库」页面直接上传文件导入与浏览。
-- 导入后的因子立即生效：下一次运行因子挖掘 Agent 即可检索并调用。
-
-## 本地部署：接入 Ollama 与 Kronos
-
-FactorGPT 的 LLM 客户端基于 LangChain `ChatOpenAI`，天然兼容任意 OpenAI 兼容端点。因此**本地 Ollama 只需改 `config.yaml`**，无需改动核心代码；而 **Kronos 是 HuggingFace 上的金融 K 线时序预测基础模型**（非聊天 LLM），项目将其作为「预测因子」集成，而非替代代码生成 LLM。
-
-### 1) 安装并本地部署 Ollama
-
-一键脚本（纯 Python，跨平台；静默安装 + 启动服务 + 拉取代码模型 + 切换 config）：
-
-```bash
-python scripts/setup_ollama.py                 # 安装 + 拉取默认 qwen2.5-coder:7b + 切换 config
-python scripts/setup_ollama.py --skip-pull     # 仅安装并启动服务, 不拉取模型
-python scripts/setup_ollama.py --model llama3.1:8b  # 指定模型
-```
-
-> 注意：Ollama 的 Windows 安装器需要**管理员权限**。若当前为非管理员终端，静默安装会失败（退出码 1）——此时请以**管理员身份**重新运行上面的脚本，或手动双击安装包后执行 `ollama pull qwen2.5-coder:7b`。安装器已缓存于 `%TEMP%/OllamaSetup.exe`。
-
-手动步骤：到 https://ollama.com 下载安装；启动后 `ollama pull qwen2.5-coder:7b`（或 `llama3.1:8b`、`deepseek-coder:6.7b` 等代码模型）；服务默认监听 `http://localhost:11434`。
-
-> 本项目 `config.yaml` 的 `llm` 段已默认切换为 `provider: ollama`（模型 `qwen2.5-coder:7b`，端点 `http://localhost:11434/v1`，key 占位 `ollama`）。安装并拉取模型后即可直接 `python run_agent.py "请构建一个 20 日动量因子"` 走本地模型；如需切回云端，把 `provider` 改回 `deepseek` 并恢复 `model`/`base_url`/`api_key` 即可。
-
-### 2) 把 FactorGPT 切到 Ollama
-
-`config.yaml` 中将 `llm` 段改为：
-
-```yaml
-llm:
-  provider: ollama
-  model: qwen2.5-coder:7b          # Ollama 中已拉取的模型名
-  base_url: "http://localhost:11434/v1"
-  api_key: "ollama"                # 占位, Ollama 不校验
-```
-
-也可用环境变量免改文件（先把 `llm.use_env_override` 设为 `true`）：
-`FACTORGPT_LLM_PROVIDER=ollama FACTORGPT_LLM_BASE_URL=http://localhost:11434/v1 FACTORGPT_LLM_API_KEY=ollama FACTORGPT_LLM_MODEL=qwen2.5-coder:7b`。
-之后 `python run_agent.py "请构建一个 20 日动量因子"` 即走本地模型。
-
-### 3) 接入 Kronos 金融预测模型
-
-检索到的 GitHub 仓库：[morrisluo/kronos](https://github.com/morrisluo/kronos)（fork 自 `shiyu-coder/Kronos`），模型权重在 HuggingFace `NeoQuasar/Kronos-mini`（另有 `small`/`base`，参数量 4.1M/20.5M/93.6M）。它是 decoder-only 的 K 线序列预测模型，输入 `[Date,Open,High,Low,Close,Volume]`，输出未来若干根 K 线，**不是聊天接口、无 GGUF、未进 Ollama 库**，故以「预测因子」方式集成。
-
-集成位置：`src/kronos/`（核心 `forecaster.py`）。
-
-- **快速体验（离线 stub）**：无需 GPU/网络，直接跑演示，自动降级为几何动量代理并评估 IC：
-  ```bash
-  python scripts/run_kronos_factor.py
-  ```
-- **启用真实模型**：Kronos 模型代码已随仓库内置在 `third_party/kronos/`（来自 GitHub `morrisluo/kronos` fork，因本机直连 GitHub 受限，已通过 raw 文件落地），推理依赖 `torch`/`transformers`/`einops`/`tqdm`（本项目已具备）。把 `config.yaml` 的 `kronos.enabled` 设为 `true`、`fallback_to_stub` 设为 `false` 即启用真实模型；首次会从 HuggingFace 镜像（`hf-mirror.com`）下载 `NeoQuasar/Kronos-mini` 权重与独立的 `NeoQuasar/Kronos-Tokenizer-base` tokenizer。
-- **接入精炼厂因子池**：在 refinery PART-01 之后调用 `from src.kronos import attach_kronos_factor; attach_kronos_factor(ore, cfg)`，即把 `KRONOS_PRED`（Kronos 预测的未来收益）作为候选因子参与 RPN 求值与合成。Kronos 依赖缺失或下载失败时，自动降级 stub 并告警，流水线照常可跑。
-
-> 说明：代码生成环节（因子代码、反思）仍由上面 `llm` 段的模型负责；Ollama 等本地模型仅承担该角色，Kronos 负责「未来价格预测」维度的信号增强。
-
-## Vibe-Trading 集成
-
-FactorGPT 已接入 Vibe-Trading 的自然语言策略范式：
-
-- 知识层：内置 `data/vibe_trading_alpha_catalog.json`（Vibe-Trading / HKUDS 风格量化 Alpha 信号），可在「🚀 Vibe Trading」页面一键注入 RAG 已学习因子库，参与检索与模板复用。
-- 工作流层：用自然语言描述交易想法，Agent 借助 Alpha 参考库生成并回测选股因子（describe → factor → backtest）。
-- 原生引擎（可选）：`pip install -r requirements.vibe.txt` 后，可在页面 / `--vibe-native` 优先调用 `vibetrading` 包的加密货币策略回测流程；不可用或离线时自动降级到 FactorGPT 引擎。
-
-用法：
-
-- Web：侧边栏选择「🚀 Vibe Trading」，输入策略描述后运行。
-- CLI：`python run_agent.py --vibe "低估值高 ROE 的质量因子，行业中性"`。
+<p align="center">
+  <b>FactorGPT</b> — Where Natural Language Meets Quantitative Finance<br>
+  <sub>Built with ❤️ for the quantitative finance community</sub>
+</p>

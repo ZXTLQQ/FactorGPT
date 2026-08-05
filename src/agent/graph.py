@@ -65,7 +65,16 @@ class FactorAgent:
         self.kline, self.industry, self.mkt_cap = self._load_data()
         # 样本外（OOS）切分：训练集用于生成-反思闭环，测试集仅做独立验证，
         # 杜绝「看着答案改作业」式过拟合（配置见 config.agent.oos）。
-        self.train_kline, self.test_kline = self._split_oos(self.kline)
+        oos_cfg = self.config.get("agent", {}).get("oos", {})
+        oos_enabled = bool(oos_cfg.get("enabled", True))
+        if oos_enabled:
+            self.train_kline, self.test_kline = self._split_oos(
+                self.kline,
+                test_frac=float(oos_cfg.get("test_frac", 0.2)),
+                min_test_days=int(oos_cfg.get("min_test_days", 60)),
+            )
+        else:
+            self.train_kline, self.test_kline = self.kline, None
         # 节点集合
         self.nodes = FactorAgentNodes(
             llm=self.llm,
