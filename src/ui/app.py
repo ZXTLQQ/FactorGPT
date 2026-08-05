@@ -1,30 +1,29 @@
 """
-因子挖掘智能体 — Streamlit 交互入口
-====================================
+FactorGPT — Streamlit 交互入口
+==============================
 
-页面：
-- 🏠 概览
-- 🤖 因子挖掘 (Agent)：单次需求 -> 检索/生成/回测/反思闭环 + 方法学解读
-- 💬 Agent 对话：多轮对话式因子挖掘（新增）
-- 🏭 因子精炼厂：RL + RAG + Transformer 复合因子管线
-- 📈 行情中心 (Market Hub)：五大指数 / 成分股行情、个股弹窗（K线+资讯研报）、
-  走势对比、与因子挖掘模块联动，数据经后端 SQLite 短时缓存
-- 📈 期货 & 期权：期货主力实时、期货/期权 K 线、上交所期权、商品期权合约链
-- 💰 基金行情：ETF/LOF 实时、ETF K 线、基金净值走势、开放基金排行
-- 🪙 债券 / 外汇：可转债、外汇、上海金基准价、中行外汇牌价
-- 📚 知识库：RAG 检索 / 上传
-- ⚙️ 配置：chroma / tushare 等运行时配置
+界面采用「红白配色 + 复合式二级目录」，17 个功能页按业务域整合为 6 个分组：
 
-新增能力：
-- ⚙️ 侧边栏「模型 / API 设置」面板：用户可切换供应商（DeepSeek / OpenAI /
-  Qwen / 任意 OpenAI 兼容端点），填写 API Key / Base URL / 模型，支持「应用
-  配置」「测试连接」「保存到 config.yaml」。切换后 Agent 即可接入其他模型
+- ◈ 工作台：系统概览、操作记忆
+- ⚗ 因子挖掘：智能挖掘 Agent、对话式挖掘、因子精炼厂、遗传规划挖掘、Vibe Trading
+- 🧱 因子体系：体系搭建、体系回测分析、系统因子库、因子监控
+- 📈 数据中心：行情中心、期货 & 期权、基金行情、债券 / 外汇
+- 🧠 智能分析：非结构化数据、Transformer 分析、知识库
+- ⚙ 系统：产品交付、运行配置
+
+核心能力：
+- 因子体系搭建：把挖掘产出与系统因子库中的因子组装成带维度与权重的因子体系，
+  一键执行合成回测并输出 IC / ICIR / 分层 / 相关性 / 主成分 / 衰减全景诊断。
+- 操作记忆：界面选择、操作日志、挖掘产出、因子体系与回测结果全部落盘到本地
+  SQLite（``data/factorgpt.db``），关闭应用后重新打开自动恢复现场。
+- 模型可切换：侧边栏支持 DeepSeek / OpenAI / Qwen / 任意 OpenAI 兼容端点
   （含本地 Ollama、vLLM、OpenRouter 等）。
 """
 
 import os
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import streamlit as st
 import pandas as pd
@@ -43,8 +42,17 @@ from agent.integration import (
 )
 from ui.methodologist import run_methodologist, get_factor_name_from_report  # noqa: E402
 from ui.market_hub import render_market_hub  # noqa: E402
+from ui import nav, theme  # noqa: E402
+from ui.factor_system import render_system_analysis, render_system_builder  # noqa: E402
 from rag.chroma_store import ensure_chroma  # noqa: E402
 from rag.retriever import rag_vector_enabled  # noqa: E402
+from store import chats as chat_repo  # noqa: E402
+from store import database as db  # noqa: E402
+from store import mining as mining_repo  # noqa: E402
+from store import ops as ops_repo  # noqa: E402
+from store import runs as runs_repo  # noqa: E402
+from store import state as state_repo  # noqa: E402
+from store import systems as systems_repo  # noqa: E402
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
 
@@ -362,28 +370,182 @@ def _candlestick_chart(df, key, date_hints=("日期", "date"),
 # 页面：概览
 # ----------------------------------------------------------------------
 def render_overview():
-    st.title("因子挖掘智能体 · FactorGPT")
-    st.caption("检索增强 + 反思式因子工程：用 LLM 把研究想法变成可回测的选股因子。")
-    st.markdown(
-        """
-        **工作流**：检索知识 → 生成因子 → 校验计算 → 回测评价 → 反思迭代。
+    """工作台首页：研究资产总览 + 研究闭环 + 快捷入口。"""
+    # —— 研究资产统计（全部来自本地数据库与因子库）——
+    try:
+        lib_stats = get_library().statistics()
+        n_lib = int(lib_stats.get("total", 0))
+    except Exception:
+        lib_stats, n_lib = {}, 0
+    try:
+        sys_list = systems_repo.list()
+        n_mining = len(mining_repo.list(limit=1000))
+        recent_ops = ops_repo.recent(limit=8)
+        run_list = runs_repo.list(limit=200)
+    except Exception:
+        sys_list, n_mining, recent_ops, run_list = [], 0, [], []
 
-        - 🤖 **因子挖掘 (Agent)**：单次输入需求，跑完整闭环并给出方法学解读；
-        - 💬 **Agent 对话**：多轮对话式挖掘，连续追问、迭代改进；
-        - 🏭 **因子精炼厂**：RL（MaskablePPO）+ RAG + Transformer 复合因子；
-        - 📊 **股票行情 (A 股)**：沪深京 A 股实时行情、个股 K 线（蜡烛图）、当日分时；
-        - 📈 **期货 & 期权** / 💰 **基金行情** / 🪙 **债券/外汇**：期货期权、ETF/LOF、
-          基金净值、可转债、外汇、贵金属等实时行情与 K 线（数据：AKShare）；
-        - ⚙️ **侧边栏模型设置**：随时切换模型 / API Key，接入其他大模型。
-        """
+    theme.kpi_row([
+        {"label": "因子库总量", "value": n_lib, "sub": "系统 + 挖掘 + 自定义"},
+        {"label": "挖掘沉淀", "value": n_mining, "sub": "已落盘的挖掘产出", "tone": "ink"},
+        {"label": "因子体系", "value": len(sys_list), "sub": "已保存可回测体系", "tone": "pos"},
+        {"label": "体系回测", "value": len(run_list), "sub": "历史回测记录", "tone": "neutral"},
+        {"label": "操作记录", "value": sum(ops_repo.module_counts().values()) if recent_ops else 0,
+         "sub": "本地操作时间线", "tone": "warn"},
+    ], columns=5)
+
+    theme.section("研究闭环", "从想法到可交付策略的标准路径，每一步的产出都会自动落盘")
+    theme.steps([
+        {"n": "01", "title": "挖掘因子", "desc": "Agent / 遗传规划 / 精炼厂产出候选因子"},
+        {"n": "02", "title": "搭建体系", "desc": "挑选因子、归类维度、配置权重"},
+        {"n": "03", "title": "回测诊断", "desc": "IC / 分层 / 相关性 / 主成分全景分析"},
+        {"n": "04", "title": "监控交付", "desc": "上线跟踪衰减并打包交付物"},
+    ])
+
+    c1, c2 = st.columns([1.45, 1])
+    with c1:
+        theme.section("快捷入口", "点击直达高频功能")
+        nav.quick_links(["agent", "sys_build", "sys_analysis", "market"], columns=4)
+        nav.quick_links(["refinery", "gp", "library", "memory"], columns=4)
+
+        if sys_list:
+            theme.section("最近的因子体系", "按更新时间排序")
+            st.dataframe(
+                pd.DataFrame([{
+                    "体系名称": s["name"],
+                    "因子数": s["n_factors"],
+                    "更新时间": s["updated_at"],
+                } for s in sys_list[:6]]),
+                hide_index=True, use_container_width=True,
+            )
+        else:
+            theme.insight(
+                "还没有因子体系。先到「因子挖掘」产出候选因子，再到"
+                "「因子体系 → 体系搭建」组装第一个体系。", "info",
+            )
+    with c2:
+        theme.section("最近操作", "本地数据库中的操作时间线")
+        if recent_ops:
+            for op in recent_ops:
+                st.markdown(
+                    f'<div style="padding:7px 0;border-bottom:1px solid {theme.LINE};font-size:12.5px">'
+                    f'<span style="color:{theme.INK_MUTED}">{op["ts"][5:16]}</span>　'
+                    f'{theme.badge(op["module"], "gray")}'
+                    f'<span style="color:{theme.INK}">{op["summary"] or op["action"]}</span></div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            theme.empty_state("暂无操作记录", "开始使用后这里会记录你的每一步研究动作。", "◌")
+
+    theme.footer(
+        f'<b>数据落盘</b>：{db.get_db_path()}　·　体积 {db.db_size_kb()} KB<br>'
+        "所有界面状态与研究产出均保存在本地，不依赖任何云端服务，便于离线开发与版本管理。"
     )
+
+
+# ----------------------------------------------------------------------
+# 页面：操作记忆中心
+# ----------------------------------------------------------------------
+def render_memory():
+    """展示并管理本地数据库中的「操作记忆」。"""
+    stats = db.db_stats()
+    theme.kpi_row([
+        {"label": "操作日志", "value": stats.get("operation_log", 0)},
+        {"label": "界面状态", "value": stats.get("app_state", 0), "tone": "ink"},
+        {"label": "挖掘记录", "value": stats.get("mining_records", 0), "tone": "neutral"},
+        {"label": "因子体系", "value": stats.get("factor_systems", 0), "tone": "pos"},
+        {"label": "回测记录", "value": stats.get("backtest_runs", 0), "tone": "warn"},
+        {"label": "对话消息", "value": stats.get("chat_messages", 0), "tone": "ink"},
+    ], columns=6)
+    theme.insight(
+        f'数据库文件：<b>{db.get_db_path()}</b>（{db.db_size_kb()} KB）。'
+        "该文件可直接备份、随项目迁移，或用任意 SQLite 客户端打开做二次分析。", "info",
+    )
+
+    t1, t2, t3, t4 = st.tabs(["操作时间线", "挖掘沉淀", "回测记录", "数据维护"])
+
+    with t1:
+        counts = ops_repo.module_counts()
+        if counts:
+            theme.badges([f"{k} · {v}" for k, v in counts.items()], "gray")
+        modules = ["全部"] + list(counts.keys())
+        c1, c2 = st.columns([1.2, 3])
+        with c1:
+            pick = st.selectbox("模块筛选", modules, key="mem_mod")
+        rows = ops_repo.recent(limit=300, module=None if pick == "全部" else pick)
+        if rows:
+            st.dataframe(
+                pd.DataFrame([{
+                    "时间": r["ts"], "模块": r["module"], "动作": r["action"],
+                    "说明": r["summary"], "状态": r["status"],
+                } for r in rows]),
+                hide_index=True, use_container_width=True, height=440,
+            )
+        else:
+            theme.empty_state("暂无操作日志", "", "◌")
+
+    with t2:
+        recs = mining_repo.list(limit=300)
+        if recs:
+            st.dataframe(
+                pd.DataFrame([{
+                    "时间": r["ts"], "来源": r["module"], "因子名": r["factor_name"],
+                    "IC": round(float(r["metrics"].get("ic", 0) or 0), 4),
+                    "ICIR": round(float(r["metrics"].get("icir", 0) or 0), 3),
+                    "需求/表达式": (r["query"] or r["expression"])[:70],
+                } for r in recs]),
+                hide_index=True, use_container_width=True, height=440,
+            )
+            theme.insight("这些因子会自动出现在「因子体系 → 体系搭建」的候选因子池中。", "ok")
+        else:
+            theme.empty_state("暂无挖掘沉淀", "运行 Agent / 遗传规划 / 精炼厂后自动记录。", "◌")
+
+    with t3:
+        rl = runs_repo.list(limit=200)
+        if rl:
+            st.dataframe(
+                pd.DataFrame([{
+                    "时间": r["created_at"], "体系": r["system_name"],
+                    "股票池": r["universe"], "区间": r["period"],
+                    "IC": round(float(r["metrics"].get("ic", 0) or 0), 4),
+                    "ICIR": round(float(r["metrics"].get("icir", 0) or 0), 3),
+                    "多空夏普": round(float(r["metrics"].get("long_short_sharpe", 0) or 0), 2),
+                } for r in rl]),
+                hide_index=True, use_container_width=True, height=440,
+            )
+        else:
+            theme.empty_state("暂无回测记录", "在「体系回测分析」运行后自动记录。", "◌")
+
+    with t4:
+        theme.section("清理与导出", "谨慎操作：清理后无法恢复，建议先备份数据库文件")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("清空操作日志", use_container_width=True):
+                ops_repo.clear()
+                st.success("已清空操作日志")
+                st.rerun()
+        with c2:
+            if st.button("清空挖掘沉淀", use_container_width=True):
+                mining_repo.clear()
+                st.success("已清空挖掘沉淀")
+                st.rerun()
+        with c3:
+            if st.button("重置界面记忆", use_container_width=True,
+                         help="清除记住的筛选条件、页面位置等，不影响因子体系与回测结果"):
+                state_repo.clear()
+                st.success("已重置界面记忆")
+                st.rerun()
+
+        saved = state_repo.all()
+        if saved:
+            with st.expander(f"当前记住的界面状态（{len(saved)} 项）"):
+                st.json({k: v for k, v in list(saved.items())[:40]})
 
 
 # ----------------------------------------------------------------------
 # 页面：单次因子挖掘（Agent）
 # ----------------------------------------------------------------------
 def render_factor_agent():
-    st.title("🤖 因子挖掘 (Agent)")
     active = st.session_state.llm_cfg
     st.caption(
         f"模型：**{active.get('model')}** · 输入自然语言需求，Agent 自动检索/生成/回测/反思。"
@@ -410,7 +572,6 @@ def render_factor_agent():
 # 页面：Agent 对话（多轮）
 # ----------------------------------------------------------------------
 def render_agent_chat():
-    st.title("💬 Agent 对话")
     st.caption("多轮对话式因子挖掘：输入需求，Agent 自动检索知识、生成/回测因子并反思迭代。")
     active = st.session_state.llm_cfg
     st.caption(f"当前模型：**{active.get('model')}**")
@@ -445,7 +606,6 @@ def render_agent_chat():
 # 页面：因子精炼厂
 # ----------------------------------------------------------------------
 def render_refinery():
-    st.title("🏭 因子精炼厂")
     st.caption("RL(MaskablePPO) 因子组合搜索 + RAG 知识 + Transformer 编码 的复合因子管线。")
     try:
         from pipeline.refinery import RefineryPipeline
@@ -586,7 +746,6 @@ def render_refinery():
 # 页面：知识库
 # ----------------------------------------------------------------------
 def render_kb():
-    st.title("📚 知识库 (RAG)")
     cfg = load_config()
     use_vs = rag_vector_enabled(cfg)
     if use_vs:
@@ -665,7 +824,6 @@ def render_kb():
 # 页面：配置
 # ----------------------------------------------------------------------
 def render_config():
-    st.title("⚙️ 配置")
     st.markdown("运行时配置（也可直接编辑 `config.yaml`）。")
     cfg = load_config()
     st.json({k: (v if k != "llm" else {**v, "api_key": "***" if v.get("api_key") else ""})
@@ -676,7 +834,6 @@ def render_config():
 # 页面：产品交付
 # ----------------------------------------------------------------------
 def render_delivery():
-    st.title("📦 产品交付")
     st.caption("一键导出因子表达式 + 调仓清单 CSV + 可解释 HTML/PDF 报告，并与中证800等权基准对比。")
 
     cfg = load_config().get("refinery", {})
@@ -772,7 +929,6 @@ def _assumptions_summary(result) -> str:
 # 页面：期货 & 期权
 # ----------------------------------------------------------------------
 def render_futures_options():
-    st.title("📈 期货 & 期权")
     st.caption("期货主力实时行情、期货/期权 K 线、上交所期权与商品期权合约链（数据：AKShare）。")
     from data.market_data import MarketDataFetcher, FUTURES_MAIN_HINTS, FUTURES_SYMBOLS
 
@@ -819,7 +975,6 @@ def render_futures_options():
 # 页面：基金行情
 # ----------------------------------------------------------------------
 def render_funds():
-    st.title("💰 基金行情")
     st.caption("ETF/LOF 实时行情、基金净值走势、开放基金排行（数据：AKShare）。")
     from data.market_data import MarketDataFetcher
 
@@ -872,7 +1027,6 @@ def render_funds():
 # 页面：债券 / 外汇 / 贵金属
 # ----------------------------------------------------------------------
 def render_bonds_forex():
-    st.title("🪙 债券 / 外汇 / 贵金属")
     st.caption("可转债实时、外汇实时、上海金基准价、中行外汇牌价（数据：AKShare）。")
     from data.market_data import MarketDataFetcher
 
@@ -1070,7 +1224,6 @@ def render_monitor():
     import plotly.express as px
     from rag.learned_library import LearnedFactorLibrary
 
-    st.title("📡 因子实时监控")
     if st.button("🔄 刷新"):
         st.rerun()
 
@@ -1144,7 +1297,6 @@ def render_monitor():
 # 主入口
 # ----------------------------------------------------------------------
 def render_vibe_trading():
-    st.title("🚀 Vibe Trading")
     st.caption("用自然语言描述交易想法，Agent 借助 Vibe-Trading 量化 Alpha 库生成并回测因子。"
                "可选调用原生 vibetrading 引擎（加密货币，需安装并联网）。")
     user_input = st.text_area(
@@ -1174,7 +1326,6 @@ def render_vibe_trading():
 # 页面：传统因子库浏览器
 # ----------------------------------------------------------------------
 def render_traditional_factors():
-    st.title("📊 传统因子库")
     st.caption("五大方向 · 55+ 预置因子 · 因子簇参数扩增 · 与遗传规划/LLM 联动")
     from src.engine.traditional_factors import CATEGORY_LABELS, ALL_CATEGORIES, get_factors_by_category, get_all_factors, export_all_to_dict
 
@@ -1232,7 +1383,6 @@ def render_traditional_factors():
 # 页面：遗传规划因子挖掘
 # ----------------------------------------------------------------------
 def render_gp_mining():
-    st.title("🧬 遗传规划因子挖掘")
     st.caption("因子簇驱动演化 · 岛屿模型 · 事件窗口感知 · 批量海量生产")
 
     col1, col2 = st.columns([1, 1])
@@ -1269,7 +1419,6 @@ def render_gp_mining():
 # 页面：非结构化数据挖掘
 # ----------------------------------------------------------------------
 def render_unstructured():
-    st.title("📄 非结构化数据挖掘")
     st.caption("上传新闻/研报/公告/财务数据 · 自动解析 · 情感因子 · 另类数据源")
 
     tab1, tab2, tab3 = st.tabs(["文件上传", "另类数据源", "文本分析"])
@@ -1356,7 +1505,6 @@ def render_unstructured():
 # 页面：Transformer 分析
 # ----------------------------------------------------------------------
 def render_transformer():
-    st.title("🧠 Transformer-Agent 深度耦合分析")
     st.caption("因子编码 · 自注意力融合 · 模式记忆 · 多样性指导")
 
     coupling = get_coupling()
@@ -1394,35 +1542,72 @@ def render_transformer():
                     st.text(ctx["knowledge_text"][:1000])
 
 
-PAGES = {
-    "🏠 概览": render_overview,
-    "🚀 Vibe Trading": render_vibe_trading,
-    "🤖 因子挖掘 (Agent)": render_factor_agent,
-    "💬 Agent 对话": render_agent_chat,
-    "🏭 因子精炼厂": render_refinery,
-    "📊 传统因子库": render_traditional_factors,
-    "🧬 GP因子挖掘": render_gp_mining,
-    "📄 非结构化数据": render_unstructured,
-    "🧠 Transformer分析": render_transformer,
-    "📦 产品交付": render_delivery,
-    "📈 行情中心": render_market_hub,
-    "📈 期货 & 期权": render_futures_options,
-    "💰 基金行情": render_funds,
-    "🪙 债券 / 外汇": render_bonds_forex,
-    "📡 因子监控": render_monitor,
-    "📚 知识库": render_kb,
-    "⚙️ 配置": render_config,
+# 页面 key -> render 函数（与 src/ui/nav.py 的 NAV_GROUPS 保持一致）
+DISPATCH = {
+    "overview": render_overview,
+    "memory": render_memory,
+    "agent": render_factor_agent,
+    "chat": render_agent_chat,
+    "refinery": render_refinery,
+    "gp": render_gp_mining,
+    "vibe": render_vibe_trading,
+    "sys_build": render_system_builder,
+    "sys_analysis": render_system_analysis,
+    "library": render_traditional_factors,
+    "monitor": render_monitor,
+    "market": render_market_hub,
+    "futures": render_futures_options,
+    "funds": render_funds,
+    "bonds": render_bonds_forex,
+    "unstructured": render_unstructured,
+    "transformer": render_transformer,
+    "kb": render_kb,
+    "delivery": render_delivery,
+    "config": render_config,
 }
 
 
+def _badge_counts() -> Dict[str, str]:
+    """侧边栏目录角标（可选）。任一统计失败都不影响导航。"""
+    try:
+        bc: Dict[str, str] = {}
+        try:
+            n = len(mining_repo.list(limit=1))
+            if n:
+                bc["memory"] = f"{n} 条"
+        except Exception:
+            pass
+        try:
+            n = len(systems_repo.list())
+            if n:
+                bc["sys_build"] = f"{n} 个"
+        except Exception:
+            pass
+        try:
+            n = len(runs_repo.list(limit=1000))
+            if n:
+                bc["sys_analysis"] = f"{n} 次"
+        except Exception:
+            pass
+        return bc
+    except Exception:
+        return {}
+
+
 def main():
-    st.set_page_config(page_title="FactorGPT", layout="wide")
+    st.set_page_config(page_title="FactorGPT", layout="wide", page_icon="🧱")
+    theme.inject_theme()
+    try:
+        db.init_db()
+    except Exception:
+        pass
     _init_llm_session()
 
-    st.sidebar.title("FactorGPT")
-    choice = st.sidebar.radio("导航", list(PAGES.keys()))
+    page = nav.render_sidebar(_badge_counts())
     _render_model_panel()
-    PAGES[choice]()
+    nav.render_page_header(page)
+
+    DISPATCH.get(page, render_overview)()
     st.divider()
     st.caption("FactorGPT · 基于 LLM 的量化因子研究 Agent · 图中 IC / Sharpe 等为样本内/样本外回测结果，"
                "仅供研究演示，不构成投资建议。")
