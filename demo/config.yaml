@@ -1,0 +1,45 @@
+# FactorGPT Demo Configuration
+# HuggingFace Spaces — offline mode, no API keys required
+
+llm:
+  provider: offline
+  temperature: 1.0
+  max_tokens: 4096
+
+# Synthetic data demo
+data:
+  source: synthetic
+  force_synthetic: true
+  start_date: "2022-01-01"
+  end_date: "2023-12-31"
+
+backtest:
+  n_quantiles: 5
+  commission: 0.001
+  risk_free_rate: 0.03
+  chart_output_dir: "./demo_charts"
+  verbose: false
+
+rag:
+  use_chromadb: false
+  use_jieba_fallback: true
+
+agent:
+  max_iterations: 3
+  ic_threshold: 0.02
+  oos:
+    enabled: true
+    test_frac: 0.3
+    min_test_days: 60
+
+refinery:
+  offline: true
+  n_symbols: 50
+  train_days: 250
+  test_days: 60
+  n_pool_seed: 8
+  rl_backend: heuristic
+  n_workers: 1
+
+experiment_tracking:
+  backend: none

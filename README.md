@@ -5,7 +5,8 @@
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker)](https://hub.docker.com/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit)](https://streamlit.io/)
 [![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-orange)](https://github.com/langchain-ai/langgraph)
-[![Status](https://img.shields.io/badge/Status-Active-brightgreen.svg)](https://github.com/factor-gpt/factor-gpt)
+[![HF Spaces](https://img.shields.io/badge/🤗%20Demo-Online-ff9a00?logo=huggingface)](https://huggingface.co/spaces/ZXTLQQ/factorgpt-demo)
+[![Status](https://img.shields.io/badge/Status-Active-brightgreen.svg)](https://github.com/ZXTLQQ/FactorGPT)
 
 **FactorGPT** is an LLM-powered intelligent financial factor industrialization platform that deeply integrates natural language understanding with quantitative finance factor engineering. It supports automated factor extraction, validation, combination optimization, and production-grade deployment from both structured and unstructured data sources — all driven by natural language commands.
 
@@ -26,6 +27,18 @@ FactorGPT addresses these challenges by:
 3. **Safety and Reliability**: A sandboxed execution environment with white-listed imports, lookahead bias detection (AST-based), automatic winsorization/neutralization/standardization, and out-of-sample validation ensures production-ready factor quality.
 
 4. **Multi-Model Support**: Works with DeepSeek, OpenAI, Qwen, local Ollama models, and any OpenAI-compatible endpoint. The system auto-degrades gracefully when dependencies are missing, ensuring it runs in any environment.
+
+---
+
+## 🚀 Try It Online — No Installation
+
+<p align="center">
+  <a href="https://huggingface.co/spaces/ZXTLQQ/factorgpt-demo">
+    <img src="https://img.shields.io/badge/🤗-Open_in_HuggingFace_Spaces-ff9a00?style=for-the-badge&logo=huggingface" alt="HuggingFace Spaces">
+  </a>
+</p>
+
+FactorGPT provides a free online demo on HuggingFace Spaces — **no API keys, no sign-up, no installation required**. Describe your investment idea in natural language and see the factor go from code generation to backtest results in seconds. The demo includes: factor mining, 61-factor library browser, interactive IC charts, and a six-stage refinery pipeline walkthrough.
 
 ---
 
