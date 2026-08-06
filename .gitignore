@@ -64,3 +64,17 @@ data/cache/
 data/knowledge/
 data/experiments/
 data/*.jsonl
+
+# 依赖/环境探测输出（一次性排查产物）
+dep_check*.txt
+pw_*.txt
+chromium_install.txt
+kw_*.txt
+probe_*.txt
+test_out.txt
+
+# ima 订阅库爬取的运行时断点（机器相关，不入库；清单与基线入库）
+ima_subscription/crawl_state.json
+
+# 第三方 skill 的本地副本（非本项目源码，按需自行获取）
+third_party/ima_skills/

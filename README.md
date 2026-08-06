@@ -155,6 +155,33 @@ Deeply couples Transformer vector representations with the Agent's cognitive loo
 - **Preflight Check**: Built-in health check script for conference presentation readiness
 - **Data Caching**: Multi-source auto-fallback (EastMoney → Sina → Tushare → THS → Synthetic), with local cache for complete offline operation
 
+### 8. Research Report Knowledge Pipeline (Tencent ima Integration)
+
+FactorGPT keeps its factor knowledge base fresh by continuously watching a live sell-side research library through the Tencent **ima** open API. Three scripts under `scripts/` cover the full loop:
+
+| Script | Role | Cost per run |
+|--------|------|--------------|
+| `ima_sync.py` | Pulls documents from **your own** ima knowledge base, chunks them, and feeds `data/knowledge/**/chunks.jsonl` + ChromaDB so the Agent can retrieve them | Depends on library size |
+| `ima_keyword_watch.py` | **Lightweight watcher (recommended).** Runs `search_knowledge` against a curated keyword list and reports only reports that are new relative to a saved baseline | ~14-28 API calls |
+| `ima_subscription_track.py` | **Full directory snapshot.** Walks the entire folder tree of a subscribed library and diffs it against the previous manifest | 350+ paged calls, resumable |
+
+The watcher is the practical entry point. Against a 17,837-document subscribed research library, a full enumeration needs 350+ paged requests and reliably trips the account-level rate limit (`220021`), whereas keyword-targeted search costs roughly one request per keyword and finishes in seconds. Keyword selection matters: precise research terms such as `选股因子` or `量化择时` return a handful to a couple dozen documents, while broad category words such as `ETF` or `期权` return 100+ per page and drown the signal.
+
+```bash
+# First run: establish the baseline without reporting everything as "new"
+python scripts/ima_keyword_watch.py --init --no-push
+
+# Daily run: report only genuinely new reports, then commit and push the manifest
+python scripts/ima_keyword_watch.py
+
+# Adjust the watchlist
+python scripts/ima_keyword_watch.py --add-keyword 因子拥挤度
+```
+
+Outputs land in `ima_subscription/`: `watch_keywords.json` (watchlist), `keyword_seen.json` (baseline), `keyword_hits.csv` (flat index), and `keyword_watch.md` (append-only log of new arrivals). Both scripts tolerate rate limiting by backing off and checkpointing, and `ima_subscription_track.py` resumes from the last completed folder on the next run instead of restarting the crawl.
+
+Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq.com/agent-interface`, valid for one month). Note the API boundary: subscribed/shared libraries allow search but deny full-text export (`get_media_info` returns `220030`), so copying a report into your own library remains a manual step in the ima client — the pipeline reduces that to ticking items off a change list rather than browsing 17k documents.
+
 ---
 
 ## Architecture Overview
@@ -279,6 +306,7 @@ The repository includes sample data and can generate synthetic data for offline 
 - **Real Data**: Use `python scripts/prefetch_data.py` to pull real A-share market data (CSI 800 constituents, daily frequency, 2019-2024)
 - **Factor Library**: `data/learned_factors.jsonl` — a growing library of learned and imported factors
 - **Vibe-Trading Catalog**: `data/vibe_trading_alpha_catalog.json` — natural language Alpha signal reference catalog
+- **Research Watchlist**: `ima_subscription/keyword_hits.csv` — auto-maintained index of matched sell-side research reports
 
 ---
 
@@ -296,9 +324,10 @@ factor-gpt/
 │   ├── ui/             # Streamlit web interface (17 pages)
 │   ├── store/          # SQLite persistence (memory, chat, experiments)
 │   └── kronos/         # Kronos financial forecasting model integration
-├── scripts/            # Utilities (data prefetch, health check, import, setup)
+├── scripts/            # Utilities (data prefetch, health check, import, ima sync/watch)
 ├── docs/assets/        # Documentation screenshots and charts
 ├── data/               # Sample data, factor library, experiment tracking
+├── ima_subscription/   # Research-report watchlist, baseline, and change log
 ├── config.yaml         # Main configuration file
 ├── run_agent.py        # CLI entry point
 ├── Dockerfile          # Docker build file
