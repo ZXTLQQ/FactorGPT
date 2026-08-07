@@ -52,9 +52,21 @@ data:
   # 4. efinance: 免费，东方财富数据源，轻量快速
   source: legacy                  # 数据源开关：legacy（默认，沿用 akshare/sina/tushare 自爬）| neodata（走平台 NeoData 技能，稳定）
   neodata:                         # 仅当 source=neodata 时生效
-    base_url: ""                   # NeoData 网关地址（从平台 neodata-financial-search 技能 SKILL.md 获取；留空则自动降级 legacy）
+    # 真实网关端点（来自平台 neodata-financial-search 技能 SKILL.md）：单 POST 端点，
+    # 请求体为 {"query","channel":"neodata","sub_channel":"workbuddy"}，返回 data.apiData.apiRecall[].content 文本块。
+    base_url: "https://copilot.tencent.com/agenttool/v1/neodata"
     token_env: NEODATA_TOKEN       # token 环境变量名；或由平台自动写入 ~/.workbuddy/.neodata_token
-    fallback_to_legacy: true       # true=NeoData 不可用/未覆盖时回退 legacy（安全过渡）；false=严格只用 NeoData（最稳定）
+    # ⚠️ fallback_to_legacy 当前【严禁设为 false】，原因（已实测验证）：
+    #   1) 真实 NeoData 是「自然语言查询」服务，返回的是自由文本块（apiRecall[].content），
+    #      并非结构化批量行情/财务 REST 接口；无法为因子引擎提供必需的结构化批量数据——
+    #      完整日K线时序（回测核心）、完整指数成分股列表、行业/市值映射、结构化财务报表。
+    #      因此 get_daily_kline / get_index_constituents / get_industry_and_cap / get_financial_data
+    #      经 NeoData 解析后为空，必须回退 legacy 才能跑通回测。
+    #   2) 联调验证受阻：本环境 connect_cloud_service 返回的是 IDE 会话 token（audience=account），
+    #      NeoData 代理需要平台专属 tempToken，实测请求返回 HTTP 401，无法在本地做全量字段联调。
+    # 现状：neodata 源目前仅作为「研究问答」辅助，不能替代 legacy 执行因子回测；
+    #       base_url 已填真实端点，待平台 tempToken 可用且补齐结构化解析后再评估关闭回退。
+    fallback_to_legacy: true       # 保持 true：NeoData 无法提供结构化批量数据，必须回退 legacy 才能保证回测可跑
   primary_source: akshare          # 主力数据源（legacy 模式下的子优先级）：akshare / tushare / ths / sina
   # prefer_sina：部分网络下东方财富(push2his)的 HTTPS 连接会被对端重置
   # (RemoteDisconnected)，但新浪源可正常访问。置 true（或把 primary_source 改为 sina）

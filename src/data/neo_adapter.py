@@ -13,9 +13,19 @@ akshare / sina / tushare / efinance 爬数据，上游网站改版即中断。
 --------
 1. 接口对齐：方法名 / 入参 / 返回（pandas DataFrame 列约定）与 ``DataFetcher`` 一致，
    上层 graph / refinery / factor_system / market_data 无需改动。
-2. 安全回退：NeoData 未配置、网络失败或字段未覆盖时，按配置回退到 legacy ``DataFetcher``，
-   保证切换过程不破坏现有功能（过渡期默认开启，可在 config 关闭以强制只用稳定源）。
+2. 安全回退：NeoData 未配置、网络失败、鉴权失败或字段无法解析时，按配置回退到
+   legacy ``DataFetcher``，保证切换过程不破坏现有功能。
 3. 零新依赖：仅用标准库 ``urllib``，不改动 ``requirements.txt``。
+
+⚠️ 重要现实约束（已对照平台 neodata-financial-search 技能 SKILL.md / reference.md 核实）：
+   真实 NeoData 是「自然语言查询」单端点服务，请求体为
+   ``{"query","channel":"neodata","sub_channel":"workbuddy"}``，成功响应里
+   ``data.apiData.apiRecall[].content`` 是**自由文本块**（行情/财务/资金流描述），
+   **并非结构化批量行情/财务 REST 接口**。因此它无法稳定提供因子引擎所需的：
+   完整日 K 线时序（回测核心）、完整指数成分股列表、行业/市值映射、结构化财务报表。
+   所以各 ``neo()`` 解析在多数场景下返回空，必须由 ``fallback_to_legacy`` 回退 legacy
+   才能真正跑通回测——``data.neodata.fallback_to_legacy`` 当前**严禁设为 false**。
+   本适配器目前仅把 NeoData 作为「研究问答」辅助接入，不替代 legacy 执行因子回测。
 
 启用方式
 --------
@@ -25,15 +35,17 @@ akshare / sina / tushare / efinance 爬数据，上游网站改版即中断。
 
 注意
 ----
-NeoData 网关的具体端点路径以平台 ``neodata-financial-search`` 技能 SKILL.md 为准；
-本适配器的 ``NeoDataClient`` 已将端点设为可配置项（``data.neodata.base_url``），
-只需填入正确路径即可，字段映射在 ``_map_*`` 方法中集中维护。
+NeoData 网关地址已从平台 ``neodata-financial-search`` 技能 SKILL.md 填入
+``config.yaml`` 的 ``data.neodata.base_url``（真实端点
+``https://copilot.tencent.com/agenttool/v1/neodata``）。字段映射在 ``_map_*`` 方法中
+集中维护，且均为 best-effort：解析为空即回退 legacy。
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -76,11 +88,22 @@ def _load_neodata_token(env_name: str = "NEODATA_TOKEN") -> Optional[str]:
 
 
 class NeoDataClient:
-    """NeoData 网关的轻量 HTTP 客户端（标准库实现，无第三方依赖）。
+    """NeoData 网关客户端（标准库实现，无第三方依赖）。
 
-    端点路径以平台 ``neodata-financial-search`` 技能 SKILL.md 为准；此处仅作占位，
-    配置 ``base_url`` 后填入真实路径即可。所有方法返回解析后的 JSON（dict / list）。
+    真实服务为「自然语言查询」单端点（详见平台 neodata-financial-search 技能 SKILL.md / reference.md）：
+
+        POST {base_url}
+        body = {"query": <自然语言>, "channel": "neodata", "sub_channel": "workbuddy", "data_type": "api"}
+        成功响应：data.apiData.apiRecall[].content 为自由文本块（行情/财务/资金流等描述），
+                 并非可直接下载的结构化批量行情/财务数组。
+
+    因此本客户端只负责「正确发请求 + 取回原始结果」；结构化解析在 NeoDataSource._map_* 中
+    尽力而为，解析为空时由 ``fallback_to_legacy`` 回退 legacy——因子引擎所需的完整 K 线时序、
+    指数成分股、行业/市值映射等结构化批量数据必须来自 legacy（NeoData 文本无法稳定提供）。
     """
+
+    CHANNEL = "neodata"
+    SUB_CHANNEL = "workbuddy"
 
     def __init__(
         self,
@@ -98,46 +121,104 @@ class NeoDataClient:
         """NeoData 是否已配置（有网关地址且有 token）。"""
         return bool(self.base_url) and bool(self.token)
 
-    def _request(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    def _nl_query(self, query: str, data_type: str = "api") -> dict:
+        """向真实 NeoData 端点发起自然语言查询，返回完整响应 JSON。
+
+        鉴权失败（401/403）或业务错误（非 200）时抛 RuntimeError，由上层捕获并回退 legacy。
+        """
         if not self.configured:
             raise RuntimeError("NeoData 未配置：请在 config 设置 data.neodata.base_url 并确保 token 可用")
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        if params:
-            q = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
-            url = f"{url}?{q}"
-        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.token or ''}"})
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-    # ---- 各取数端点的封装（路径以平台 SKILL.md 为准，此处为占位约定） ----
-    def kline(self, symbol: str, start: str, end: str, period: str = "daily", adjust: str = "qfq") -> Any:
-        return self._request(
-            "v1/quote/kline",
-            {"symbol": symbol, "start": start, "end": end, "period": period, "adjust": adjust},
+        payload = {
+            "query": query,
+            "channel": self.CHANNEL,
+            "sub_channel": self.SUB_CHANNEL,
+        }
+        if data_type and data_type != "all":
+            payload["data_type"] = data_type
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            self.base_url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.token or ''}",
+            },
         )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:  # 鉴权失败
+            if e.code in (401, 403):
+                raise RuntimeError(
+                    "NeoData 鉴权失败 HTTP %s：需平台专属 tempToken，非 IDE 会话 token" % e.code
+                ) from e
+            raise
+        code = str(result.get("code", ""))
+        if code not in ("200", "") or not result.get("suc", True):
+            raise RuntimeError(f"NeoData 业务错误 code={code} msg={result.get('msg')}")
+        return result
 
-    def stock_list(self) -> Any:
-        return self._request("v1/stock/list")
+    # ---- 各取数场景 -> 自然语言查询（best-effort，供 _map_* 解析原始文本） ----
+    def kline(self, symbol: str, start: str, end: str, period: str = "daily", adjust: str = "qfq") -> dict:
+        return self._nl_query(f"{symbol} {start} 至 {end} 的每日开盘价 收盘价 最高价 最低价 成交量 涨跌幅（{adjust}）")
 
-    def fundamentals(self, symbol: str) -> Any:
-        return self._request("v1/stock/fundamentals", {"symbol": symbol})
+    def stock_list(self) -> dict:
+        return self._nl_query("A股 全部股票代码与股票名称 列表")
 
-    def industry_classification(self) -> Any:
-        return self._request("v1/stock/industry")
+    def fundamentals(self, symbol: str) -> dict:
+        return self._nl_query(f"{symbol} 最新年报 营业收入 净利润 资产负债率 净资产收益率 毛利率")
 
-    def index_constituents(self, index_code: str) -> Any:
-        return self._request("v1/index/constituents", {"index_code": index_code})
+    def industry_classification(self) -> dict:
+        return self._nl_query("A股 申万一级行业分类 股票代码与行业名称 列表")
 
-    def news(self, symbol: str = "", limit: int = 20) -> Any:
-        return self._request("v1/news", {"symbol": symbol, "limit": limit})
+    def index_constituents(self, index_code: str) -> dict:
+        return self._nl_query(f"{index_code} 指数 完整成分股 股票代码 列表")
+
+    def news(self, symbol: str = "", limit: int = 20) -> dict:
+        q = f"{symbol} 最近新闻与舆情" if symbol else "今日 市场 重大新闻"
+        return self._nl_query(q)
+
+
+def _extract_contents(result: Any, types: Optional[List[str]] = None) -> List[str]:
+    """从 NeoData 响应中提取 apiRecall 的文本 content 列表（可过滤 type）。"""
+    if not isinstance(result, dict):
+        return []
+    api = (result.get("data") or {}).get("apiData") or {}
+    blocks = api.get("apiRecall") or []
+    out: List[str] = []
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        if types and b.get("type") not in types:
+            continue
+        c = b.get("content")
+        if c:
+            out.append(str(c))
+    return out
+
+
+def _is_usable(result: Any) -> bool:
+    """NeoData 结果是否可作为有效数据（非空）。空结果应触发 legacy 回退。"""
+    if result is None:
+        return False
+    if isinstance(result, pd.DataFrame):
+        return not result.empty
+    if isinstance(result, (list, tuple)):
+        return len(result) > 0
+    return True
 
 
 class NeoDataSource:
-    """与 ``DataFetcher`` 接口对齐的稳定数据源。
+    """与 ``DataFetcher`` 接口对齐的数据源（见模块顶部「重要现实约束」）。
 
-    每个方法先用 NeoData 取数；未配置 / 失败 / 未覆盖时按 ``fallback_to_legacy``
-    回退到 legacy ``DataFetcher``，并通过 ``last_fetch_info`` 暴露实际使用的源，
-    便于上层区分「代码错误」与「数据源不可用」。
+    ⚠️ 真实 NeoData 是「自然语言查询」服务，返回自由文本块，**无法稳定提供因子引擎所需的
+    结构化批量数据**（完整 K 线时序、完整指数成分股、行业/市值映射、结构化财报）。因此各
+    ``neo()`` 解析在多数场景下返回空，由 ``fallback_to_legacy`` 回退 legacy 才能真正跑通回测；
+    ``data.neodata.fallback_to_legacy`` 当前必须保持 ``true``。
+
+    每个方法先用 NeoData 取数；未配置 / 失败 / 鉴权失败 / 未覆盖 / 解析为空时按
+    ``fallback_to_legacy`` 回退到 legacy ``DataFetcher``，并通过 ``last_fetch_info``
+    暴露实际使用的源，便于上层区分「代码错误」与「数据源不可用」。
     """
 
     def __init__(
@@ -166,39 +247,79 @@ class NeoDataSource:
         return self._legacy
 
     def _resolve(self, neodata_fn, legacy_fn, label: str):
-        """优先 NeoData；失败回退 legacy；都不行返回空并标记。"""
+        """优先 NeoData；失败 / 空结果回退 legacy；都不行返回空并标记。"""
         if self.client.configured:
             try:
                 result = neodata_fn()
-                if result is not None and not (isinstance(result, pd.DataFrame) and result.empty):
+                if _is_usable(result):
                     self.last_fetch_info = {"source": "neodata", "message": f"{label} 经 NeoData 取数成功"}
                     return result
+                # 空结果视为未覆盖，继续走回退
             except Exception as e:  # noqa: BLE001
                 self.last_fetch_info = {"source": "neodata", "message": f"{label} NeoData 失败: {e}"}
         if self.fallback_to_legacy:
             out = legacy_fn()
             self.last_fetch_info = {
                 "source": "legacy",
-                "message": f"{label} 回退 legacy DataFetcher（NeoData 不可用或未覆盖）",
+                "message": f"{label} 回退 legacy DataFetcher（NeoData 不可用/未覆盖/解析为空）",
             }
             return out
+        return pd.DataFrame()
+
+    # -- 字段映射：NeoData 原始文本 -> FactorGPT 约定 DataFrame（best-effort） --
+    # 真实 NeoData 返回自由文本块，无法可靠解析为结构化批量数据；无法解析时返回空（触发回退）。
+    @staticmethod
+    def _map_kline(result: Any, symbol: str) -> Optional[pd.DataFrame]:
+        # NeoData 文本块无法稳定还原完整 OHLCV 时序，返回空（回退 legacy）。
         return None
 
-    # -- 字段映射：NeoData 原始 JSON -> FactorGPT 约定 DataFrame --
     @staticmethod
-    def _map_kline(payload: Any, symbol: str) -> pd.DataFrame:
-        rows = payload.get("data", payload) if isinstance(payload, dict) else payload
+    def _map_financials(result: Any, symbol: str) -> Optional[pd.DataFrame]:
+        contents = _extract_contents(result, types=["basic_info"])
+        if not contents:
+            return None
+        rows: Dict[str, str] = {}
+        for line in contents[0].replace("；", ";").splitlines():
+            if ":" in line or "：" in line:
+                k, _, v = line.replace("：", ":").partition(":")
+                k = k.strip().strip("【】")
+                if k and v.strip():
+                    rows[k] = v.strip()
         if not rows:
-            return pd.DataFrame()
-        df = pd.DataFrame(rows)
-        # 兼容常见字段名 -> 统一约定：date/open/high/low/close/volume/amount/pct_chg/symbol
-        rename = {
-            "trade_date": "date", "datetime": "date", "vol": "volume",
-            "circ_mv": "amount", "change_pct": "pct_chg", "pre_close": "pre_close",
-        }
-        df.rename(columns={k: v for k, v in rename.items() if k in df.columns}, inplace=True)
+            return None
+        df = pd.DataFrame([rows])
         df["symbol"] = symbol
         return df
+
+    @staticmethod
+    def _map_industry(result: Any) -> Optional[pd.DataFrame]:
+        # 无法稳定还原全市场行业映射，返回空（回退 legacy）。
+        return None
+
+    @staticmethod
+    def _map_index_constituents(result: Any) -> Optional[List[str]]:
+        contents = _extract_contents(result)
+        if not contents:
+            return None
+        codes = re.findall(r"\b\d{6}\b", " ".join(contents))
+        return list(dict.fromkeys(codes)) or None
+
+    @staticmethod
+    def _map_news(result: Any) -> Optional[pd.DataFrame]:
+        if not isinstance(result, dict):
+            return None
+        doc = (result.get("data") or {}).get("docData") or {}
+        rows = []
+        for grp in doc.get("docRecall") or []:
+            for d in grp.get("docList") or []:
+                rows.append({
+                    "title": d.get("title", ""),
+                    "content": d.get("content", ""),
+                    "publish_time": d.get("publishTime"),
+                    "source": d.get("source", ""),
+                    "url": d.get("url", ""),
+                })
+        return pd.DataFrame(rows) if rows else None
 
     # -- 公开方法（与 DataFetcher 对齐） --
     def get_daily_kline(
@@ -218,8 +339,12 @@ class NeoDataSource:
             return pd.DataFrame()
 
         def neo():
-            frames = [self._map_kline(self.client.kline(s, start, end, period, adjust), s) for s in symbols]
-            return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+            frames = []
+            for s in symbols:
+                df = self._map_kline(self.client.kline(s, start, end, period, adjust), s)
+                if df is not None:
+                    frames.append(df)
+            return pd.concat(frames, ignore_index=True) if frames else None
 
         def leg():
             return self._legacy_fetcher().get_daily_kline(symbols, start, end, period, adjust, force_synthetic)
@@ -228,12 +353,7 @@ class NeoDataSource:
 
     def get_financial_data(self, symbol: str, report_type: str = "年报") -> pd.DataFrame:
         def neo():
-            payload = self.client.fundamentals(symbol)
-            df = pd.DataFrame(payload.get("data", []) if isinstance(payload, dict) else payload)
-            if not df.empty:
-                df.columns = [c.lower().strip() for c in df.columns]
-                df["symbol"] = symbol
-            return df
+            return self._map_financials(self.client.fundamentals(symbol), symbol)
 
         def leg():
             return self._legacy_fetcher().get_financial_data(symbol, report_type)
@@ -242,8 +362,7 @@ class NeoDataSource:
 
     def get_industry_classification(self) -> pd.DataFrame:
         def neo():
-            payload = self.client.industry_classification()
-            return pd.DataFrame(payload.get("data", []) if isinstance(payload, dict) else payload)
+            return self._map_industry(self.client.industry_classification())
 
         def leg():
             return self._legacy_fetcher().get_industry_classification()
@@ -252,8 +371,8 @@ class NeoDataSource:
 
     def get_industry_and_cap(self, symbols):
         def neo():
-            # NeoData 一次性行业+市值：若端点返回，则直接构造；否则回退 legacy
-            raise NotImplementedError("NeoData 行业+市值聚合端点待按 SKILL.md 接入")
+            # NeoData 无稳定的「行业+市值」批量结构化端点，返回空（回退 legacy）。
+            return None
 
         def leg():
             return self._legacy_fetcher().get_industry_and_cap(symbols)
@@ -262,9 +381,7 @@ class NeoDataSource:
 
     def get_index_constituents(self, index_code: str = "000906") -> List[str]:
         def neo():
-            payload = self.client.index_constituents(index_code)
-            data = payload.get("data", payload) if isinstance(payload, dict) else payload
-            return [str(x) for x in data] if data else []
+            return self._map_index_constituents(self.client.index_constituents(index_code))
 
         def leg():
             return self._legacy_fetcher().get_index_constituents(index_code)
@@ -274,8 +391,7 @@ class NeoDataSource:
 
     def get_news_sentiment(self, symbol: str = "", limit: int = 20):
         def neo():
-            payload = self.client.news(symbol, limit)
-            return pd.DataFrame(payload.get("data", []) if isinstance(payload, dict) else payload)
+            return self._map_news(self.client.news(symbol, limit))
 
         def leg():
             return self._legacy_fetcher().get_news_sentiment(symbol, limit)

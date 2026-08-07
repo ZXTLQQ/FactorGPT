@@ -109,3 +109,30 @@ NeoData 技能（token 自动读取，无需手动传参），例如：
 切换后自测：`get_data_source()` 默认返回 `DataFetcher`（取到 000906 成分股 800 只）；
 设 `data.source: neodata` 且未配置 `base_url` 时返回 `NeoDataSource` 并安全回退 legacy（同样 800 只）。
 `neo_adapter.py` 内部对 legacy 的引用（回退与字段约定）保留，未改动本地取数链路。
+
+## 9. NeoData 真实服务对接复核（2026-08-08）
+
+从平台 `neodata-financial-search` 技能 SKILL.md / reference.md 取得真实契约后复核，**结论：真实 NeoData 与最初原型假设不一致，不能直接替代 legacy**。
+
+- **真实契约**：单 POST 端点 `https://copilot.tencent.com/agenttool/v1/neodata`，请求体
+  `{"query","channel":"neodata","sub_channel":"workbuddy","data_type":"api"}`；
+  成功响应里 `data.apiData.apiRecall[].content` 是**自由文本块**（行情/财务/资金流描述），
+  **并非结构化批量行情/财务 REST 接口**（最初原型误假设的 `v1/quote/kline` 等 path 式端点不存在）。
+- **影响**：FactorGPT 因子引擎依赖的结构化批量数据——完整日 K 线时序（回测核心）、
+  完整指数成分股列表、行业/市值映射、结构化财务报表——NeoData 文本无法稳定提供。
+  因此 `neo_adapter.py` 的 `neo()` 解析在多数场景下返回空，必须由 `fallback_to_legacy` 回退 legacy。
+- **已落地修正**：
+  1. `config.yaml` 的 `data.neodata.base_url` 已填入真实端点；`fallback_to_legacy` **保持 true**（严禁 false），
+     并加注详细原因。
+  2. `neo_adapter.py` 重写 `NeoDataClient`：正确 POST 真实 NL 端点（不再拼装 `v1/quote/...` 假路径），
+     新增 `_nl_query` / `_extract_contents` / `_is_usable`；`NeoDataSource` 各 `neo()` 改为 best-effort 解析文本，
+     解析为空/失败/无 token 一律安全回退 legacy；模块与类 docstring 同步如实说明限制。
+- **联调受阻**：本环境 `connect_cloud_service` 返回的是 IDE 会话 token（audience=account），
+  NeoData 代理需要平台专属 `tempToken`，实测请求返回 **HTTP 401**，无法在本地做全量字段联调。
+- **自测（项目 .venv，PYTHONPATH=src）**：
+  - 默认 legacy 取 000906 成分股 800 只；
+  - 设 `data.source: neodata` + 真实 base_url（token 401）优雅回退 legacy，800 只；
+  - neodata 源无 token 立即回退 legacy，800 只；
+  - neodata 源取 K 线回退 legacy，58 行。均不崩溃。
+- **后续**：待平台 `tempToken` 在本环境可用后，再做结构化解析联调；届时若证明能稳定提供所需字段，
+  再评估将 `fallback_to_legacy` 设为 false。README 已同步新增「NeoData Stable Data Source (Experimental)」章节。
