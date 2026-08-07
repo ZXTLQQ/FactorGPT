@@ -301,12 +301,35 @@ class NeoDataSource:
         return self._resolve(lambda: None, leg, "分时K线")
 
 
+def _project_config() -> dict:
+    """读取项目全局 config.yaml。
+
+    调用点若未显式传入全局配置（如 refinery / factor_system / market_data 的局部场景），
+    工厂会回退到 ``config.yaml`` 的 ``data.source`` 开关，使全局切换在所有入口一致生效；
+    默认仍为 legacy（本地自爬方案），不破坏任何现有行为。
+    """
+    try:
+        from llm.client import load_config
+        return load_config() or {}
+    except Exception:  # pragma: no cover - 极端降级：直接读文件
+        try:
+            from data.fetcher import _load_config_file
+            return _load_config_file() or {}
+        except Exception:
+            return {}
+
+
 class DataSourceFactory:
-    """数据源工厂：按 config ``data.source`` 决定使用 legacy 还是 NeoData 稳定源。"""
+    """数据源工厂：按 config ``data.source`` 决定使用 legacy 还是 NeoData 稳定源。
+
+    - ``config=None`` 时自动读取项目全局 ``config.yaml``，保证 ``data.source`` 开关处处生效；
+    - ``data.source`` 缺省为 ``legacy``，即保留原有的本地运行数据源（akshare/sina/tushare 自爬）；
+    - 仅在显式设置 ``data.source: neodata`` 时才走平台稳定数据源（未配置时仍安全回退 legacy）。
+    """
 
     @staticmethod
     def get_data_source(config: Optional[dict] = None, tushare_token: Optional[str] = None):
-        cfg = config or {}
+        cfg = config if isinstance(config, dict) else _project_config()
         data_cfg = cfg.get("data", {}) or {}
         source = (data_cfg.get("source") or "legacy").lower()
         if source == "neodata":

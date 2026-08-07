@@ -344,10 +344,11 @@ class RefineryPipeline:
         因子池与分钟级特征均由真实日 K 派生，确保与真实 (date, symbol) 索引对齐，
         使 RPN 评估、中性化均作用于真实收益。网络/数据源不可用时由调用方回退合成数据。
         """
-        from data.fetcher import DataFetcher
+        from data.neo_adapter import get_data_source
 
         cfg = self.config
-        fetcher = DataFetcher()
+        # 数据源走工厂：默认 legacy（本地自爬方案保留），config.yaml 设 data.source=neodata 时切稳定源
+        fetcher = get_data_source()
         dates_all = pd.bdate_range(cfg.start, periods=cfg.train_days + cfg.test_days)
         end = dates_all[-1].strftime("%Y-%m-%d")
 

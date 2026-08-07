@@ -501,8 +501,8 @@ class MarketDataFetcher:
                 pass
         # 二级回退：Tushare（已在 config.yaml 配置 token，非交易时段可用）
         try:
-            from data.fetcher import DataFetcher
-            df = DataFetcher().get_daily_kline(
+            from data.neo_adapter import get_data_source
+            df = get_data_source().get_daily_kline(
                 symbols=[symbol.zfill(6)],
                 start=_days_ago_str(days * 2), end=_today_str(),
                 period="daily", adjust=sina_adj or "qfq",
@@ -685,9 +685,10 @@ class MarketDataFetcher:
         hit = cache.get(NS_NEWS, ckey, ttl=600)
         if hit is not None:
             return pd.DataFrame(hit)
-        from data.fetcher import DataFetcher
+        from data.neo_adapter import get_data_source
 
-        df = DataFetcher.get_news_sentiment(symbol, date=None)
+        # 数据源走工厂：默认 legacy（本地自爬），data.source=neodata 时切稳定源
+        df = get_data_source().get_news_sentiment(symbol, date=None)
         if df is not None and not df.empty:
             df = df.head(int(days * 3))
             cache.set(NS_NEWS, ckey, df.to_dict(orient="records"))

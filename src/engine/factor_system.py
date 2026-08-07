@@ -216,14 +216,15 @@ def _load_from_ore_cache(cache_dir: str) -> Optional[pd.DataFrame]:
 
 def _load_online(n_symbols: int, days: int, index_code: str) -> Optional[pd.DataFrame]:
     try:
-        from data.fetcher import DataFetcher
+        from data.neo_adapter import get_data_source
     except Exception:
         try:
-            from src.data.fetcher import DataFetcher  # type: ignore
+            from src.data.neo_adapter import get_data_source  # type: ignore
         except Exception:
             return None
     try:
-        fetcher = DataFetcher()
+        # 数据源走工厂：默认 legacy（本地自爬方案保留），config.yaml 设 data.source=neodata 时切稳定源
+        fetcher = get_data_source()
         symbols = fetcher.get_index_constituents(index_code) or []
         symbols = [str(s).zfill(6) for s in symbols][:n_symbols]
         if not symbols:

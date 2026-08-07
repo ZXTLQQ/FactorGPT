@@ -151,9 +151,10 @@ class FactorAgent:
             if primary_source == "ths":
                 kline = self._load_data_ths(cfg, universe_size, start, end, index_code)
             else:
-                from data.fetcher import DataFetcher
+                from data.neo_adapter import get_data_source
 
-                fetcher = DataFetcher(tushare_token=tushare_token)
+                # 数据源走工厂：默认 legacy（本地自爬），data.source=neodata 时切稳定源
+                fetcher = get_data_source(self.config, tushare_token=tushare_token)
                 symbols = fetcher.get_index_constituents(index_code)[:universe_size]
                 if symbols:
                     kline = fetcher.get_daily_kline(
@@ -167,11 +168,12 @@ class FactorAgent:
             return kline, industry, mkt_cap
 
         # 真实数据：补充行业 / 市值映射，使行业/市值中性化真正可运行（不再静默跳过）
-        from data.fetcher import DataFetcher
+        from data.neo_adapter import get_data_source
 
         symbols = sorted(kline["symbol"].astype(str).str.zfill(6).unique().tolist())
-        industry, mkt_cap = DataFetcher(
-            tushare_token=cfg.get("tushare_token")
+        # 数据源走工厂：默认 legacy（本地自爬），data.source=neodata 时切稳定源
+        industry, mkt_cap = get_data_source(
+            self.config, tushare_token=cfg.get("tushare_token")
         ).get_industry_and_cap(symbols)
         n_missing = int(industry.isna().sum() + mkt_cap.isna().sum())
         if industry.notna().any() and mkt_cap.notna().any():

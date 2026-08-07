@@ -92,5 +92,20 @@ NeoData 技能（token 自动读取，无需手动传参），例如：
 - **安全与权限**：NeoData token 由平台托管（`~/.workbuddy/.neodata_token`），不落库、不硬编码；
   适配器只读，不写远端。
 - **实测清单**：见 `factorgpt-skill/references/data_contract.md` 阶段 0，先核对字段覆盖再全量切换。
-- **已落地代码**：`src/data/neo_adapter.py`（NeoDataSource + DataSourceFactory）、
+- **已落地代码**：`src/data/neo_adapter.py`（NeoDataSource + DataSourceFactory + `get_data_source` 便捷函数，
+  内部自动读取全局 `config.yaml`，保证 `data.source` 开关处处生效）、
   `config.yaml` 的 `data.source` / `data.neodata` 开关、`factorgpt-skill/` 脚手架、本计划文档。
+
+## 8. 调用点切换（2026-08-08 完成）
+
+已将全部业务侧 `DataFetcher()` 实例化 / `DataFetcher.get_*` 类方法调用点切换为工厂 `get_data_source()`，
+**本地运行方案完整保留**（默认 `data.source: legacy`，行为与原来 `DataFetcher()` 完全一致）：
+
+- `src/agent/graph.py`：`_load_data` 内两处（行情拉取 + 行业/市值映射），传入完整 `self.config` 以尊重全局开关；
+- `src/pipeline/refinery.py`：`_build_real_ore` 矿石构建（保留原 `cfg = self.config` 局部逻辑不变）；
+- `src/engine/factor_system.py`：`_load_online` 在线行情加载（保留 `data.fetcher` / `src.data.fetcher` 双导入回退结构）；
+- `src/data/market_data.py`：Tushare 二级回退、`stock_news` 个股新闻两处。
+
+切换后自测：`get_data_source()` 默认返回 `DataFetcher`（取到 000906 成分股 800 只）；
+设 `data.source: neodata` 且未配置 `base_url` 时返回 `NeoDataSource` 并安全回退 legacy（同样 800 只）。
+`neo_adapter.py` 内部对 legacy 的引用（回退与字段约定）保留，未改动本地取数链路。
