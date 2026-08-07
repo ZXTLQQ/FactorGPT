@@ -50,7 +50,12 @@ data:
   # 2. Tushare Pro: 注册免费，token 在 https://tushare.pro 注册获取，基础接口够用
   # 3. Baostock: 免费无需注册，适合批量历史数据，更新较慢
   # 4. efinance: 免费，东方财富数据源，轻量快速
-  primary_source: akshare          # 主力数据源：akshare / tushare / ths / sina
+  source: legacy                  # 数据源开关：legacy（默认，沿用 akshare/sina/tushare 自爬）| neodata（走平台 NeoData 技能，稳定）
+  neodata:                         # 仅当 source=neodata 时生效
+    base_url: ""                   # NeoData 网关地址（从平台 neodata-financial-search 技能 SKILL.md 获取；留空则自动降级 legacy）
+    token_env: NEODATA_TOKEN       # token 环境变量名；或由平台自动写入 ~/.workbuddy/.neodata_token
+    fallback_to_legacy: true       # true=NeoData 不可用/未覆盖时回退 legacy（安全过渡）；false=严格只用 NeoData（最稳定）
+  primary_source: akshare          # 主力数据源（legacy 模式下的子优先级）：akshare / tushare / ths / sina
   # prefer_sina：部分网络下东方财富(push2his)的 HTTPS 连接会被对端重置
   # (RemoteDisconnected)，但新浪源可正常访问。置 true（或把 primary_source 改为 sina）
   # 可让新浪成为首选数据源，跳过东方财富的无谓失败与日志噪音。
