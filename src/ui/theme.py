@@ -304,6 +304,17 @@ div[data-baseweb="tag"] {{ background: {RED} !important; }}
   border: 1px solid {LINE} !important; border-radius: 20px !important;
 }}
 
+/* ---------- Streamlit 原生警示框（warning/success/info/error） ---------- */
+/* 强制深字，保留各类型默认浅色背景，修复亮色字与浅底融合导致看不清的问题
+   （如因子健康度中弱 IC 的 st.warning 黄框、健康因子的 st.success 绿框） */
+[data-testid="stAlert"] {{
+  border-radius: var(--fg-radius) !important;
+  border: 1px solid var(--fg-line) !important;
+}}
+[data-testid="stAlert"], [data-testid="stAlert"] * {{
+  color: var(--fg-ink) !important;
+}}
+
 /* 滑块 / 进度条 */
 div[data-testid="stSlider"] div[role="slider"] {{ background: {RED} !important; }}
 .stProgress > div > div > div > div {{ background: linear-gradient(90deg, {RED}, {RED_BRIGHT}); }}
