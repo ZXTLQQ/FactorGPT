@@ -41,4 +41,4 @@ CodeBuddy / WorkBuddy 中调用的能力，并把不稳定的自建爬虫替换�
 ## 参考
 
 - 数据契约与字段映射：``factorgpt-skill/references/data_contract.md``
-- 发布与扩展方向：``docs/factorgpt_codebuddy_skill_plan.md``
+- 发布与扩展方向：``文档归档/docs/factorgpt_codebuddy_skill_plan.md``

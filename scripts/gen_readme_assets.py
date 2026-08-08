@@ -2,7 +2,7 @@
 生成 README 配图（真实引擎产出，非手绘）。
 
 使用项目自带的 src/engine/backtest.py 中的 FactorBacktester，
-在「带已知信号的合成 A 股面板」上跑回测，导出 PNG 图表到 docs/assets/。
+在「带已知信号的合成 A 股面板」上跑回测，导出 PNG 图表到 文档归档/docs/assets/。
 
 说明：数据为合成演示数据（signal-to-noise 受控），仅用于展示
 FactorGPT 的因子评价体系与可视化风格，不代表真实选股表现。

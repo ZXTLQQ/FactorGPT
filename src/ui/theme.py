@@ -151,9 +151,15 @@ section[data-testid="stSidebar"] div[data-testid="stExpander"] {{
   background: rgba(255,255,255,.72); margin-bottom: 6px;
 }}
 section[data-testid="stSidebar"] div[data-testid="stExpander"] summary {{
-  font-size: 13px; font-weight: 650; color: var(--fg-red-deep); padding: .35rem .6rem;
+  font-size: 13px; font-weight: 650; color: var(--fg-red-deep);
+  padding: .35rem .6rem; background: transparent !important;
 }}
 section[data-testid="stSidebar"] div[data-testid="stExpander"] summary:hover {{ color: var(--fg-red); }}
+/* 展开状态下的 summary 不允许暗底 */
+section[data-testid="stSidebar"] div[data-testid="stExpander"][open] summary,
+section[data-testid="stSidebar"] div[data-testid="stExpander"][data-open="true"] summary {{
+  background: transparent !important; color: var(--fg-red-deep) !important;
+}}
 
 /* ---------- 主区按钮 ---------- */
 .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {{
@@ -261,13 +267,42 @@ div[data-testid="stDataFrame"], div[data-testid="stDataEditor"] {{
   border: 1px solid var(--fg-line); border-radius: var(--fg-radius); overflow: hidden;
 }}
 
-/* ---------- 输入控件 ---------- */
+/* ---------- 顶部导航栏（消除 Streamlit 默认黑顶） ---------- */
+.stAppHeader, [data-testid="stToolbar"], .stTopbar, header {{
+  background: {BG} !important; border-bottom: 1px solid {LINE} !important;
+}}
+.stAppHeader button, [data-testid="stToolbar"] button {{ color: {INK_SUB} !important; }}
+.stAppHeader button:hover, [data-testid="stToolbar"] button:hover {{ color: {RED} !important; }}
+
+/* ---------- 输入控件（强制浅底深字） ---------- */
+.stTextInput > label, .stTextArea > label, .stNumberInput > label {{
+  color: {INK} !important; font-weight: 600; font-size: 13px;
+}}
 .stTextInput input, .stNumberInput input, .stTextArea textarea,
-div[data-baseweb="select"] > div {{ border-radius: 8px !important; }}
+div[data-baseweb="select"] > div {{
+  border-radius: 8px !important;
+  background-color: {BG} !important;
+  color: {INK} !important;
+  border: 1px solid {LINE} !important;
+}}
+.stTextInput input::placeholder, .stTextArea textarea::placeholder {{
+  color: {INK_MUTED} !important;
+}}
 .stTextInput input:focus, .stTextArea textarea:focus {{
   border-color: var(--fg-red) !important; box-shadow: 0 0 0 2px rgba(200,16,46,.10) !important;
 }}
+/* TextArea 外层容器也强制白底 */
+.stTextArea > div, .stTextArea base-input {{
+  background-color: {BG} !important;
+  border-radius: 8px !important;
+}}
 div[data-baseweb="tag"] {{ background: {RED} !important; }}
+
+/* 聊天输入框 */
+.stChatInput textarea {{
+  background-color: {BG} !important; color: {INK} !important;
+  border: 1px solid {LINE} !important; border-radius: 20px !important;
+}}
 
 /* 滑块 / 进度条 */
 div[data-testid="stSlider"] div[role="slider"] {{ background: {RED} !important; }}
@@ -320,6 +355,10 @@ hr {{ border-color: var(--fg-line); }}
 .fg-step .t {{ font-size: 13px; font-weight: 650; margin-top: 2px; }}
 .fg-step .d {{ font-size: 11.5px; color: var(--fg-ink-muted); margin-top: 2px; }}
 .fg-step.done {{ background: var(--fg-red-soft); border-color: var(--fg-red-line); }}
+
+/* 代码块：浅色底 + 边框，保证在红白主题下清晰可读（不覆盖语法高亮颜色） */
+.stCodeBlock {{ background-color: #F7F8FA !important; border: 1px solid var(--fg-line); border-radius: 10px; }}
+.stCodeBlock > div, .stCodeBlock pre {{ background-color: #F7F8FA !important; color: var(--fg-ink); }}
 </style>
 """
 

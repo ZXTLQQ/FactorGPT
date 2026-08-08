@@ -6,15 +6,15 @@
 <title>FactorGPT 因子研究报告</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
-  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #0f1420; color: #e6e9ef; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #ffffff; color: #1B1F24; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px; }
-  h1 { font-size: 24px; border-left: 4px solid #4f9cf9; padding-left: 12px; }
-  h2 { font-size: 18px; margin-top: 32px; color: #9fc4ff; }
-  .card { background: #18202f; border: 1px solid #27324a; border-radius: 10px; padding: 16px 20px; margin: 12px 0; }
-  .meta { color: #8b97ad; font-size: 13px; }
+  h1 { font-size: 24px; border-left: 4px solid #C8102E; padding-left: 12px; color: #1B1F24; }
+  h2 { font-size: 18px; margin-top: 32px; color: #8E0F22; }
+  .card { background: #ffffff; border: 1px solid #EBEEF3; border-radius: 10px; padding: 16px 20px; margin: 12px 0; box-shadow: 0 1px 3px rgba(27,31,36,.06); }
+  .meta { color: #8A94A6; font-size: 13px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { border: 1px solid #27324a; padding: 8px 10px; text-align: left; }
-  th { background: #1f2a3d; }
+  th, td { border: 1px solid #EBEEF3; padding: 8px 10px; text-align: left; }
+  th { background: #FDECEE; color: #8E0F22; }
   .plot { width: 100%; height: 420px; }
 </style>
 </head>
@@ -47,6 +47,9 @@
 <script>
 // 由 FactorGPT 回测层注入数据；此处为占位，真实报告由 Python 端写回 JSON。
 const REPORT = __REPORT_JSON__;
+const _PLOT_BG = {paper_bgcolor:"#FFFFFF", plot_bgcolor:"#FFFFFF", font:{color:"#5A6472"},
+  xaxis:{gridcolor:"#EBEEF3", zerolinecolor:"#EBEEF3", linecolor:"#EBEEF3"},
+  yaxis:{gridcolor:"#EBEEF3", zerolinecolor:"#EBEEF3", linecolor:"#EBEEF3"}};
 function render() {
   document.getElementById("meta").textContent =
     "分析日期：" + (REPORT.date || "") + " ｜ 数据源：NeoData（平台稳定源）";
@@ -56,9 +59,9 @@ function render() {
     tr.innerHTML = "<td>" + k + "</td><td>" + v + "</td>";
     tb.appendChild(tr);
   });
-  if (REPORT.ic) Plotly.newPlot("ic-plot", [{ x: REPORT.dates, y: REPORT.ic, type: "scatter", name: "IC" }], {paper_bgcolor:"#18202f", plot_bgcolor:"#18202f", font:{color:"#e6e9ef"}});
-  if (REPORT.quantile) Plotly.newPlot("quantile-plot", REPORT.quantile, {paper_bgcolor:"#18202f", plot_bgcolor:"#18202f", font:{color:"#e6e9ef"}});
-  if (REPORT.longshort) Plotly.newPlot("longshort-plot", REPORT.longshort, {paper_bgcolor:"#18202f", plot_bgcolor:"#18202f", font:{color:"#e6e9ef"}});
+  if (REPORT.ic) Plotly.newPlot("ic-plot", [{ x: REPORT.dates, y: REPORT.ic, type: "scatter", name: "IC" }], Object.assign({}, _PLOT_BG));
+  if (REPORT.quantile) Plotly.newPlot("quantile-plot", REPORT.quantile, Object.assign({}, _PLOT_BG));
+  if (REPORT.longshort) Plotly.newPlot("longshort-plot", REPORT.longshort, Object.assign({}, _PLOT_BG));
 }
 render();
 </script>

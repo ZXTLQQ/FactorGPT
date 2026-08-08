@@ -1,6 +1,6 @@
 """截取 FactorGPT Streamlit 真实 UI 页面（Playwright + chromium，headless）。
 
-后台启动 streamlit，按「分组展开 → 点击页面」逐级导航，全页截图到 docs/assets/ui_*.png。
+后台启动 streamlit，按「分组展开 → 点击页面」逐级导航，全页截图到 文档归档/docs/assets/ui_*.png。
 """
 
 from __future__ import annotations

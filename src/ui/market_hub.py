@@ -44,7 +44,6 @@ INDEX_BY_CODE = {x["code"]: x for x in MAJOR_INDICES}
 C_UP = "#ef232a"    # 涨：红
 C_DOWN = "#14b143"  # 跌：绿
 C_FLAT = "#888888"
-C_BG = "#0e1117"
 
 
 # ----------------------------------------------------------------------
@@ -91,14 +90,36 @@ def _sina_symbol(code: str) -> str:
 # ----------------------------------------------------------------------
 # 图表
 # ----------------------------------------------------------------------
+def _apply_light(fig, height, **kw):
+    """把行情图统一到红白主题：白底、深灰文字、淡灰网格，消除黑底与低对比。"""
+    margin = kw.pop("margin", dict(l=40, r=20, t=30, b=20))
+    fig.update_layout(
+        template="plotly_white",
+        height=height,
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        font=dict(family='"PingFang SC","Microsoft YaHei","Hiragino Sans GB",'
+                        '"Helvetica Neue",Arial,sans-serif',
+                  size=12, color="#5A6472"),
+        margin=margin,
+        hoverlabel=dict(
+            bgcolor="#FFFFFF", bordercolor="#F3D2D7",
+            font=dict(size=12, color="#1B1F24"),
+        ),
+        **kw,
+    )
+    fig.update_xaxes(gridcolor="#EBEEF3", zerolinecolor="#EBEEF3", linecolor="#EBEEF3")
+    fig.update_yaxes(gridcolor="#EBEEF3", zerolinecolor="#EBEEF3", linecolor="#EBEEF3")
+    return fig
+
+
 def _candlestick(df, height=380, with_volume=True, title=""):
     """通用 K 线图（含成交量副图）。"""
     fig = go.Figure()
     if df is None or df.empty:
-        fig.add_annotation(text="暂无行情数据", showarrow=False)
-        fig.update_layout(height=height, template="plotly_dark",
-                          paper_bgcolor=C_BG, plot_bgcolor=C_BG)
-        return fig
+        fig.add_annotation(text="暂无行情数据", showarrow=False,
+                           font=dict(color="#5A6472"))
+        return _apply_light(fig, height)
     date_col = next((c for c in df.columns if "日期" in str(c)), df.columns[0])
     req = ["开盘", "收盘", "最高", "最低"]
     if all(c in df.columns for c in req):
@@ -112,19 +133,21 @@ def _candlestick(df, height=380, with_volume=True, title=""):
         fig.add_trace(go.Scatter(x=df[date_col], y=df["收盘"],
                                   line=dict(color="#4ea1ff"), name="收盘"))
     if with_volume and "成交量" in df.columns:
+        vol_color = "#B7C0CC"
+        if "开盘" in df.columns and "收盘" in df.columns:
+            inc = df["开盘"] <= df["收盘"]
+            vol_color = [C_UP if v else C_DOWN for v in inc]
         fig.add_trace(go.Bar(x=df[date_col], y=df["成交量"],
-                             name="成交量", marker_color="#3a4a5a",
-                             yaxis="y2", opacity=0.5))
+                             name="成交量", marker_color=vol_color,
+                             yaxis="y2", opacity=0.4))
         fig.update_layout(yaxis2=dict(overlaying="y", side="right",
                                       showgrid=False, visible=False))
-    fig.update_layout(
-        height=height, template="plotly_dark", paper_bgcolor=C_BG,
-        plot_bgcolor=C_BG, title=title, xaxis_rangeslider_visible=False,
+    return _apply_light(
+        fig, height, title=title, xaxis_rangeslider_visible=False,
         margin=dict(l=40, r=20, t=30, b=20),
         legend=dict(orientation="h", y=1.02, x=0),
         hovermode="x unified",
     )
-    return fig
 
 
 def _mini_line(series, color, height=46):
@@ -132,7 +155,7 @@ def _mini_line(series, color, height=46):
     fig = go.Figure()
     fig.add_trace(go.Scatter(y=series, line=dict(color=color, width=1.6),
                              showlegend=False))
-    fig.update_layout(height=height, template="plotly_dark",
+    fig.update_layout(height=height, template="plotly_white",
                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                       margin=dict(l=0, r=0, t=0, b=0), xaxis=dict(visible=False),
                       yaxis=dict(visible=False))
@@ -156,11 +179,11 @@ def _compare_figure(items):
         fig.add_trace(go.Scatter(x=df[date_col].iloc[: len(norm)], y=norm,
                                  mode="lines", name=label,
                                  line=dict(color=color, width=2)))
-    fig.update_layout(height=460, template="plotly_dark", paper_bgcolor=C_BG,
-                      plot_bgcolor=C_BG, margin=dict(l=40, r=20, t=30, b=30),
-                      yaxis_title="区间涨跌幅 (%)", hovermode="x unified",
-                      legend=dict(orientation="h", y=1.04, x=0))
-    return fig
+    return _apply_light(
+        fig, 460, margin=dict(l=40, r=20, t=30, b=30),
+        yaxis_title="区间涨跌幅 (%)", hovermode="x unified",
+        legend=dict(orientation="h", y=1.04, x=0),
+    )
 
 
 # ----------------------------------------------------------------------
