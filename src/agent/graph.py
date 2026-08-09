@@ -127,6 +127,25 @@ class FactorAgent:
         )
 
     # ------------------------------------------------------------------
+    # 数据源配置热更新（UI 运行时调整数据源后即时生效）
+    # ------------------------------------------------------------------
+    def reload_data_config(self):
+        """重新从项目全局 ``config.yaml`` 读取 ``data`` 段并刷新 ``self.config``。
+
+        UI 的数据源设置面板把用户调整写入 config.yaml 后，调用本方法即可让后续
+        所有 ``get_data_source(self.config, ...)`` 取数点（行情/指数/行业市值）
+        使用新配置，无需重启进程。未调整时 UI 初值来自 config.yaml，本方法不改变
+        默认行为。
+        """
+        fresh = load_config()
+        # 仅覆盖 data 段，保留内存中其它段的运行态（如已切换的 llm 配置）。
+        self.config = dict(self.config or {})
+        self.config["data"] = fresh.get("data", {}) or {}
+        logger.info("FactorAgent 数据源配置已热更新（source=%s）",
+                    (self.config.get("data") or {}).get("source", "legacy"))
+        return self.config.get("data", {})
+
+    # ------------------------------------------------------------------
     # 数据加载
     # ------------------------------------------------------------------
     def _load_data(self):

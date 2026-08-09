@@ -215,6 +215,136 @@ def _save_llm_to_config():
         st.error(f"保存失败：{e}")
 
 
+def _init_data_source_session():
+    """初始化数据源会话状态：初值全部取自 config.yaml 的 data 段（保留默认）。
+
+    仅当用户在面板中主动「应用」或「保存」时才会覆写对应值，未调整则维持原默认。
+    """
+    data = load_config().get("data", {}) or {}
+    defaults = {
+        "ui_ds_source": "legacy",
+        "ui_ds_primary": "akshare",
+        "ui_ds_prefer_sina": True,
+        "ui_ds_tushare_token": "",
+        "ui_ds_neodata_base_url": "",
+        "ui_ds_ths_base_url": "",
+        "ui_ds_ths_token": "",
+        "ui_ds_synthetic_on_fail": False,
+        "ui_ds_force_synthetic": False,
+        "ui_ds_proxy_enabled": False,
+        "ui_ds_proxy_http": "",
+        "ui_ds_proxy_https": "",
+    }
+    for key, default in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = data.get(key.replace("ui_ds_", ""), default)
+
+
+def _render_data_source_panel():
+    """侧边栏「数据源设置」面板：允许用户自行调整数据源接口。
+
+    未调整任何字段时，所有控件初值来自 config.yaml，等价于保留原默认数据源路径；
+    点击「应用配置」即时生效（热更新到运行的 Agent），「保存配置」持久化到 config.yaml。
+    """
+    _init_data_source_session()
+    with st.sidebar.expander("🗄️ 数据源设置", expanded=False):
+        st.caption("调整行情/数据接口；不改动则沿用 config.yaml 默认数据源。")
+        st.selectbox(
+            "数据源开关",
+            ["legacy", "neodata"],
+            index=0 if st.session_state.ui_ds_source != "neodata" else 1,
+            key="ui_ds_source",
+            help="legacy=沿用 akshare/sina/tushare 本地自爬；neodata=走平台稳定源（需可用网关）。",
+        )
+        st.selectbox(
+            "主力数据源（legacy）",
+            ["akshare", "tushare", "ths", "sina"],
+            index=["akshare", "tushare", "ths", "sina"].index(
+                st.session_state.ui_ds_primary
+            ) if st.session_state.ui_ds_primary in ("akshare", "tushare", "ths", "sina") else 0,
+            key="ui_ds_primary",
+            help="legacy 模式下的子优先级：akshare / tushare / ths / sina。",
+        )
+        st.checkbox("优先新浪源 (prefer_sina)", key="ui_ds_prefer_sina",
+                    help="部分网络下东方财富连接会被重置，置 true 可让新浪成为首选。")
+        st.text_input("Tushare Token", type="password", key="ui_ds_tushare_token",
+                      help="legacy=tushare 时填写；留空则忽略。")
+        st.text_input("NeoData 网关地址", key="ui_ds_neodata_base_url",
+                      help="仅 source=neodata 时生效。")
+        st.text_input("同花顺网关端点", key="ui_ds_ths_base_url",
+                      help="primary_source=ths 时填写 MCP 端点。")
+        st.text_input("同花顺 Token", type="password", key="ui_ds_ths_token",
+                      help="primary_source=ths 时填写 JWE 鉴权令牌。")
+        st.checkbox("实时源失败自动回退合成数据", key="ui_ds_synthetic_on_fail")
+        st.checkbox("强制合成数据（离线）", key="ui_ds_force_synthetic")
+        st.divider()
+        st.caption("网络代理（访问行情源 / 远程端点）")
+        st.checkbox("启用代理", key="ui_ds_proxy_enabled")
+        st.text_input("HTTP 代理", key="ui_ds_proxy_http", placeholder="http://127.0.0.1:7890")
+        st.text_input("HTTPS 代理", key="ui_ds_proxy_https", placeholder="留空复用 HTTP")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            apply = st.button("应用配置", key="btn_ds_apply", width="stretch")
+        with c2:
+            save = st.button("保存配置", key="btn_ds_save", width="stretch")
+
+        if apply:
+            _apply_data_source_to_session()
+            agent = get_agent()
+            agent.reload_data_config()
+            st.success("已应用：下一轮取数将使用新数据源设置。")
+        if save:
+            _save_data_source_to_config()
+            agent = get_agent()
+            agent.reload_data_config()
+            st.success("已保存配置到 config.yaml，并即时生效。")
+
+    st.sidebar.caption(
+        f"当前数据源：**{st.session_state.ui_ds_source}**"
+        f"（主力：{st.session_state.ui_ds_primary}）"
+    )
+
+
+def _collect_data_source_cfg():
+    """从会话状态收集 data 段字段（仅覆盖用户可调项，保留其余默认项）。"""
+    return {
+        "source": st.session_state.ui_ds_source,
+        "primary_source": st.session_state.ui_ds_primary,
+        "prefer_sina": bool(st.session_state.ui_ds_prefer_sina),
+        "tushare_token": st.session_state.ui_ds_tushare_token or "",
+        "neodata": {"base_url": st.session_state.ui_ds_neodata_base_url or ""},
+        "ths_api_base_url": st.session_state.ui_ds_ths_base_url or "",
+        "ths_api_token": st.session_state.ui_ds_ths_token or "",
+        "synthetic_on_fail": bool(st.session_state.ui_ds_synthetic_on_fail),
+        "force_synthetic": bool(st.session_state.ui_ds_force_synthetic),
+        "proxy": {
+            "enabled": bool(st.session_state.ui_ds_proxy_enabled),
+            "http": st.session_state.ui_ds_proxy_http or "",
+            "https": st.session_state.ui_ds_proxy_https or "",
+        },
+    }
+
+
+def _apply_data_source_to_session():
+    """把会话状态中的 data 段覆盖到内存 config（不落盘）。"""
+    cfg = load_config()
+    cfg["data"] = {**(cfg.get("data") or {}), **_collect_data_source_cfg()}
+    st.session_state._runtime_data_cfg = _collect_data_source_cfg()
+
+
+def _save_data_source_to_config():
+    """把会话状态中的数据源设置写入 config.yaml 的 data 段（保留其他段与未改字段）。"""
+    try:
+        data = yaml.safe_load(open(CONFIG_PATH, "r", encoding="utf-8")) or {}
+        merged = {**(data.get("data") or {}), **_collect_data_source_cfg()}
+        data["data"] = merged
+        yaml.safe_dump(data, open(CONFIG_PATH, "w", encoding="utf-8"),
+                       allow_unicode=True, sort_keys=False)
+    except Exception as e:
+        st.error(f"数据源配置保存失败：{e}")
+
+
 def _apply_model(agent):
     """运行前将 session 中的模型配置同步到 Agent 的 LLM 客户端。"""
     cfg = st.session_state.llm_cfg
@@ -1605,6 +1735,7 @@ def main():
 
     page = nav.render_sidebar(_badge_counts())
     _render_model_panel()
+    _render_data_source_panel()
     nav.render_page_header(page)
 
     DISPATCH.get(page, render_overview)()
