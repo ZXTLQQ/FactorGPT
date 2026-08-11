@@ -47,7 +47,11 @@ def _fast_icir(factor: pd.Series, kline: pd.DataFrame, fwd: int = 1) -> float:
     """
     if factor is None or len(factor) == 0:
         return 0.0
+    if factor.index.duplicated().any():
+        factor = factor[~factor.index.duplicated(keep="last")]
     kl = kline.set_index([DATE, SYMBOL])
+    if kl.index.duplicated().any():
+        kl = kl[~kl.index.duplicated(keep="last")]
     fr = kl.groupby(level=SYMBOL)["close"].pct_change(fwd)
     df = pd.concat([factor.rename("f"), fr.rename("r")], axis=1).dropna()
     if len(df) < 30:

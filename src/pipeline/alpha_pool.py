@@ -69,10 +69,16 @@ class AlphaPool:
     # -- 合成 ------------------------------------------------------------ #
     def synthesize(self, candidates: List[CandidateFactor], kline: pd.DataFrame) -> pd.Series:
         names = [c.name for c in candidates]
-        series = [c.series for c in candidates]
+        series = []
+        for c in candidates:
+            s = c.series
+            if s is not None and s.index.duplicated().any():
+                s = s[~s.index.duplicated(keep="last")]
+            series.append(s)
         common = series[0].index
         for s in series[1:]:
             common = common.intersection(s.index)
+        common = common[~common.duplicated()]
         X = np.column_stack([s.reindex(common).to_numpy(dtype=float) for s in series])
         X = np.nan_to_num(X)
         w = self._icir_weights(candidates)
@@ -117,10 +123,16 @@ class AlphaPool:
         if not self.config.iterative or len(candidates) < 2:
             return self.synthesize(candidates, kline)
         names = [c.name for c in candidates]
-        series = [c.series for c in candidates]
+        series = []
+        for c in candidates:
+            s = c.series
+            if s is not None and s.index.duplicated().any():
+                s = s[~s.index.duplicated(keep="last")]
+            series.append(s)
         common = series[0].index
         for s in series[1:]:
             common = common.intersection(s.index)
+        common = common[~common.duplicated()]
         X = np.nan_to_num(np.column_stack([s.reindex(common).to_numpy(dtype=float) for s in series]))
         w = self._icir_weights(candidates)
         if X.shape[1] > 1 and self.config.ortho:

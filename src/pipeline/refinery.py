@@ -332,6 +332,14 @@ class RefineryPipeline:
                 with open(p, "rb") as f:
                     ore = pickle.load(f)
                 if getattr(ore, "train_kline", None) is not None and getattr(ore, "factor_pool", None):
+                    # 防御：旧缓存可能含重复 (date, symbol) 行，统一去重避免下游 reindex 崩溃
+                    for attr in ("train_kline", "test_kline"):
+                        df = getattr(ore, attr, None)
+                        if df is not None and not df.empty:
+                            setattr(ore, attr, df.drop_duplicates(subset=["date", "symbol"], keep="last"))
+                    for name, s in list((ore.factor_pool or {}).items()):
+                        if s is not None and s.index.duplicated().any():
+                            ore.factor_pool[name] = s[~s.index.duplicated(keep="last")]
                     logger.info("已加载本地整矿缓存 %s", p)
                     return ore
             except Exception as e:  # noqa: BLE001
@@ -364,6 +372,9 @@ class RefineryPipeline:
 
         # 补齐精炼厂下游可能引用的列（成交额/涨跌幅代理）
         kline = kline.copy()
+        # 防御：真实行情偶发重复 (date, symbol) 行，会导致下游 factor series 多索引非唯一，
+        # 使 screener/alpha_pool 的 reindex 抛 "cannot handle a non-unique multi-index!"。统一去重。
+        kline = kline.drop_duplicates(subset=["date", "symbol"], keep="last")
         if "amount" not in kline.columns:
             kline["amount"] = kline["close"] * kline["volume"]
         if "pct_chg" not in kline.columns:

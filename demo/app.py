@@ -134,11 +134,8 @@ with tab1:
             1. 检索知识库 → 2. 生成因子代码 → 3. 沙盒验证 → 4. 回测评估
             """):
                 try:
-                    from engine.factor_builder import FactorBuilder
-                    from engine.backtest import Backtester
-                    from engine.traditional_factors import TRADITIONAL_FACTORS
-
-                    builder = FactorBuilder()
+                    from engine.factor_builder import FactorSandbox, build_pipeline
+                    from engine.backtest import FactorBacktester
 
                     # Generate a factor based on user input
                     if "动量" in user_input:
@@ -209,48 +206,73 @@ def alpha_factor(df):
     return df[["date", "symbol", "factor"]].dropna()
 '''
 
-                    # Generate synthetic data
-                    np.random.seed(42)
+                    # Generate synthetic data with a latent momentum signal:
+                    # slow-drifting signal s leads future returns (as in demo_sim.py),
+                    # so 20-day momentum factor shows a positive IC in the demo.
+                    rng = np.random.default_rng(42)
                     n_dates, n_symbols = 500, 200
                     dates = pd.date_range("2022-01-01", periods=n_dates, freq="B")
                     symbols = [f"STK_{i:04d}" for i in range(n_symbols)]
 
-                    # Create price data with trends
+                    sig = rng.normal(0, 1, size=(n_dates, n_symbols))
+                    for t in range(1, n_dates):
+                        sig[t] = 0.9 * sig[t - 1] + np.sqrt(1 - 0.9 ** 2) * sig[t]
+                    rets = np.zeros((n_dates, n_symbols))
+                    for t in range(1, n_dates):
+                        rets[t] = 0.008 * sig[t - 1] + rng.normal(0, 0.03, size=n_symbols)
+                    closes = 10.0 * np.exp(np.cumsum(rets, axis=0))
+
                     data_rows = []
                     for i, sym in enumerate(symbols):
-                        drift = np.random.normal(0.0003, 0.0001)
-                        vol = np.random.uniform(0.015, 0.035)
-                        price = 10 + np.abs(np.random.normal(0, 5))
-                        prices = []
-                        for _ in range(n_dates):
-                            price *= (1 + np.random.normal(drift, vol))
-                            prices.append(price)
-                        for t, (date, p) in enumerate(zip(dates, prices)):
+                        for t, (date, p) in enumerate(zip(dates, closes[:, i])):
                             data_rows.append({
                                 "date": date, "symbol": sym,
-                                "close": p,
-                                "open": p * (1 + np.random.normal(0, 0.005)),
-                                "high": p * (1 + abs(np.random.normal(0, 0.01))),
-                                "low": p * (1 - abs(np.random.normal(0, 0.01))),
-                                "volume": np.random.lognormal(12, 1),
+                                "close": float(p),
+                                "open": float(p * (1 + rng.normal(0, 0.005))),
+                                "high": float(p * (1 + abs(rng.normal(0, 0.01)))),
+                                "low": float(p * (1 - abs(rng.normal(0, 0.01)))),
+                                "volume": float(np.random.lognormal(12, 1)),
                             })
 
                     df = pd.DataFrame(data_rows)
 
-                    # Execute factor
-                    result = builder.evaluate(df, factor_code)
+                    # Execute factor through the product engine (sandbox -> postprocess -> backtest)
+                    sandbox = FactorSandbox({"engine": {"sandbox": {"subprocess": False, "timeout": 60}}})
+                    factor_series = sandbox.run(factor_code, df)
+                    processed = build_pipeline(factor_series, winsorize_pct=0.01)
 
-                    if result.get("success"):
-                        metrics = result.get("metrics", {})
-                        charts = result.get("chart_paths", [])
+                    bt = FactorBacktester(n_quantiles=5, forward_periods=5)
+                    metrics = bt.evaluate(df, processed, verbose=False)
+
+                    if "error" not in metrics:
+                        # Save standard backtest charts to a temp dir for display
+                        import tempfile
+                        import matplotlib
+                        matplotlib.use("Agg")
+                        import matplotlib.pyplot as plt
+                        charts = []
+                        chart_dir = Path(tempfile.gettempdir()) / "factorgpt_demo"
+                        chart_dir.mkdir(exist_ok=True)
+                        try:
+                            figs = bt.plot_metrics(metrics)
+                            for i, fig in enumerate(figs, 1):
+                                cp = chart_dir / f"demo_chart_{i}.png"
+                                fig.savefig(str(cp), dpi=110, bbox_inches="tight")
+                                plt.close(fig)
+                                charts.append(str(cp))
+                        except Exception as e:  # noqa: BLE001
+                            print(f"[demo] 图表生成失败: {e}")
+
+                        qr = metrics.get("quantile_returns", {})
+                        top_ret = max(qr.values()) if qr else 0.0
 
                         # Display metrics
                         metric_cols = st.columns(5)
                         metric_items = [
-                            ("Rank IC", f'{metrics.get("rank_ic_mean", 0):+.4f}'),
-                            ("ICIR", f'{metrics.get("rank_icir", 0):+.3f}'),
-                            ("IC >0 Ratio", f'{metrics.get("rank_ic_pos_ratio", 0):.1%}'),
-                            ("Top Quantile", f'{metrics.get("top_quantile_ret", 0):+.2%}'),
+                            ("Rank IC", f'{metrics.get("rank_ic", 0):+.4f}'),
+                            ("ICIR", f'{metrics.get("icir", 0):+.3f}'),
+                            ("IC >0 Ratio", f'{metrics.get("ic_positive_ratio", 0):.1%}'),
+                            ("Top Quantile", f'{top_ret:+.2%}'),
                             ("Long/Short Sharpe", f'{metrics.get("long_short_sharpe", 0):+.2f}'),
                         ]
                         colors = ["green", "green", "green", "green", "green"]
@@ -283,7 +305,7 @@ def alpha_factor(df):
                                             st.image(str(cp), use_container_width=True)
 
                         # Factor quality assessment
-                        ic_mean = abs(metrics.get("rank_ic_mean", 0))
+                        ic_mean = abs(metrics.get("rank_ic", 0))
                         if ic_mean >= 0.05:
                             st.success(f"✅ 因子质量：优秀 (|IC| = {ic_mean:.4f}) — 建议纳入因子库")
                         elif ic_mean >= 0.03:
@@ -293,7 +315,7 @@ def alpha_factor(df):
                         else:
                             st.error(f"❌ 因子质量：较差 (|IC| = {ic_mean:.4f}) — 建议重新设计")
                     else:
-                        st.error(f"因子评估失败：{result.get('error', '未知错误')}")
+                        st.error(f"因子评估失败：{metrics.get('error', '未知错误')}")
 
                 except Exception as e:
                     st.error(f"运行出错：{str(e)}")
@@ -337,15 +359,17 @@ with tab2:
     st.markdown('<p class="section-title">📚 内置传统因子库（61个）</p>', unsafe_allow_html=True)
 
     try:
-        from engine.traditional_factors import TRADITIONAL_FACTORS, CATEGORY_LABELS
+        from engine.traditional_factors import get_all_factors, CATEGORY_LABELS
+
+        TRADITIONAL_FACTORS = get_all_factors()
 
         # Build factor dataframe
         factor_data = []
         for f in TRADITIONAL_FACTORS:
             factor_data.append({
-                "名称": f.get("name", ""),
-                "类别": CATEGORY_LABELS.get(f.get("category", ""), f.get("category", "")),
-                "标签": ", ".join(f.get("tags", [])[:3]),
+                "名称": f.display_name,
+                "类别": CATEGORY_LABELS.get(f.category, f.category),
+                "标签": ", ".join(f.tags[:3]),
             })
 
         factors_df = pd.DataFrame(factor_data)
@@ -382,27 +406,25 @@ with tab2:
         st.markdown('<p class="section-title">因子详情示例</p>', unsafe_allow_html=True)
         selected_factor = st.selectbox(
             "选择一个因子查看详情",
-            [f.get("name", "") for f in TRADITIONAL_FACTORS]
+            [f.display_name for f in TRADITIONAL_FACTORS]
         )
 
         for f in TRADITIONAL_FACTORS:
-            if f.get("name") == selected_factor:
+            if f.display_name == selected_factor:
                 col1, col2 = st.columns([1, 2])
                 with col1:
                     st.markdown(f"""
                     <div class="factor-card">
-                        <strong>{f.get('name', '')}</strong><br>
-                        <span style="color:#7f8c8d">类别: {CATEGORY_LABELS.get(f.get('category', ''), '')}</span><br>
-                        <span style="color:#7f8c8d">标签: {', '.join(f.get('tags', []))}</span>
+                        <strong>{f.display_name}</strong><br>
+                        <span style="color:#7f8c8d">类别: {CATEGORY_LABELS.get(f.category, '')}</span><br>
+                        <span style="color:#7f8c8d">标签: {', '.join(f.tags)}</span>
                     </div>
                     """, unsafe_allow_html=True)
                 with col2:
-                    formula = f.get("formula", "")
-                    if formula:
-                        st.latex(formula)
-                    desc = f.get("description", "")
+                    desc = f.description
                     if desc:
-                        st.markdown(desc)
+                        st.markdown(f"**{desc}**")
+                    st.markdown(f"方向: `{f.direction}` | 质量分: `{f.quality_score:.2f}`")
                 break
 
     except ImportError as e:
@@ -421,7 +443,10 @@ with tab3:
     """)
 
     # Display existing chart assets
-    chart_dir = _PROJ_ROOT / "docs" / "assets"
+    # 优先用 demo_output/（由 demo_sim.py 生成的最新回测图），否则回退 docs/assets
+    chart_dir = _PROJ_ROOT / "demo_output"
+    if not list(chart_dir.glob("*.png")):
+        chart_dir = _PROJ_ROOT / "docs" / "assets"
     chart_files = sorted(chart_dir.glob("*.png"))
 
     if chart_files:

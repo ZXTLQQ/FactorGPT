@@ -49,17 +49,27 @@ class Screener:
         self.audit: Dict[str, object] = {}
 
     # -- 第一级：LASSO ---------------------------------------------------- #
+    @staticmethod
+    def _dedup_series(s: pd.Series) -> pd.Series:
+        """去除 (date, symbol) 多索引中的重复项（真实行情下偶发重复，保留最后一条）。"""
+        if s.index.duplicated().any():
+            return s[~s.index.duplicated(keep="last")]
+        return s
+
     def lasso_filter(self, candidates: List[CandidateFactor], kline: pd.DataFrame) -> List[CandidateFactor]:
         if not self.config.use_lasso or len(candidates) < 3:
             return candidates
         names = [c.name for c in candidates]
-        series = [c.series for c in candidates]
+        series = [self._dedup_series(c.series) for c in candidates]
         common = series[0].index
         for s in series[1:]:
             common = common.intersection(s.index)
+        common = common[~common.duplicated()]
         X = np.column_stack([s.reindex(common).to_numpy(dtype=float) for s in series])
         X = np.nan_to_num(X)
         kl = kline.set_index([DATE, SYMBOL])
+        if kl.index.duplicated().any():
+            kl = kl[~kl.index.duplicated(keep="last")]
         y = kl.groupby(level=SYMBOL)["close"].pct_change(1).reindex(common).to_numpy(dtype=float)
         mask = ~np.isnan(y)
         X, y = X[mask], y[mask]
@@ -80,7 +90,10 @@ class Screener:
     def _corr_redundancy(candidates, y, common) -> List[CandidateFactor]:
         scores = []
         for c in candidates:
-            f = c.series.reindex(common).to_numpy(dtype=float)
+            s = c.series
+            if s.index.duplicated().any():
+                s = s[~s.index.duplicated(keep="last")]
+            f = s.reindex(common).to_numpy(dtype=float)
             f = np.nan_to_num(f)
             if np.std(f) == 0:
                 scores.append(0.0)

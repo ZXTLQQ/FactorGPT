@@ -25,6 +25,14 @@ from pathlib import Path
 # 将 src 目录加入 Python 路径，使 agent / engine / rag / llm 子包可被导入
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
+# Windows 控制台默认 GBK，重定向或含 emoji/特殊字符时中文会乱码或抛 UnicodeEncodeError；
+# 统一按 UTF-8 输出（与 scripts/preflight_check.py 保持一致）
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:  # noqa: BLE001
+    pass
+
 from llm.client import load_config
 from agent.graph import FactorAgent
 

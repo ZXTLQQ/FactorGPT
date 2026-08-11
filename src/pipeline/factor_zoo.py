@@ -81,9 +81,14 @@ class FactorZoo:
         comp_icir = comp_m.get("icir")
 
         # 相关性 + 增量 IC（残差正交化）
+        if composite.index.duplicated().any():
+            composite = composite[~composite.index.duplicated(keep="last")]
+        zoo = {n: (s if not s.index.duplicated().any() else s[~s.index.duplicated(keep="last")])
+               for n, s in zoo.items()}
         common = composite.index
         for s in zoo.values():
             common = common.intersection(s.index)
+        common = common[~common.duplicated()]
         if len(common) < 50:
             logger.warning("因子动物园样本不足，跳过增量信息计算")
             return {
