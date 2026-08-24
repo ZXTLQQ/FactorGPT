@@ -55,17 +55,19 @@ ASSET_DIR = os.path.join(os.path.dirname(__file__), "..", "docs", "assets")
 os.makedirs(ASSET_DIR, exist_ok=True)
 
 
-def build_synthetic_panel(n_stocks: int = 60, n_days: int = 600, beta: float = 0.006, noise: float = 0.02):
+def build_synthetic_panel(n_stocks: int = 60, n_days: int = 600, beta: float = 0.006, noise: float = 0.02, seed: int = 7):
     """构造带已知信号的合成面板（date,symbol,close,volume,amount）与因子序列。
 
     下一交易日收益 = beta * 因子[t] + noise，使因子对次日收益有可控预测力。
+    注意：同一 (seed, beta) 下返回的因子与收益配套（同源驱动），
+    不同 seed 生成互相独立的因子序列，用于多因子对比。
     """
     # 交易日（连续日期）
     dates = pd.date_range("2023-01-01", periods=n_days, freq="B")
     date_strs = dates.strftime("%Y-%m-%d").tolist()
     symbols = [f"{600000 + i:06d}.SH" for i in range(n_stocks)]
 
-    rng = np.random.default_rng(7)
+    rng = np.random.default_rng(seed)
     # 每个因子值用 AR(1) 平滑，避免每日白噪声导致截面相关性被稀释
     rho = 0.92
     factor = rng.standard_normal((n_days, n_stocks))
@@ -209,22 +211,21 @@ def main():
     save(fig, "portfolio_nav.png")
 
     # 6) 多因子 IC 对比（横轴：平均 IC；纵轴：因子名；标注数值）
-    np.random.seed(11)
-    rng = np.random.default_rng(11)
+    # 每个因子用独立 seed 生成配套的 (收益面板, 因子序列)：
+    # IC 由 beta 决定（|beta| 越大预测力越强），不同 seed 保证因子序列互相独立，
+    # 而非共用同一份随机数据。负 beta 模拟 A 股小市值负 IC（红色显示）。
     factor_defs = {
-        "动量 (20D)": 0.0012,
-        "价值 (EP)": 0.0008,
-        "质量 (ROE)": 0.0010,
-        "低波 (IVR)": -0.0006,
-        "成长 (PEG)": 0.0005,
-        "规模 (市值)": -0.0004,
+        "动量 (20D)": (0.0012, 101),
+        "质量 (ROE)": (0.0010, 102),
+        "价值 (EP)": (0.0008, 103),
+        "低波 (IVR)": (0.0006, 104),
+        "成长 (PEG)": (0.0004, 105),
+        "规模 (市值)": (-0.0003, 106),
     }
     ics = []
-    for name, b in factor_defs.items():
-        _, fac2, _, _ = build_synthetic_panel(beta=abs(b), noise=0.020)
-        if b < 0:
-            fac2 = -fac2
-        mm2 = bt.evaluate(kline, fac2, verbose=False)
+    for name, (b, seed) in factor_defs.items():
+        kline_i, fac_i, _, _ = build_synthetic_panel(beta=b, noise=0.020, seed=seed)
+        mm2 = bt.evaluate(kline_i, fac_i, verbose=False)
         ics.append((name, mm2["ic"], mm2["icir"]))
     ics_sorted = sorted(ics, key=lambda x: x[1], reverse=True)
     fig, ax = plt.subplots(figsize=(9, 3.8))
@@ -236,13 +237,13 @@ def main():
                    edgecolor="white", linewidth=0.5, height=0.6)
     ax.axvline(0, color="black", lw=0.8)
     for bar, v, iv in zip(bars, vals[::-1], icirs[::-1]):
-        ax.text(v + (0.0002 if v >= 0 else -0.0002), bar.get_y() + bar.get_height() / 2,
+        ax.text(v + (0.0003 if v >= 0 else -0.0003), bar.get_y() + bar.get_height() / 2,
                 f"{v:.4f}  (ICIR {iv:.2f})", va="center",
                 ha="left" if v >= 0 else "right", fontsize=9)
     ax.set_title("多因子 IC 对比（因子体系概览，按平均 IC 排序）", fontsize=12)
-    ax.set_xlabel("平均 IC（信息系数）", fontsize=10)
+    ax.set_xlabel("平均 IC（信息系数，样本区间 2023-01 至 2024-12）", fontsize=10)
     ax.set_ylabel("因子名称", fontsize=10)
-    ax.set_xlim(min(vals) - 0.001, max(vals) + 0.003)
+    ax.set_xlim(min(vals) - 0.002, max(vals) + 0.004)
     save(fig, "factor_ic_bars.png")
 
     # 打印关键指标摘要，便于写 README
