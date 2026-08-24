@@ -214,30 +214,30 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 ### Backtest Analysis Charts
 
 <p align="center">
-  <img src="文档归档/docs/assets/ic_series.png" alt="IC Time Series" width="48%">
-  <img src="文档归档/docs/assets/quantile_returns.png" alt="Quantile Returns" width="48%">
+  <img src="docs/assets/ic_series.png" alt="IC Time Series" width="48%">
+  <img src="docs/assets/quantile_returns.png" alt="Quantile Returns" width="48%">
 </p>
 
 <p align="center">
-  <img src="文档归档/docs/assets/quantile_cum.png" alt="Quantile Cumulative Returns" width="48%">
-  <img src="文档归档/docs/assets/long_short.png" alt="Long-Short Cumulative Returns" width="48%">
+  <img src="docs/assets/quantile_cum.png" alt="Quantile Cumulative Returns" width="48%">
+  <img src="docs/assets/long_short.png" alt="Long-Short Cumulative Returns" width="48%">
 </p>
 
 <p align="center">
-  <img src="文档归档/docs/assets/portfolio_nav.png" alt="Portfolio NAV" width="48%">
-  <img src="文档归档/docs/assets/factor_ic_bars.png" alt="Multi-Factor IC Comparison" width="48%">
+  <img src="docs/assets/portfolio_nav.png" alt="Portfolio NAV" width="48%">
+  <img src="docs/assets/factor_ic_bars.png" alt="Multi-Factor IC Comparison" width="48%">
 </p>
 
 ### Web Interface Screenshots
 
 <p align="center">
-  <img src="文档归档/docs/assets/ui_overview.png" alt="System Overview" width="48%">
-  <img src="文档归档/docs/assets/ui_refinery.png" alt="Factor Refinery" width="48%">
+  <img src="docs/assets/ui_overview.png" alt="System Overview" width="48%">
+  <img src="docs/assets/ui_refinery.png" alt="Factor Refinery" width="48%">
 </p>
 
 <p align="center">
-  <img src="文档归档/docs/assets/ui_library.png" alt="Factor Library" width="48%">
-  <img src="文档归档/docs/assets/ui_sysbuild.png" alt="Factor System Builder" width="48%">
+  <img src="docs/assets/ui_library.png" alt="Factor Library" width="48%">
+  <img src="docs/assets/ui_sysbuild.png" alt="Factor System Builder" width="48%">
 </p>
 
 ---
@@ -325,7 +325,7 @@ factor-gpt/
 │   ├── store/          # SQLite persistence (memory, chat, experiments)
 │   └── kronos/         # Kronos financial forecasting model integration
 ├── scripts/            # Utilities (data prefetch, health check, import, ima sync/watch)
-├── 文档归档/docs/assets/        # Documentation screenshots and charts
+├── docs/assets/                 # Documentation screenshots and charts
 ├── data/               # Sample data, factor library, experiment tracking
 ├── ima_subscription/   # Research-report watchlist, baseline, and change log
 ├── config.yaml         # Main configuration file
