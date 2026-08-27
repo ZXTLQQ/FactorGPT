@@ -365,6 +365,25 @@ FactorGPT can optionally route all market-data calls through the platform's **Ne
 
 ---
 
+## EastMoney MX (妙想) Data Interface
+
+An official supplement to the NeoData channel: the EastMoney "Miaoxiang" (妙想) open API provides six data capabilities — market/fundamental queries (`data`), news & research search (`search`), smart stock screening (`xuangu`), watchlist management (`zixuan`), simulated portfolio (`moni`), and financial community content (`poster`). It is a reliable replacement for fragile self-crawled akshare/sina feeds.
+
+- **Skill packages**: bundled at `factorgpt-skill/skills/mx-*/` (official releases, one `SKILL.md` + script per package). API reference: https://marketing.dfcfw.com/res/download/A620260623NIYC2U.md
+- **API key (never commit it)**: set `MX_APIKEY` in your local `.env` (git-ignored) or as a persistent env var (`setx MX_APIKEY "..."` on Windows). The committed `.env.example` keeps `MX_APIKEY=` empty for users to fill in themselves.
+- **Usage**: the cross-platform wrapper `scripts/mx_query.py` injects the key automatically and writes outputs to `output/mx_data/`:
+
+```bash
+python scripts/mx_query.py data "上证指数今日行情"
+python scripts/mx_query.py search "白酒板块研报"
+python scripts/mx_query.py xuangu "市盈率低于10的银行股"
+python scripts/mx_query.py --list
+```
+
+> The official scripts default to a Linux output path (`/root/.openclaw/workspace/mx_data/output/`); on Windows either pass an explicit output dir or use the `mx_query.py` wrapper.
+
+---
+
 ## Offline & Conference-Ready
 
 FactorGPT is designed for reliable offline demonstrations:
