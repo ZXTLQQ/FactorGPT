@@ -24,6 +24,9 @@ CodeBuddy / WorkBuddy 中调用的能力，并把不稳定的自建爬虫替换�
 - 启用：在 ``config.yaml`` 设 ``data.source: neodata``，并把代码中的 ``DataFetcher()``
   替换为 ``from data.neo_adapter import get_data_source; get_data_source(config)``。
 - 文本 / 研报类需求（如新闻情绪、行业研报）可调用 ``wechat-article-search`` 技能。
+- 行情/财务/选股/自选/组合/社区类数据可调用**东财妙想 MX** 技能
+  （``skills/mx-*/``，官方 API，配置本地 ``MX_APIKEY``，统一入口
+  ``python scripts/mx_query.py <data|search|xuangu|zixuan|moni|poster> "问句"``）。
 - 未配置 NeoData 或字段未覆盖时，自动回退 legacy（``data.neodata.fallback_to_legacy``），
   保证过渡期不中断；配置为 ``false`` 则严格只用稳定源。
 
@@ -41,4 +44,5 @@ CodeBuddy / WorkBuddy 中调用的能力，并把不稳定的自建爬虫替换�
 ## 参考
 
 - 数据契约与字段映射：``factorgpt-skill/references/data_contract.md``
+- 东财妙想 MX 技能包说明与安装：``factorgpt-skill/skills/README.md``
 - 发布与扩展方向：``文档归档/docs/factorgpt_codebuddy_skill_plan.md``

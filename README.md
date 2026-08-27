@@ -10,7 +10,7 @@
 
 **FactorGPT** is an LLM-powered intelligent financial factor industrialization platform that deeply integrates natural language understanding with quantitative finance factor engineering. It supports automated factor extraction, validation, combination optimization, and production-grade deployment from both structured and unstructured data sources — all driven by natural language commands.
 
-> **Keywords**: Quantitative Finance, Alpha Factor Mining, LLM Agent, Factor Backtesting, Factor Library, Genetic Programming, Reinforcement Learning, Alternative Data, Streamlit, A-Share, Financial AI, FactorGPT, Factor Refinery, RPN Engine, IC Analysis, Multi-factor Model, LangGraph, Python Quant
+> **Keywords**: Quantitative Finance, Alpha Factor Mining, LLM Agent, Factor Backtesting, Factor Library, Genetic Programming, Reinforcement Learning, Alternative Data, Streamlit, A-Share, Financial AI, FactorGPT, Factor Refinery, RPN Engine, IC Analysis, Multi-factor Model, LangGraph, Python Quant, EastMoney Miaoxiang MX API, NeoData
 
 ---
 
@@ -70,8 +70,8 @@ The Docker image comes pre-configured with all dependencies, synthetic sample da
 
 ```bash
 # 1. Clone and enter directory
-git clone https://github.com/factor-gpt/factor-gpt.git
-cd factor-gpt
+git clone https://github.com/ZXTLQQ/FactorGPT.git
+cd FactorGPT
 
 # 2. Create virtual environment (recommended)
 python -m venv .venv
@@ -195,13 +195,15 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 ├─────────────────────────────────────────────────────────┤
 │  Six-Stage Factor Refinery Pipeline                      │
 │  Ore → Mining → Grinding → Screening → Blending → Report │
-├──────────────┬──────────────┬────────────────────────────┤
-│  LLM Layer   │  Data Layer  │  Engine Layer               │
-│  DeepSeek    │  AKShare     │  Sandbox (Subprocess)       │
-│  OpenAI      │  Tushare     │  Backtester (IC/Quantile)   │
-│  Ollama      │  Sina/THS    │  RPN Engine                 │
-│  vLLM        │  Baostock    │  Genetic Programming        │
-├──────────────┴──────────────┴────────────────────────────┤
+├───────────────┬──────────────────┬────────────────────────────┤
+│  LLM Layer    │  Data Layer      │  Engine Layer               │
+│  DeepSeek     │  AKShare         │  Sandbox (Subprocess)       │
+│  OpenAI       │  Tushare         │  Backtester (IC/Quantile)   │
+│  Ollama       │  Sina/THS        │  RPN Engine                 │
+│  vLLM         │  Baostock        │  Genetic Programming        │
+│               │  MX Miaoxiang    │                             │
+│               │  NeoData         │                             │
+├───────────────┴──────────────────┴────────────────────────────┤
 │  Knowledge Base: ChromaDB + BGE Embeddings + 61 Factors   │
 │  Experiment Tracking: MLflow / Local JSONL                │
 └─────────────────────────────────────────────────────────┘
@@ -255,7 +257,7 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 ### Optional Dependencies
 
 - **LLM Backend**: Ollama (local), DeepSeek API, OpenAI API, or any OpenAI-compatible endpoint
-- **Data Sources**: AKShare (free, no registration), Tushare Pro (free token), Baostock (free)
+- **Data Sources**: AKShare (free, no registration), Tushare Pro (free token), Baostock (free), EastMoney MX Miaoxiang API (key required), NeoData (platform service)
 - **Heavy Modules**: PyTorch (Transformer encoder), stable-baselines3 + sb3-contrib (MaskablePPO), MLflow (experiment tracking) — all auto-degrade if missing
 
 ---
@@ -266,8 +268,8 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 
 ```bash
 # Clone and start
-git clone https://github.com/factor-gpt/factor-gpt.git
-cd factor-gpt
+git clone https://github.com/ZXTLQQ/FactorGPT.git
+cd FactorGPT
 docker-compose up -d
 ```
 
@@ -295,6 +297,9 @@ The included `docker-compose.yml` provides:
 | `FACTORGPT_LLM_PROVIDER` | Override LLM provider | ollama |
 | `FACTORGPT_LLM_MODEL` | Override LLM model | qwen2.5-coder:7b |
 | `HF_ENDPOINT` | HuggingFace mirror endpoint | https://hf-mirror.com |
+| `MX_APIKEY` | EastMoney Miaoxiang (妙想) API key, see "EastMoney MX" section | - |
+| `IMA_CLIENT_ID` | Tencent ima client ID for the research-report pipeline | - |
+| `IMA_API_KEY` | Tencent ima API key (renew monthly at ima.qq.com/agent-interface) | - |
 
 ---
 
@@ -313,7 +318,7 @@ The repository includes sample data and can generate synthetic data for offline 
 ## Project Structure
 
 ```
-factor-gpt/
+FactorGPT/
 ├── src/
 │   ├── agent/          # LangGraph Agent (graph, nodes, state, integration)
 │   ├── engine/         # Factor builder, backtester, optimizer, traditional factors
@@ -324,10 +329,15 @@ factor-gpt/
 │   ├── ui/             # Streamlit web interface (17 pages)
 │   ├── store/          # SQLite persistence (memory, chat, experiments)
 │   └── kronos/         # Kronos financial forecasting model integration
-├── scripts/            # Utilities (data prefetch, health check, import, ima sync/watch)
+├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch)
+├── factorgpt-skill/    # Agent skill packages (SKILL.md + official EastMoney MX skills)
+│   └── skills/         # mx-data / mx-search / mx-xuangu / mx-zixuan / mx-moni / mx-poster
+├── third_party/        # Third-party integrations (kronos, ima client)
+├── hf_space/           # HuggingFace Spaces static hosting files
 ├── docs/assets/                 # Documentation screenshots and charts
 ├── data/               # Sample data, factor library, experiment tracking
 ├── ima_subscription/   # Research-report watchlist, baseline, and change log
+├── 文档归档/           # Archived reference docs (e.g., EastMoney MX API reference)
 ├── config.yaml         # Main configuration file
 ├── run_agent.py        # CLI entry point
 ├── Dockerfile          # Docker build file
