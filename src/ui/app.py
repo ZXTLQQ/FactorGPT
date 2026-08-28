@@ -241,6 +241,8 @@ def _init_data_source_session():
         "ui_ds_neodata_base_url": "",
         "ui_ds_ths_base_url": "",
         "ui_ds_ths_token": "",
+        "ui_ds_offline_index": "csi800",
+        "ui_ds_offline_dir": "",
         "ui_ds_synthetic_on_fail": False,
         "ui_ds_force_synthetic": False,
         "ui_ds_proxy_enabled": False,
@@ -252,6 +254,35 @@ def _init_data_source_session():
             st.session_state[key] = data.get(key.replace("ui_ds_", ""), default)
 
 
+def _render_offline_status(index: str):
+    """展示离线数据源（Qlib 导出）的当前状态。"""
+    import json as _json
+    from pathlib import Path as _Path
+
+    base = _Path(st.session_state.ui_ds_offline_dir or "data/offline")
+    meta_p = base / "meta.json"
+    bars_p = base / f"bars_{index}.parquet"
+    if not bars_p.exists():
+        st.warning(
+            f"离线数据缺失：{bars_p} 不存在。\n"
+            "请先运行：E:\\Qlib\\runtime\\python311\\python.exe scripts/export_qlib_offline.py"
+        )
+        return
+    if not meta_p.exists():
+        st.success(f"离线数据文件已就绪：{bars_p}（大小 {bars_p.stat().st_size / 1e6:.1f} MB）")
+        return
+    with open(meta_p, "r", encoding="utf-8") as f:
+        meta = _json.load(f)
+    st.success(
+        f"离线数据就绪（index={meta.get('index', index)}）：\n"
+        f"- 时间范围：{meta.get('start')} ~ {meta.get('end')}\n"
+        f"- 交易日：{meta.get('trade_days')} 天\n"
+        f"- 股票数：{meta.get('symbols')} 只\n"
+        f"- 总行数：{meta.get('rows'):,} 行\n"
+        f"- 导出时间：{meta.get('exported_at')}"
+    )
+
+
 def _render_data_source_panel():
     """侧边栏「数据源设置」面板：允许用户自行调整数据源接口。
 
@@ -261,34 +292,59 @@ def _render_data_source_panel():
     _init_data_source_session()
     with st.sidebar.expander("🗄️ 数据源设置", expanded=False):
         st.caption("调整行情/数据接口；不改动则沿用 config.yaml 默认数据源。")
+        ds_source = st.session_state.ui_ds_source
         st.selectbox(
             "数据源开关",
-            ["legacy", "neodata"],
-            index=0 if st.session_state.ui_ds_source != "neodata" else 1,
+            ["legacy", "neodata", "offline"],
+            index={"legacy": 0, "neodata": 1, "offline": 2}.get(ds_source, 0),
             key="ui_ds_source",
-            help="legacy=沿用 akshare/sina/tushare 本地自爬；neodata=走平台稳定源（需可用网关）。",
+            help=(
+                "legacy=沿用 akshare/sina/tushare 本地自爬（需联网）；"
+                "neodata=走平台稳定源（需可用网关）；"
+                "offline=使用 Qlib 导出的本地 parquet 离线数据（不触网）。"
+            ),
         )
-        st.selectbox(
-            "主力数据源（legacy）",
-            ["akshare", "tushare", "ths", "sina"],
-            index=["akshare", "tushare", "ths", "sina"].index(
-                st.session_state.ui_ds_primary
-            ) if st.session_state.ui_ds_primary in ("akshare", "tushare", "ths", "sina") else 0,
-            key="ui_ds_primary",
-            help="legacy 模式下的子优先级：akshare / tushare / ths / sina。",
-        )
-        st.checkbox("优先新浪源 (prefer_sina)", key="ui_ds_prefer_sina",
-                    help="部分网络下东方财富连接会被重置，置 true 可让新浪成为首选。")
-        st.text_input("Tushare Token", type="password", key="ui_ds_tushare_token",
-                      help="legacy=tushare 时填写；留空则忽略。")
-        st.text_input("NeoData 网关地址", key="ui_ds_neodata_base_url",
-                      help="仅 source=neodata 时生效。")
-        st.text_input("同花顺网关端点", key="ui_ds_ths_base_url",
-                      help="primary_source=ths 时填写 MCP 端点。")
-        st.text_input("同花顺 Token", type="password", key="ui_ds_ths_token",
-                      help="primary_source=ths 时填写 JWE 鉴权令牌。")
-        st.checkbox("实时源失败自动回退合成数据", key="ui_ds_synthetic_on_fail")
-        st.checkbox("强制合成数据（离线）", key="ui_ds_force_synthetic")
+
+        if st.session_state.ui_ds_source == "offline":
+            st.info(
+                "离线数据源：读取 data/offline/ 下 Qlib 导出的 parquet，完全离线不触网。"
+                " 若数据缺失，请先运行：\n"
+                "E:\\Qlib\\runtime\\python311\\python.exe scripts/export_qlib_offline.py"
+            )
+            st.text_input(
+                "离线指数池",
+                key="ui_ds_offline_index",
+                help="Qlib 导出时使用的指数池名（默认 csi800，对应 bars_csi800.parquet）。",
+            )
+            st.text_input(
+                "离线数据目录（可选）",
+                key="ui_ds_offline_dir",
+                placeholder="留空默认 data/offline",
+                help="自定义 offline 数据目录（含 bars_*.parquet / meta.json）。",
+            )
+            _render_offline_status(st.session_state.ui_ds_offline_index)
+        else:
+            st.selectbox(
+                "主力数据源（legacy）",
+                ["akshare", "tushare", "ths", "sina"],
+                index=["akshare", "tushare", "ths", "sina"].index(
+                    st.session_state.ui_ds_primary
+                ) if st.session_state.ui_ds_primary in ("akshare", "tushare", "ths", "sina") else 0,
+                key="ui_ds_primary",
+                help="legacy 模式下的子优先级：akshare / tushare / ths / sina。",
+            )
+            st.checkbox("优先新浪源 (prefer_sina)", key="ui_ds_prefer_sina",
+                        help="部分网络下东方财富连接会被重置，置 true 可让新浪成为首选。")
+            st.text_input("Tushare Token", type="password", key="ui_ds_tushare_token",
+                          help="legacy=tushare 时填写；留空则忽略。")
+            st.text_input("NeoData 网关地址", key="ui_ds_neodata_base_url",
+                          help="仅 source=neodata 时生效。")
+            st.text_input("同花顺网关端点", key="ui_ds_ths_base_url",
+                          help="primary_source=ths 时填写 MCP 端点。")
+            st.text_input("同花顺 Token", type="password", key="ui_ds_ths_token",
+                          help="primary_source=ths 时填写 JWE 鉴权令牌。")
+            st.checkbox("实时源失败自动回退合成数据", key="ui_ds_synthetic_on_fail")
+            st.checkbox("强制合成数据（离线）", key="ui_ds_force_synthetic")
         st.divider()
         st.caption("网络代理（访问行情源 / 远程端点）")
         st.checkbox("启用代理", key="ui_ds_proxy_enabled")
@@ -320,12 +376,19 @@ def _render_data_source_panel():
 
 def _collect_data_source_cfg():
     """从会话状态收集 data 段字段（仅覆盖用户可调项，保留其余默认项）。"""
+    offline = {}
+    if st.session_state.ui_ds_source == "offline":
+        offline = {
+            "index": st.session_state.ui_ds_offline_index or "csi800",
+            "dir": st.session_state.ui_ds_offline_dir or "",
+        }
     return {
         "source": st.session_state.ui_ds_source,
         "primary_source": st.session_state.ui_ds_primary,
         "prefer_sina": bool(st.session_state.ui_ds_prefer_sina),
         "tushare_token": st.session_state.ui_ds_tushare_token or "",
         "neodata": {"base_url": st.session_state.ui_ds_neodata_base_url or ""},
+        "offline": offline,
         "ths_api_base_url": st.session_state.ui_ds_ths_base_url or "",
         "ths_api_token": st.session_state.ui_ds_ths_token or "",
         "synthetic_on_fail": bool(st.session_state.ui_ds_synthetic_on_fail),

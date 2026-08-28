@@ -436,11 +436,13 @@ def _project_config() -> dict:
 
 
 class DataSourceFactory:
-    """数据源工厂：按 config ``data.source`` 决定使用 legacy 还是 NeoData 稳定源。
+    """数据源工厂：按 config ``data.source`` 决定使用 legacy / neodata / offline 数据源。
 
     - ``config=None`` 时自动读取项目全局 ``config.yaml``，保证 ``data.source`` 开关处处生效；
     - ``data.source`` 缺省为 ``legacy``，即保留原有的本地运行数据源（akshare/sina/tushare 自爬）；
-    - 仅在显式设置 ``data.source: neodata`` 时才走平台稳定数据源（未配置时仍安全回退 legacy）。
+    - ``data.source: neodata`` 时走平台稳定数据源（未配置时仍安全回退 legacy）；
+    - ``data.source: offline`` 时使用 ``OfflineDataSource``（Qlib 导出的本地 parquet，
+      完全离线、不触网；需先运行 ``scripts/export_qlib_offline.py`` 导出数据）。
     """
 
     @staticmethod
@@ -448,6 +450,10 @@ class DataSourceFactory:
         cfg = config if isinstance(config, dict) else _project_config()
         data_cfg = cfg.get("data", {}) or {}
         source = (data_cfg.get("source") or "legacy").lower()
+        if source == "offline":
+            from data.offline_adapter import OfflineDataSource
+
+            return OfflineDataSource(config=cfg)
         if source == "neodata":
             return NeoDataSource(config=cfg, tushare_token=tushare_token)
         if DataFetcher is None:

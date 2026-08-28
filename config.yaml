@@ -3,10 +3,10 @@ llm:
   # 模型提供方: deepseek / openai / qwen / ollama / vllm 等任意 OpenAI 兼容端点
   # 切换到本地 Ollama 时: provider=ollama, model=<ollama 中的模型名>,
   #   base_url=http://localhost:11434/v1, api_key=ollama(占位, Ollama 不校验)
-  provider: ollama                # deepseek / openai / qwen / ollama
-  api_key: "ollama"                # Ollama 不校验 key, 占位即可
-  model: qwen2.5-coder:7b          # Ollama 中已拉取的代码模型名
-  base_url: "http://localhost:11434/v1"
+  provider: deepseek               # deepseek / openai / qwen / ollama
+  api_key: "${DEEPSEEK_API_KEY}"   # 密钥存于 .env(已 gitignore), 避免明文入库
+  model: deepseek-chat             # DeepSeek 官方对话模型
+  base_url: "https://api.deepseek.com"   # 官方 OpenAI 兼容端点(不带 /v1, 文档推荐)
   temperature: 0.3
   # 若设为 true，则允许用环境变量覆盖以下字段(便于不落盘密钥/快速切后端):
   #   FACTORGPT_LLM_BASE_URL / FACTORGPT_LLM_API_KEY / FACTORGPT_LLM_MODEL / FACTORGPT_LLM_PROVIDER
@@ -50,7 +50,11 @@ data:
   # 2. Tushare Pro: 注册免费，token 在 https://tushare.pro 注册获取，基础接口够用
   # 3. Baostock: 免费无需注册，适合批量历史数据，更新较慢
   # 4. efinance: 免费，东方财富数据源，轻量快速
-  source: legacy                  # 数据源开关：legacy（默认，沿用 akshare/sina/tushare 自爬）| neodata（走平台 NeoData 技能，稳定）
+  # 数据源开关：legacy（默认，沿用 akshare/sina/tushare 自爬）| neodata（走平台 NeoData 技能，稳定）
+  #               | offline（使用 Qlib 导出的本地 parquet 离线数据，不触网）
+  # 离线数据源使用：先运行 `E:\Qlib\runtime\python311\python.exe scripts/export_qlib_offline.py` 导出，
+  # 再把本开关置为 offline 即可全流水线离线取数（详见 src/data/offline_adapter.py）。
+  source: offline
   neodata:                         # 仅当 source=neodata 时生效
     # 真实网关端点（来自平台 neodata-financial-search 技能 SKILL.md）：单 POST 端点，
     # 请求体为 {"query","channel":"neodata","sub_channel":"workbuddy"}，返回 data.apiData.apiRecall[].content 文本块。
@@ -67,6 +71,9 @@ data:
     # 现状：neodata 源目前仅作为「研究问答」辅助，不能替代 legacy 执行因子回测；
     #       base_url 已填真实端点，待平台 tempToken 可用且补齐结构化解析后再评估关闭回退。
     fallback_to_legacy: true       # 保持 true：NeoData 无法提供结构化批量数据，必须回退 legacy 才能保证回测可跑
+  offline:                          # 仅当 source=offline 时生效（Qlib 导出的本地离线数据，不触网）
+    index: "csi800"                 # 指数池名，对应 data/offline/bars_csi800.parquet
+    dir: ""                         # 离线数据目录，留空默认 data/offline
   primary_source: akshare          # 主力数据源（legacy 模式下的子优先级）：akshare / tushare / ths / sina
   # prefer_sina：部分网络下东方财富(push2his)的 HTTPS 连接会被对端重置
   # (RemoteDisconnected)，但新浪源可正常访问。置 true（或把 primary_source 改为 sina）
