@@ -84,7 +84,8 @@ html, body, [class*="css"], .stApp {{
   font-family: {FONT_STACK};
   color: var(--fg-ink);
 }}
-.stApp {{ background: {BG}; }}
+/* 强制浅色配色：即使系统处于深色模式，控件文字也不会与白底融合 */
+.stApp {{ background: {BG}; color-scheme: light; }}
 
 /* 收紧主区留白，让内容更饱满 */
 .block-container {{ padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1500px; }}
@@ -250,16 +251,29 @@ section[data-testid="stSidebar"] div[data-testid="stExpander"][data-open="true"]
 .fg-badge.solid {{ background: {RED}; color: #fff; border-color: {RED}; }}
 
 /* ---------- Tabs ---------- */
-.stTabs [data-baseweb="tab-list"] {{
+/* 双选择器覆盖不同 Streamlit 版本的 tab 结构；
+   全部显式声明颜色 + !important，杜绝深色模式下字体与白底融合 */
+div[data-testid="stTabs"] {{ color-scheme: light; }}
+div[data-testid="stTabs"] [data-baseweb="tab-list"],
+div[data-testid="stTabs"] [role="tablist"] {{
   gap: 2px; border-bottom: 1px solid var(--fg-line); background: transparent;
 }}
-.stTabs [data-baseweb="tab"] {{
+div[data-testid="stTabs"] [data-baseweb="tab"],
+div[data-testid="stTabs"] button[role="tab"] {{
   height: 38px; padding: 0 15px; background: transparent;
-  border-radius: 8px 8px 0 0; font-size: 13.5px; font-weight: 600; color: var(--fg-ink-sub);
+  border-radius: 8px 8px 0 0; font-size: 13.5px; font-weight: 600;
+  color: var(--fg-ink-sub) !important; outline: none;
+  border: none; border-bottom: 2px solid transparent;
+  transition: all .15s ease;
 }}
-.stTabs [aria-selected="true"] {{
-  background: var(--fg-red-soft); color: var(--fg-red-deep);
-  border-bottom: 2px solid var(--fg-red);
+div[data-testid="stTabs"] [data-baseweb="tab"]:hover,
+div[data-testid="stTabs"] button[role="tab"]:hover {{
+  color: var(--fg-red) !important; background: var(--fg-red-soft);
+}}
+div[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"],
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {{
+  background: var(--fg-red-soft) !important; color: var(--fg-red-deep) !important;
+  border-bottom: 2px solid var(--fg-red) !important;
 }}
 
 /* ---------- 表格 ---------- */

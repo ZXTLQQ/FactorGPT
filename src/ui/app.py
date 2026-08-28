@@ -971,7 +971,7 @@ def render_kb():
             st.error(f"Chroma 初始化失败：{e}")
             return
 
-    tab1, tab2 = st.tabs(["检索", "上传"])
+    tab1, tab2 = st.tabs(["🔍 检索", "📤 上传"])
     if use_vs and not store.available:
         st.warning("向量检索依赖不可用，已降级为本地关键词检索模式（编辑 config.yaml 关掉 rag.use_vector_store 可彻底关闭）。")
     elif not use_vs:
@@ -994,39 +994,57 @@ def render_kb():
         else:
             st.caption(f"向量知识库当前共有 {n_docs} 条文档。")
     with tab1:
-        q = st.text_input("检索查询")
-        if q:
-            try:
-                if use_vs and store.available:
-                    hits = store.query(q, top_k=5)
-                else:
-                    from rag.retriever import SimpleRetriever
-
-                    hits = SimpleRetriever().retrieve(q, top_k=5)
-                if not hits:
-                    st.info("未检索到相关内容。")
-                for h in hits:
-                    st.markdown(f"- {h}")
-            except Exception as e:
-                st.error(str(e))
-    with tab2:
-        uploaded = st.file_uploader("上传因子研究文档 (.txt/.md)", type=["txt", "md"])
-        if uploaded is not None:
-            text = uploaded.read().decode("utf-8", errors="ignore")
-            try:
-                if use_vs and store.available:
-                    n = store.add_texts([text], [{"source": uploaded.name}])
-                    if n > 0:
-                        st.success("已加入向量知识库。")
+        theme.section("检索知识库", "输入关键词或研究主题，检索内置因子语料与已上传文档")
+        q = st.text_input(
+            "检索查询",
+            placeholder="例如：动量、反转、因子拥挤度、行业轮动…",
+            label_visibility="collapsed",
+        )
+        if st.button("开始检索", type="primary", use_container_width=True):
+            q = (q or "").strip()
+            if not q:
+                st.info("请输入检索关键词。")
+            else:
+                try:
+                    if use_vs and store.available:
+                        hits = store.query(q, top_k=5)
                     else:
-                        st.warning("向量库不可用，内容未持久化（请安装 chromadb）。")
-                else:
-                    st.warning(
-                        "离线模式下上传不持久化；如需持久化请开启 config.yaml 的 "
-                        "rag.use_vector_store=true 并安装 sentence-transformers。"
-                    )
-            except Exception as e:
-                st.error(str(e))
+                        from rag.retriever import SimpleRetriever
+
+                        hits = SimpleRetriever().retrieve(q, top_k=5)
+                    if not hits:
+                        st.info("未检索到相关内容。")
+                    else:
+                        st.caption(f"共命中 {len(hits)} 条：")
+                        for h in hits:
+                            st.markdown(f"- {h}")
+                except Exception as e:
+                    st.error(str(e))
+    with tab2:
+        theme.section("上传文档", "将因子研究文档（.txt / .md）写入知识库，供后续检索使用")
+        uploaded = st.file_uploader(
+            "选择文档",
+            type=["txt", "md"],
+            label_visibility="collapsed",
+        )
+        if uploaded is not None:
+            st.caption(f"已选择：`{uploaded.name}`（{len(uploaded.getvalue())} 字节）")
+            if st.button("确认上传", type="primary", use_container_width=True):
+                text = uploaded.read().decode("utf-8", errors="ignore")
+                try:
+                    if use_vs and store.available:
+                        n = store.add_texts([text], [{"source": uploaded.name}])
+                        if n > 0:
+                            st.success(f"已加入向量知识库（{n} 条文档）。")
+                        else:
+                            st.warning("向量库不可用，内容未持久化（请安装 chromadb）。")
+                    else:
+                        st.warning(
+                            "离线模式下上传不持久化；如需持久化请开启 config.yaml 的 "
+                            "rag.use_vector_store=true 并安装 sentence-transformers。"
+                        )
+                except Exception as e:
+                    st.error(str(e))
 
 
 # ----------------------------------------------------------------------
