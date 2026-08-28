@@ -20,7 +20,7 @@ Traditional quantitative factor research faces three major pain points: **high b
 
 FactorGPT addresses these challenges by:
 
-1. **Natural Language to Factor Code**: Describe your investment idea in plain language, and the LLM Agent generates, validates, and backtests factor code automatically. The system includes a built-in knowledge base of 61 traditional factors as reference context.
+1. **Natural Language to Factor Code**: Describe your investment idea in plain language, and the LLM Agent generates, validates, and backtests factor code automatically. The system includes a built-in knowledge base of 62 traditional factors as reference context.
 
 2. **End-to-End Industrial Pipeline**: The "Six-Stage Factor Refinery" mimics an industrial smelting process — from raw data ore to finished factor products — with built-in quality control at every stage.
 
@@ -38,7 +38,7 @@ FactorGPT addresses these challenges by:
   </a>
 </p>
 
-FactorGPT provides a free online demo on HuggingFace Spaces — **no API keys, no sign-up, no installation required**. Describe your investment idea in natural language and see the factor go from code generation to backtest results in seconds. The demo includes: factor mining, 61-factor library browser, interactive IC charts, and a six-stage refinery pipeline walkthrough.
+FactorGPT provides a free online demo on HuggingFace Spaces — **no API keys, no sign-up, no installation required**. Describe your investment idea in natural language and see the factor go from code generation to backtest results in seconds. The demo includes: factor mining, 62-factor library browser, interactive IC charts, and a six-stage refinery pipeline walkthrough.
 
 ---
 
@@ -118,6 +118,10 @@ The core Agent follows a **Retrieve → Generate → Validate → Evaluate → R
 - **Backtest Evaluation**: IC, RankIC, ICIR, IC positivity ratio, quantile returns, long-short Sharpe/MDD, turnover, coverage
 - **Reflection & Improvement**: If IC threshold not met, LLM reflects on backtest metrics and iteratively improves the factor definition
 
+**运行结果图例（Agent 挖掘 → 回测 IC）**：
+
+![Agent factor IC time series](docs/assets/ic_series.png)
+
 ### 2. Six-Stage Factor Refinery (Industrial Pipeline)
 
 An end-to-end factor production line modeled after industrial smelting:
@@ -131,17 +135,34 @@ An end-to-end factor production line modeled after industrial smelting:
 | PART-05 | Alloy Blending | `AlphaPool` | ICIR-weighted + orthogonalization synthesis + leave-one-out overfitting test |
 | PART-06 | Methodology Report | `MethodologyReport` | Automated methodology report (build logic/parameter justification/cross-validation), one-click MD + JSON export |
 
-### 3. 61 Built-in Traditional Factors
+**运行结果图例（六阶段精炼厂 UI）**：
 
-A ready-to-use factor library covering five categories: Price Trend (18), Volatility (9), Trading Strength (15), Price-Volume (10), and Volume-Derived (9). Each factor includes name, category, tags, formula (Markdown + LaTeX), and reference Pandas implementation code. Supports search by category/keyword and batch export.
+![Refinery pipeline UI](docs/assets/ui_refinery.png)
+
+### 3. 62 Built-in Traditional Factors
+
+A ready-to-use factor library covering five categories. Each factor includes name, category, tags, formula (Markdown + LaTeX), and reference Pandas implementation code. Supports search by category/keyword and batch export.
+
+**运行结果图例（内置因子库五大类分布 + 因子 IC 排行）**：
+
+![Factor library distribution](docs/assets/feature_factor_library.png)
+![Factor IC ranking](docs/assets/factor_ic_bars.png)
 
 ### 4. Enhanced Genetic Programming
 
 Introduces three enhancements over traditional GP: **Factor Clusters** (maintain intra-cluster diversity), **Island Model** (multi-population independent evolution with periodic elite migration), and **Event Windows** (market-condition-triggered factor recombination/elimination). Built-in 15 operators (arithmetic, comparison, time-series, cross-sectional ranking).
 
+**运行结果图例（因子簇/岛屿演化结果）**：
+
+![Enhanced GP evolution](docs/assets/feature_gp_evolution.png)
+
 ### 5. Unstructured Data Factor Mining
 
 Extracts Alpha signals from multi-modal text data: `TextAnalyzer` (tokenization, entity recognition, sentiment quantification), `AlternativeDataManager` (supply chain, sentiment, satellite text), and `UnstructuredFactorIntegrator` (fusion with structured factors, incremental information contribution evaluation).
+
+**运行结果图例（文本情绪量化 + 主题标签）**：
+
+![Unstructured text sentiment](docs/assets/feature_unstructured.png)
 
 ### 6. Transformer-Agent Deep Coupling
 
@@ -154,6 +175,10 @@ Deeply couples Transformer vector representations with the Agent's cognitive loo
 - **Graceful Degradation**: All heavy dependencies (Transformer, RL, ChromaDB) auto-degrade to numpy/heuristic/keyword fallbacks, ensuring zero-dependency-offline operation
 - **Preflight Check**: Built-in health check script for conference presentation readiness
 - **Data Caching**: Multi-source auto-fallback (EastMoney → Sina → Tushare → THS → Synthetic), with local cache for complete offline operation
+
+**运行结果图例（内置离线数据源覆盖概览）**：
+
+![Offline data source coverage](docs/assets/feature_offline_data.png)
 
 ### 8. Research Report Knowledge Pipeline (Tencent ima Integration)
 
@@ -182,6 +207,10 @@ Outputs land in `ima_subscription/`: `watch_keywords.json` (watchlist), `keyword
 
 Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq.com/agent-interface`, valid for one month). Note the API boundary: subscribed/shared libraries allow search but deny full-text export (`get_media_info` returns `220030`), so copying a report into your own library remains a manual step in the ima client — the pipeline reduces that to ticking items off a change list rather than browsing 17k documents.
 
+**运行结果图例（关键词命中统计，真实 CSV 累计 155 条）**：
+
+![ima keyword hits](docs/assets/feature_ima_pipeline.png)
+
 ---
 
 ## Architecture Overview
@@ -204,7 +233,7 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 │               │  MX Miaoxiang    │                             │
 │               │  NeoData         │                             │
 ├───────────────┴──────────────────┴────────────────────────────┤
-│  Knowledge Base: ChromaDB + BGE Embeddings + 61 Factors   │
+│  Knowledge Base: ChromaDB + BGE Embeddings + 62 Factors   │
 │  Experiment Tracking: MLflow / Local JSONL                │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -240,6 +269,20 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 <p align="center">
   <img src="docs/assets/ui_library.png" alt="Factor Library" width="48%">
   <img src="docs/assets/ui_sysbuild.png" alt="Factor System Builder" width="48%">
+</p>
+
+### Quick Demo Output (one-command simulation)
+
+`python demo_sim.py` 一键模拟端到端因子流水线，输出 `demo_output/` 下 4 张真实回测图：IC 时间序列、分位数收益、多空累计、分层累计。
+
+<p align="center">
+  <img src="demo_output/factorgpt_sim_1.png" alt="IC Time Series" width="48%">
+  <img src="demo_output/factorgpt_sim_2.png" alt="Quantile Returns" width="48%">
+</p>
+
+<p align="center">
+  <img src="demo_output/factorgpt_sim_3.png" alt="Long-Short Cumulative" width="48%">
+  <img src="demo_output/factorgpt_sim_4.png" alt="Quantile Cumulative" width="48%">
 </p>
 
 ---
@@ -385,6 +428,8 @@ For a **fully offline** environment (no internet, flaky akshare/sina feeds, or d
 - **What it does not provide**: industry/market-cap/financial/news fields, so neut/alternative-data dimensions degrade gracefully to empty — the factor pipeline still runs on pure price-volume data.
 - **Rebuilding locally**: if you ever need to refresh or extend the bundled dataset, the maintainer can regenerate it from a local market-data library; end users never need to — the bundled files are ready to use.
 - **UI**: the sidebar "数据源设置" panel has an `offline` option plus a live status readout (trade range, symbol/row counts from `meta.json`).
+
+![Offline data source coverage](docs/assets/feature_offline_data.png)
 
 ---
 

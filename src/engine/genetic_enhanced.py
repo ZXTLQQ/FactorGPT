@@ -443,6 +443,7 @@ class EnhancedFactorEvolver:
         migrate_every: int = 3,
         auto_save: bool = True,
         verbose: bool = False,
+        cols: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """执行因子簇驱动的遗传规划演化。
 

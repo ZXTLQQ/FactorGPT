@@ -23,6 +23,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from .traditional_factors import ALL_CATEGORIES, CATEGORY_LABELS
+
 
 # ===================================================================
 # 1. 因子编码器 (FactorEncoder)
