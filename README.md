@@ -14,6 +14,25 @@
 
 ---
 
+## Table of Contents
+
+- [What Problem Does FactorGPT Solve?](#what-problem-does-factorgpt-solve)
+- [Try It Online](#try-it-online)
+- [Quick Start](#quick-start)
+- [Project Highlights](#project-highlights)
+- [Architecture Overview](#architecture-overview)
+- [Data Sources & Configuration](#data-sources--configuration)
+- [Docker Deployment](#docker-deployment)
+- [Screenshots](#screenshots)
+- [Environment Requirements](#environment-requirements)
+- [Project Structure](#project-structure)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [Disclaimer](#disclaimer)
+
+---
+
 ## What Problem Does FactorGPT Solve?
 
 Traditional quantitative factor research faces three major pain points: **high barrier to entry** (requires extensive domain expertise and programming skills), **slow iteration cycles** (manual factor design, coding, and backtesting loops take days to weeks), and **siloed workflows** (data, generation, evaluation, and deployment are disconnected).
@@ -30,7 +49,7 @@ FactorGPT addresses these challenges by:
 
 ---
 
-## 🚀 Try It Online — No Installation
+## Try It Online
 
 <p align="center">
   <a href="https://huggingface.co/spaces/ZXTLQQ/factorgpt-demo">
@@ -48,15 +67,15 @@ FactorGPT provides a free online demo on HuggingFace Spaces — **no API keys, n
 
 - **Python**: 3.11 or higher
 - **OS**: Linux, macOS, or Windows
-- **Memory**: 8GB RAM minimum (16GB recommended for Transformer/RL modules)
-- **Disk**: ~5GB for dependencies + model weights
+- **Memory**: 8 GB RAM minimum (16 GB recommended for Transformer/RL modules)
+- **Disk**: ~3 GB core install, ~5 GB if including model weights
 
 ### Option 1: Docker One-Click Deployment (Recommended)
 
 ```bash
 # Clone the repository
-git clone https://github.com/factor-gpt/factor-gpt.git
-cd factor-gpt
+git clone https://github.com/ZXTLQQ/FactorGPT.git
+cd FactorGPT
 
 # Build and start
 docker-compose up -d
@@ -64,7 +83,7 @@ docker-compose up -d
 # Open browser at http://localhost:8501
 ```
 
-The Docker image comes pre-configured with all dependencies, synthetic sample data, and a fully offline-capable demonstration environment. No API keys or network access required.
+The Docker image comes pre-configured with all dependencies, synthetic sample data, and a fully offline-capable demonstration environment. No API keys or network access required. See [Docker Deployment](#docker-deployment) for build-from-source options and environment variables.
 
 ### Option 2: Local Installation
 
@@ -103,6 +122,14 @@ python run_agent.py --refinery "Mix daily and monthly frequency, combine short-t
 python scripts/preflight_check.py
 ```
 
+### One-Command Simulation Demo
+
+```bash
+python demo_sim.py
+```
+
+Simulates the entire end-to-end factor pipeline on synthetic data — no network or API keys required — and outputs four realistic backtest charts under `demo_output/`: IC time series, quantile returns, long-short cumulative, and quantile cumulative returns.
+
 ---
 
 ## Project Highlights
@@ -118,9 +145,7 @@ The core Agent follows a **Retrieve → Generate → Validate → Evaluate → R
 - **Backtest Evaluation**: IC, RankIC, ICIR, IC positivity ratio, quantile returns, long-short Sharpe/MDD, turnover, coverage
 - **Reflection & Improvement**: If IC threshold not met, LLM reflects on backtest metrics and iteratively improves the factor definition
 
-**运行结果图例（Agent 挖掘 → 回测 IC）**：
-
-![Agent factor IC time series](docs/assets/ic_series.png)
+See the backtest IC charts in [Screenshots](#screenshots).
 
 ### 2. Six-Stage Factor Refinery (Industrial Pipeline)
 
@@ -135,24 +160,15 @@ An end-to-end factor production line modeled after industrial smelting:
 | PART-05 | Alloy Blending | `AlphaPool` | ICIR-weighted + orthogonalization synthesis + leave-one-out overfitting test |
 | PART-06 | Methodology Report | `MethodologyReport` | Automated methodology report (build logic/parameter justification/cross-validation), one-click MD + JSON export |
 
-**运行结果图例（六阶段精炼厂 UI）**：
-
-![Refinery pipeline UI](docs/assets/ui_refinery.png)
-
 ### 3. 62 Built-in Traditional Factors
 
 A ready-to-use factor library covering five categories. Each factor includes name, category, tags, formula (Markdown + LaTeX), and reference Pandas implementation code. Supports search by category/keyword and batch export.
 
-**运行结果图例（内置因子库五大类分布 + 因子 IC 排行）**：
-
 ![Factor library distribution](docs/assets/feature_factor_library.png)
-![Factor IC ranking](docs/assets/factor_ic_bars.png)
 
 ### 4. Enhanced Genetic Programming
 
 Introduces three enhancements over traditional GP: **Factor Clusters** (maintain intra-cluster diversity), **Island Model** (multi-population independent evolution with periodic elite migration), and **Event Windows** (market-condition-triggered factor recombination/elimination). Built-in 15 operators (arithmetic, comparison, time-series, cross-sectional ranking).
-
-**运行结果图例（因子簇/岛屿演化结果）**：
 
 ![Enhanced GP evolution](docs/assets/feature_gp_evolution.png)
 
@@ -160,15 +176,11 @@ Introduces three enhancements over traditional GP: **Factor Clusters** (maintain
 
 Extracts Alpha signals from multi-modal text data: `TextAnalyzer` (tokenization, entity recognition, sentiment quantification), `AlternativeDataManager` (supply chain, sentiment, satellite text), and `UnstructuredFactorIntegrator` (fusion with structured factors, incremental information contribution evaluation).
 
-**运行结果图例（文本情绪量化 + 主题标签）**：
-
 ![Unstructured text sentiment](docs/assets/feature_unstructured.png)
 
 ### 6. Transformer-Agent Deep Coupling
 
 Deeply couples Transformer vector representations with the Agent's cognitive loop: `TransformerCoupling`, `CouplingScheduler`, `AgentContextBuilder`, and `AttentionVisualizer` form a "perception → reasoning → action" closed loop, significantly enhancing factor discovery depth and interpretability.
-
-**运行结果图例（因子检索相关度 Top10）**：
 
 ![Transformer-Agent coupling retrieval](docs/assets/feature_transformer_coupling.png)
 
@@ -180,9 +192,7 @@ Deeply couples Transformer vector representations with the Agent's cognitive loo
 - **Preflight Check**: Built-in health check script for conference presentation readiness
 - **Data Caching**: Multi-source auto-fallback (EastMoney → Sina → Tushare → THS → Synthetic), with local cache for complete offline operation
 
-**运行结果图例（内置离线数据源覆盖概览）**：
-
-![Offline data source coverage](docs/assets/feature_offline_data.png)
+See [Offline Data Source](#offline-data-source-built-in-no-network) for the bundled offline dataset.
 
 ### 8. Research Report Knowledge Pipeline (Tencent ima Integration)
 
@@ -211,8 +221,6 @@ Outputs land in `ima_subscription/`: `watch_keywords.json` (watchlist), `keyword
 
 Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq.com/agent-interface`, valid for one month). Note the API boundary: subscribed/shared libraries allow search but deny full-text export (`get_media_info` returns `220030`), so copying a report into your own library remains a manual step in the ima client — the pipeline reduces that to ticking items off a change list rather than browsing 17k documents.
 
-**运行结果图例（关键词命中统计，真实 CSV 累计 155 条）**：
-
 ![ima keyword hits](docs/assets/feature_ima_pipeline.png)
 
 ---
@@ -220,31 +228,139 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   Streamlit Web UI (17 Pages)            │
-├─────────────────────────────────────────────────────────┤
-│  Factor Mining Agent (LangGraph)                         │
-│  Retrieve → Generate → Validate → Evaluate → Reflect     │
-├─────────────────────────────────────────────────────────┤
-│  Six-Stage Factor Refinery Pipeline                      │
-│  Ore → Mining → Grinding → Screening → Blending → Report │
-├───────────────┬──────────────────┬────────────────────────────┤
-│  LLM Layer    │  Data Layer      │  Engine Layer               │
-│  DeepSeek     │  AKShare         │  Sandbox (Subprocess)       │
-│  OpenAI       │  Tushare         │  Backtester (IC/Quantile)   │
-│  Ollama       │  Sina/THS        │  RPN Engine                 │
-│  vLLM         │  Baostock        │  Genetic Programming        │
-│               │  MX Miaoxiang    │                             │
-│               │  NeoData         │                             │
-├───────────────┴──────────────────┴────────────────────────────┤
-│  Knowledge Base: ChromaDB + BGE Embeddings + 62 Factors   │
-│  Experiment Tracking: MLflow / Local JSONL                │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                  Streamlit Web UI (17 Pages)                  │
+├─────────────────────────────────────────────────────────────┤
+│              Factor Mining Agent (LangGraph)                  │
+│        Retrieve → Generate → Validate → Evaluate → Reflect    │
+├─────────────────────────────────────────────────────────────┤
+│              Six-Stage Factor Refinery Pipeline               │
+│       Ore → Mining → Grinding → Screening → Blending → Report │
+├───────────────┬──────────────────┬───────────────────────────┤
+│   LLM Layer   │    Data Layer    │       Engine Layer         │
+│   DeepSeek    │    AKShare       │   Sandbox (Subprocess)     │
+│   OpenAI      │    Tushare       │   Backtester (IC/Quantile) │
+│   Ollama      │    Sina / THS    │   RPN Engine               │
+│   vLLM        │    Baostock      │   Genetic Programming      │
+│               │    MX Miaoxiang  │   Transformer / RL         │
+│               │    NeoData       │                            │
+├───────────────┴──────────────────┴───────────────────────────┤
+│   Knowledge Base: ChromaDB + BGE Embeddings + 62 Factors     │
+│   Experiment Tracking: MLflow / Local JSONL                   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Screenshots & Visualizations
+## Data Sources & Configuration
+
+### Configuration
+
+All settings are centralized in `config.yaml`:
+
+- **llm**: Model provider (deepseek/openai/qwen/ollama), API key, endpoint, temperature, multi-LLM routing
+- **data**: Primary data source, date range, caching, synthetic fallback. `data.source` accepts three values:
+  - `offline` (**default**) — built-in bundled local dataset, no network required
+  - `legacy` — self-crawled akshare/sina/tushare sources
+  - `neodata` — platform stable data source (experimental, see below)
+- **backtest**: Quantile count, commission rate, risk-free rate, chart output
+- **rag**: Vector store toggle (ChromaDB+BGE or jieba fallback), embedding model, HF mirror
+- **agent**: Max iterations, IC threshold, OOS validation
+- **refinery**: Six-stage pipeline configuration (Transformer, RL, screening, AlphaPool)
+- **proxy**: HTTP/HTTPS proxy for mainland China network environments
+- **experiment_tracking**: Experiment logging (local JSONL or MLflow)
+
+### NeoData Stable Data Source (Experimental)
+
+FactorGPT can optionally route all market-data calls through the platform's **NeoData** service instead of self-crawling akshare/sina/tushare. The switch is unified behind a factory in `src/data/neo_adapter.py` (`get_data_source()`), so the four call sites (`graph.py`, `refinery.py`, `factor_system.py`, `market_data.py`) are unchanged and the **local `legacy` scheme is fully preserved** by default.
+
+- **How to enable**: set `data.source: neodata` in `config.yaml`. The real gateway `base_url` is already filled in `config.yaml` (`data.neodata.base_url`).
+- **Authentication**: requires the platform-scoped `tempToken`, which the platform writes to `~/.workbuddy/.neodata_token` (or the `NEODATA_TOKEN` env var). An ordinary IDE session token will be rejected with HTTP 401.
+
+> **Important limitation — `fallback_to_legacy` must stay `true`.** NeoData is a **natural-language query** service: it returns free-text answer blocks (`data.apiData.apiRecall[].content`), **not** a structured bulk-data API. It therefore cannot reliably provide the structured datasets the factor engine needs — full daily-K-line time series (backtest core), complete index-constituent lists, industry/market-cap mappings, and structured financial statements. The adapter's `neo()` parsers are best-effort and return empty for these, so `fallback_to_legacy` is required to keep backtests runnable. In practice `neodata` currently serves only as a research-Q&A aid and **does not replace `legacy` for factor backtesting**. Live field validation was also blocked in this environment because the platform `tempToken` was not available (session token → 401). Revisit turning `fallback_to_legacy` off only after a valid `tempToken` is obtainable and structured parsing is proven.
+
+### Offline Data Source (built-in, no network)
+
+For a **fully offline** environment (no internet, flaky akshare/sina feeds, or deterministic backtesting), FactorGPT ships with a built-in local market dataset under `data/offline/` — cloned straight from the repository, no setup required. It is read through the `OfflineDataSource` adapter (`src/data/offline_adapter.py`), behind the same `get_data_source()` factory as `legacy`/`neodata` — so all four call sites (`graph.py`, `refinery.py`, `factor_system.py`, `market_data.py`) work unchanged.
+
+- **How to enable**: set `data.source: offline` in `config.yaml` (default).
+- **Data files** (bundled, commit-tracked): `data/offline/bars_<index>_part*.parquet` (daily bars, sharded so each file stays under 100 MB), `constituents_<index>.json`, `meta.json` (trade range, symbol/row counts). The default pool is `csi800` (~2016 symbols, 2019-01 ~ 2026-08, ~3.43M rows). After cloning, the dataset is ready to use — no download, no API key.
+- **What it provides**: daily K-line (qfq-adjusted), index constituents, pct_chg — aligned with the `DataFetcher` column contract (`date/symbol/open/high/low/close/volume/amount/pct_chg`).
+- **What it does not provide**: industry/market-cap/financial/news fields, so neut/alternative-data dimensions degrade gracefully to empty — the factor pipeline still runs on pure price-volume data.
+- **UI**: the sidebar "数据源设置" panel has an `offline` option plus a live status readout (trade range, symbol/row counts from `meta.json`).
+
+![Offline data source coverage](docs/assets/feature_offline_data.png)
+
+### EastMoney MX (妙想) Data Interface
+
+An official supplement to the NeoData channel: the EastMoney "Miaoxiang" (妙想) open API provides six data capabilities — market/fundamental queries (`data`), news & research search (`search`), smart stock screening (`xuangu`), watchlist management (`zixuan`), simulated portfolio (`moni`), and financial community content (`poster`). It is a reliable replacement for fragile self-crawled akshare/sina feeds.
+
+- **Skill packages**: bundled at `factorgpt-skill/skills/mx-*/` (official releases, one `SKILL.md` + script per package). API reference: https://marketing.dfcfw.com/res/download/A620260623NIYC2U.md
+- **API key (never commit it)**: set `MX_APIKEY` in your local `.env` (git-ignored) or as a persistent env var (`setx MX_APIKEY "..."` on Windows). The committed `.env.example` keeps `MX_APIKEY=` empty for users to fill in themselves.
+- **Usage**: the cross-platform wrapper `scripts/mx_query.py` injects the key automatically and writes outputs to `output/mx_data/`:
+
+```bash
+python scripts/mx_query.py data "上证指数今日行情"
+python scripts/mx_query.py search "白酒板块研报"
+python scripts/mx_query.py xuangu "市盈率低于10的银行股"
+python scripts/mx_query.py --list
+```
+
+> The official scripts default to a Linux output path (`/root/.openclaw/workspace/mx_data/output/`); on Windows either pass an explicit output dir or use the `mx_query.py` wrapper.
+
+### Offline & Conference-Ready
+
+FactorGPT is designed for reliable offline demonstrations:
+
+```bash
+# Step 1: Prefetch real data (with network)
+python scripts/prefetch_data.py
+
+# Step 2: Run health check
+python scripts/preflight_check.py --offline
+
+# Step 3: Disconnect network and run
+streamlit run src/ui/app.py
+python run_agent.py --refinery "Momentum + Quality factors"
+```
+
+The system checks five risk categories: RL dependencies, local Ollama models, cached market data, ChromaDB availability, and sandbox stability — all with clear pass/fail/warn outputs.
+
+---
+
+## Docker Deployment
+
+### Build from Source
+
+```bash
+docker build -t factorgpt:latest .
+docker run -d -p 8501:8501 --name factorgpt factorgpt:latest
+```
+
+### Docker Compose Configuration
+
+The included `docker-compose.yml` provides:
+- Persistent volume for data cache and ChromaDB
+- Environment variable configuration for API keys and data sources
+- Automatic port mapping (8501 for Streamlit)
+- Resource limits (4 GB memory, 2 CPU cores) to keep demo environments light — raise the memory cap for Transformer/RL workloads
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DEEPSEEK_API_KEY` | DeepSeek API key | - |
+| `TUSHARE_TOKEN` | Tushare Pro token | - |
+| `FACTORGPT_LLM_PROVIDER` | Override LLM provider | ollama |
+| `FACTORGPT_LLM_MODEL` | Override LLM model | qwen2.5-coder:7b |
+| `HF_ENDPOINT` | HuggingFace mirror endpoint | https://hf-mirror.com |
+| `MX_APIKEY` | EastMoney Miaoxiang (妙想) API key, see "EastMoney MX" section | - |
+| `IMA_CLIENT_ID` | Tencent ima client ID for the research-report pipeline | - |
+| `IMA_API_KEY` | Tencent ima API key (renew monthly at ima.qq.com/agent-interface) | - |
+
+---
+
+## Screenshots
 
 ### Backtest Analysis Charts
 
@@ -295,59 +411,6 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 
 ---
 
-## Docker Deployment
-
-### One-Click Start
-
-```bash
-# Clone and start
-git clone https://github.com/ZXTLQQ/FactorGPT.git
-cd FactorGPT
-docker-compose up -d
-```
-
-### Build from Source
-
-```bash
-docker build -t factorgpt:latest .
-docker run -d -p 8501:8501 --name factorgpt factorgpt:latest
-```
-
-### Docker Compose Configuration
-
-The included `docker-compose.yml` provides:
-- Persistent volume for data cache and ChromaDB
-- Environment variable configuration for API keys and data sources
-- Automatic port mapping (8501 for Streamlit)
-- Resource limits (4GB memory, 2 CPU cores)
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DEEPSEEK_API_KEY` | DeepSeek API key | - |
-| `TUSHARE_TOKEN` | Tushare Pro token | - |
-| `FACTORGPT_LLM_PROVIDER` | Override LLM provider | ollama |
-| `FACTORGPT_LLM_MODEL` | Override LLM model | qwen2.5-coder:7b |
-| `HF_ENDPOINT` | HuggingFace mirror endpoint | https://hf-mirror.com |
-| `MX_APIKEY` | EastMoney Miaoxiang (妙想) API key, see "EastMoney MX" section | - |
-| `IMA_CLIENT_ID` | Tencent ima client ID for the research-report pipeline | - |
-| `IMA_API_KEY` | Tencent ima API key (renew monthly at ima.qq.com/agent-interface) | - |
-
----
-
-## Sample Data
-
-The repository includes sample data and can generate synthetic data for offline demonstration:
-
-- **Synthetic Data**: Automatically generated with controlled signal-to-noise ratio for testing and CI
-- **Real Data**: Use `python scripts/prefetch_data.py` to pull real A-share market data (CSI 800 constituents, daily frequency, 2019-2024)
-- **Factor Library**: `data/learned_factors.jsonl` — a growing library of learned and imported factors
-- **Vibe-Trading Catalog**: `data/vibe_trading_alpha_catalog.json` — natural language Alpha signal reference catalog
-- **Research Watchlist**: `ima_subscription/keyword_hits.csv` — auto-maintained index of matched sell-side research reports
-
----
-
 ## Project Structure
 
 ```
@@ -355,7 +418,7 @@ FactorGPT/
 ├── src/
 │   ├── agent/          # LangGraph Agent (graph, nodes, state, integration)
 │   ├── engine/         # Factor builder, backtester, optimizer, traditional factors
-│   ├── data/           # Data fetcher, cleaner, feature forge
+│   ├── data/           # Data fetcher, cleaner, feature forge, offline/neo adapters
 │   ├── pipeline/       # Six-stage refinery pipeline
 │   ├── rag/            # Knowledge base (ChromaDB + retrieval)
 │   ├── llm/            # LLM client (DeepSeek/OpenAI/Ollama compatible)
@@ -367,98 +430,19 @@ FactorGPT/
 │   └── skills/         # mx-data / mx-search / mx-xuangu / mx-zixuan / mx-moni / mx-poster
 ├── third_party/        # Third-party integrations (kronos, ima client)
 ├── hf_space/           # HuggingFace Spaces static hosting files
-├── docs/assets/                 # Documentation screenshots and charts
-├── data/               # Sample data, factor library, experiment tracking
+├── docs/assets/        # Documentation screenshots and charts
+├── data/               # Sample data, factor library, offline dataset, experiment tracking
 ├── ima_subscription/   # Research-report watchlist, baseline, and change log
 ├── 文档归档/           # Archived reference docs (e.g., EastMoney MX API reference)
+├── demo_output/        # One-command demo backtest charts (python demo_sim.py)
 ├── config.yaml         # Main configuration file
 ├── run_agent.py        # CLI entry point
+├── demo_sim.py         # One-command end-to-end demo simulation
 ├── Dockerfile          # Docker build file
 ├── docker-compose.yml  # Docker Compose orchestration
 ├── requirements.txt    # Python dependencies
 └── requirements.lock.txt  # Locked dependencies with hashes (reproducible)
 ```
-
----
-
-## Configuration
-
-All settings are centralized in `config.yaml`:
-
-- **llm**: Model provider (deepseek/openai/qwen/ollama), API key, endpoint, temperature, multi-LLM routing
-- **data**: Primary data source (akshare/tushare/sina), date range, caching, synthetic fallback
-- **backtest**: Quantile count, commission rate, risk-free rate, chart output
-- **rag**: Vector store toggle (ChromaDB+BGE or jieba fallback), embedding model, HF mirror
-- **agent**: Max iterations, IC threshold, OOS validation
-- **refinery**: Six-stage pipeline configuration (Transformer, RL, screening, AlphaPool)
-- **proxy**: HTTP/HTTPS proxy for mainland China network environments
-- **experiment_tracking**: Experiment logging (local JSONL or MLflow)
-- **data.source**: `legacy`（默认，本地 akshare/sina/tushare 自爬）、`neodata`（平台稳定数据源，见下节）或 `offline`（仓库内置的本地离线数据，不触网，见下节）
-
----
-
-## NeoData Stable Data Source (Experimental)
-
-FactorGPT can optionally route all market-data calls through the platform's **NeoData** service instead of self-crawling akshare/sina/tushare. The switch is unified behind a factory in `src/data/neo_adapter.py` (`get_data_source()`), so the four call sites (`graph.py`, `refinery.py`, `factor_system.py`, `market_data.py`) are unchanged and the **local `legacy` scheme is fully preserved** by default.
-
-- **How to enable**: set `data.source: neodata` in `config.yaml`. The real gateway `base_url` is already filled in `config.yaml` (`data.neodata.base_url`).
-- **Authentication**: requires the platform-scoped `tempToken`, which the platform writes to `~/.workbuddy/.neodata_token` (or the `NEODATA_TOKEN` env var). An ordinary IDE session token will be rejected with HTTP 401.
-
-> **Important limitation — `fallback_to_legacy` must stay `true`.** NeoData is a **natural-language query** service: it returns free-text answer blocks (`data.apiData.apiRecall[].content`), **not** a structured bulk-data API. It therefore cannot reliably provide the structured datasets the factor engine needs — full daily-K-line time series (backtest core), complete index-constituent lists, industry/market-cap mappings, and structured financial statements. The adapter's `neo()` parsers are best-effort and return empty for these, so `fallback_to_legacy` is required to keep backtests runnable. In practice `neodata` currently serves only as a research-Q&A aid and **does not replace `legacy` for factor backtesting**. Live field validation was also blocked in this environment because the platform `tempToken` was not available (session token → 401). Revisit turning `fallback_to_legacy` off only after a valid `tempToken` is obtainable and structured parsing is proven.
-
----
-
-## Offline Data Source (built-in, no network)
-
-For a **fully offline** environment (no internet, flaky akshare/sina feeds, or deterministic backtesting), FactorGPT ships with a built-in local market dataset under `data/offline/` — cloned straight from the repository, no setup required. It is read through the `OfflineDataSource` adapter (`src/data/offline_adapter.py`), behind the same `get_data_source()` factory as `legacy`/`neodata` — so all four call sites (`graph.py`, `refinery.py`, `factor_system.py`, `market_data.py`) work unchanged.
-
-- **How to enable**: set `data.source: offline` in `config.yaml` (default).
-- **Data files** (bundled, commit-tracked): `data/offline/bars_<index>_part*.parquet` (daily bars, sharded so each file stays under 100 MB), `constituents_<index>.json`, `meta.json` (trade range, symbol/row counts). The default pool is `csi800` (~2016 symbols, 2019-01 ~ 2026-08, ~3.43M rows). After cloning, the dataset is ready to use — no download, no API key.
-- **What it provides**: daily K-line (qfq-adjusted), index constituents, pct_chg — aligned with the `DataFetcher` column contract (`date/symbol/open/high/low/close/volume/amount/pct_chg`).
-- **What it does not provide**: industry/market-cap/financial/news fields, so neut/alternative-data dimensions degrade gracefully to empty — the factor pipeline still runs on pure price-volume data.
-- **Rebuilding locally**: if you ever need to refresh or extend the bundled dataset, the maintainer can regenerate it from a local market-data library; end users never need to — the bundled files are ready to use.
-- **UI**: the sidebar "数据源设置" panel has an `offline` option plus a live status readout (trade range, symbol/row counts from `meta.json`).
-
-![Offline data source coverage](docs/assets/feature_offline_data.png)
-
----
-
-## EastMoney MX (妙想) Data Interface
-
-An official supplement to the NeoData channel: the EastMoney "Miaoxiang" (妙想) open API provides six data capabilities — market/fundamental queries (`data`), news & research search (`search`), smart stock screening (`xuangu`), watchlist management (`zixuan`), simulated portfolio (`moni`), and financial community content (`poster`). It is a reliable replacement for fragile self-crawled akshare/sina feeds.
-
-- **Skill packages**: bundled at `factorgpt-skill/skills/mx-*/` (official releases, one `SKILL.md` + script per package). API reference: https://marketing.dfcfw.com/res/download/A620260623NIYC2U.md
-- **API key (never commit it)**: set `MX_APIKEY` in your local `.env` (git-ignored) or as a persistent env var (`setx MX_APIKEY "..."` on Windows). The committed `.env.example` keeps `MX_APIKEY=` empty for users to fill in themselves.
-- **Usage**: the cross-platform wrapper `scripts/mx_query.py` injects the key automatically and writes outputs to `output/mx_data/`:
-
-```bash
-python scripts/mx_query.py data "上证指数今日行情"
-python scripts/mx_query.py search "白酒板块研报"
-python scripts/mx_query.py xuangu "市盈率低于10的银行股"
-python scripts/mx_query.py --list
-```
-
-> The official scripts default to a Linux output path (`/root/.openclaw/workspace/mx_data/output/`); on Windows either pass an explicit output dir or use the `mx_query.py` wrapper.
-
----
-
-## Offline & Conference-Ready
-
-FactorGPT is designed for reliable offline demonstrations:
-
-```bash
-# Step 1: Prefetch real data (with network)
-python scripts/prefetch_data.py
-
-# Step 2: Run health check
-python scripts/preflight_check.py --offline
-
-# Step 3: Disconnect network and run
-streamlit run src/ui/app.py
-python run_agent.py --refinery "Momentum + Quality factors"
-```
-
-The system checks five risk categories: RL dependencies, local Ollama models, cached market data, ChromaDB availability, and sandbox stability — all with clear pass/fail/warn outputs.
 
 ---
 
