@@ -275,20 +275,6 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
   <img src="docs/assets/ui_sysbuild.png" alt="Factor System Builder" width="48%">
 </p>
 
-### Quick Demo Output (one-command simulation)
-
-`python demo_sim.py` 一键模拟端到端因子流水线，输出 `demo_output/` 下 4 张真实回测图：IC 时间序列、分位数收益、多空累计、分层累计。
-
-<p align="center">
-  <img src="demo_output/factorgpt_sim_1.png" alt="IC Time Series" width="48%">
-  <img src="demo_output/factorgpt_sim_2.png" alt="Quantile Returns" width="48%">
-</p>
-
-<p align="center">
-  <img src="demo_output/factorgpt_sim_3.png" alt="Long-Short Cumulative" width="48%">
-  <img src="demo_output/factorgpt_sim_4.png" alt="Quantile Cumulative" width="48%">
-</p>
-
 ---
 
 ## Environment Requirements

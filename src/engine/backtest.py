@@ -591,13 +591,31 @@ def plot_metrics(self, metrics: dict) -> list:
             pass
         figs = []
 
+        def _dt(ix):
+            """字符串日期索引转 datetime，确保 DateFormatter 正确显示。"""
+            try:
+                return pd.to_datetime(ix)
+            except Exception:
+                return ix
+
         # 1) IC 时间序列
         ic = metrics["_ic_series"]
         fig, ax = plt.subplots(figsize=(8, 3))
-        ax.plot(ic.index, ic.values, lw=0.8, color="#2c7fb8")
+        ax.plot(_dt(ic.index), ic.values, lw=0.8, color="#2c7fb8")
         ax.axhline(ic.mean(), color="red", ls="--", lw=1, label=f"均值 {ic.mean():.4f}")
         ax.set_title("IC 时间序列")
-        ax.legend()
+        ax.set_xlabel("日期")
+        ax.set_ylabel("IC")
+        ax.legend(loc="lower right")
+        # X 轴 tick 过多会压扁成黑条 → 限制最大刻度数并自动格式化日期
+        try:
+            from matplotlib.dates import DateFormatter
+            from matplotlib.ticker import MaxNLocator
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=6, prune=None))
+            ax.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+        except Exception:
+            pass
+        fig.autofmt_xdate(rotation=0, ha="center")
         fig.tight_layout()
         figs.append(fig)
 
@@ -610,6 +628,8 @@ def plot_metrics(self, metrics: dict) -> list:
             ax.bar([f"Q{g+1}" for g in groups], vals, color="#41ab5d")
             ax.axhline(0, color="black", lw=0.8)
             ax.set_title("分位数分组平均收益")
+            ax.set_xlabel("分位组")
+            ax.set_ylabel("未来收益均值")
             fig.tight_layout()
             figs.append(fig)
 
@@ -618,8 +638,18 @@ def plot_metrics(self, metrics: dict) -> list:
         if ls is not None and len(ls):
             fig, ax = plt.subplots(figsize=(8, 3))
             equity = (1 + ls).cumprod()
-            ax.plot(equity.index, equity.values, color="#c51b8a", lw=1)
+            ax.plot(_dt(equity.index), equity.values, color="#c51b8a", lw=1)
             ax.set_title("多空对冲累计收益")
+            ax.set_xlabel("日期")
+            ax.set_ylabel("累计净值")
+            try:
+                from matplotlib.dates import DateFormatter
+                from matplotlib.ticker import MaxNLocator
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=6, prune=None))
+                ax.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+            except Exception:
+                pass
+            fig.autofmt_xdate(rotation=0, ha="center")
             fig.tight_layout()
             figs.append(fig)
 
@@ -628,12 +658,20 @@ def plot_metrics(self, metrics: dict) -> list:
         if qc:
             fig, ax = plt.subplots(figsize=(8, 3.5))
             for g, s in sorted(qc.items()):
-                ax.plot(s.index, s.values, lw=0.9, label=f"Q{int(g) + 1}")
+                ax.plot(_dt(s.index), s.values, lw=0.9, label=f"Q{int(g) + 1}")
             ax.axhline(0, color="gray", lw=0.8, ls="--")
             ax.set_title("分层累积收益曲线（Q1 最低分位 -> Qn 最高分位）")
             ax.set_xlabel("日期")
             ax.set_ylabel("累积收益")
             ax.legend(ncol=5, fontsize=8)
+            try:
+                from matplotlib.dates import DateFormatter
+                from matplotlib.ticker import MaxNLocator
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=6, prune=None))
+                ax.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+            except Exception:
+                pass
+            fig.autofmt_xdate(rotation=0, ha="center")
             fig.tight_layout()
             figs.append(fig)
 
