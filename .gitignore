@@ -23,8 +23,8 @@ test_log.txt
 # 本地预备缓存（真实行情/整矿，可能较大，不入库）
 data/cache/
 
-# Qlib 导出的离线行情数据（scripts/export_qlib_offline.py 产物，可能数百 MB，不入库）
-data/offline/
+# 注意：data/offline/（仓库内置离线数据源）需要入库，
+# 以便其他用户克隆后开箱即用，因此不能列入 .gitignore。
 
 # HuggingFace / 向量模型缓存（下载产物，非源码）
 # 若 config.yaml 的 rag.hf_home 指向仓库内目录（如 data/models），请保留此行

@@ -1,22 +1,22 @@
 # -*- coding: utf-8 -*-
 """离线数据源适配器（OfflineDataSource）。
 
-从 Qlib 导出的本地 parquet（``data/offline/``）提供与 ``DataFetcher`` /
-``NeoDataSource`` 接口对齐的数据，实现**完全离线**取数（不触网）。
+读取仓库内置的本地 parquet（``data/offline/``，随项目分发、克隆即用），提供与
+``DataFetcher`` / ``NeoDataSource`` 接口对齐的数据，实现**完全离线**取数（不触网）。
 
 启用方式
 --------
 在 ``config.yaml`` 设置 ``data.source: offline``，并把调用点 ``DataFetcher()``
 替换为 ``get_data_source(config)``（见 ``data.neo_adapter.DataSourceFactory``）。
+默认即读取随仓库分发的 ``data/offline/``，无需任何联网或额外准备。
 
-数据来源
+数据文件
 --------
-先用 ``scripts/export_qlib_offline.py``（需带 qlib 的 Python，本机为
-``E:\\Qlib\\runtime\\python311\\python.exe``）从 Qlib cn_data 导出：
+``data/offline/`` 下按指数池存放：
 
-    data/offline/bars_csi800.parquet
-    data/offline/constituents_csi800.json
-    data/offline/meta.json
+    data/offline/bars_<index>_part*.parquet   # 日K分片（含复权因子列）
+    data/offline/constituents_<index>.json    # 指数成分股列表
+    data/offline/meta.json                    # 导出元信息（时间范围、股票数、交易日数）
 
 离线数据源各方法
 ----------------
@@ -24,11 +24,11 @@
   ``date/open/high/low/close/volume/amount/pct_chg/symbol``（前复权 qfq 对齐 DataFetcher）。
 - ``get_index_constituents``: 读取成分股 JSON（默认 csi800）。
 - ``get_industry_and_cap`` / ``get_industry_classification`` / ``get_financial_data``:
-  Qlib cn_data 无行业/市值/财务字段，返回空（由上层中性化/多模态能力降级，不影响日K回测）。
+  离线数据无行业/市值/财务字段，返回空（由上层中性化/多模态能力降级，不影响日K回测）。
 - 其余方法（新闻情绪/快照/分钟K）无离线数据，返回空，不尝试联网。
 
-注意：Qlib 的 ``$factor`` 为后复权累计因子，本适配器按区间末因子归一化折算为
-前复权价（qfq），以对齐 legacy DataFetcher 的默认复权语义。
+注意：parquet 中的复权因子列按区间末因子归一化折算为前复权价（qfq），
+以对齐 legacy DataFetcher 的默认复权语义。
 """
 from __future__ import annotations
 
@@ -67,13 +67,13 @@ class OfflineDataSource:
         self._constituents: Optional[List[str]] = None
         self._meta: Dict[str, Any] = {}
 
-        # 启动时预检查数据文件，未导出时给出明确指引
-        if not self._bars_path.exists():
+        # 启动时预检查数据文件，缺失时给出明确指引
+        if not self._bars_paths:
             self.last_fetch_info = {
                 "source": "none",
                 "message": (
-                    f"离线数据缺失：{self._bars_path} 不存在。"
-                    f"请先运行 scripts/export_qlib_offline.py 导出 Qlib 离线数据。"
+                    f"离线数据缺失：{self.base} 下未找到 bars_{self.index}_*.parquet。"
+                    f"请将随仓库分发的 data/offline/ 完整拷贝到 {self.base}。"
                 ),
             }
 
@@ -82,8 +82,14 @@ class OfflineDataSource:
     # ------------------------------------------------------------------
 
     @property
-    def _bars_path(self) -> Path:
-        return self.base / f"bars_{self.index}.parquet"
+    def _bars_paths(self) -> List[Path]:
+        """日K parquet 分片路径（支持 bars_<index>_part*.parquet 多分片）。"""
+        globs = sorted(self.base.glob(f"bars_{self.index}_part*.parquet"))
+        # 兼容旧式单文件命名
+        single = self.base / f"bars_{self.index}.parquet"
+        if not globs and single.exists():
+            globs = [single]
+        return globs
 
     @property
     def _constituents_path(self) -> Path:
@@ -94,12 +100,14 @@ class OfflineDataSource:
         return self.base / "meta.json"
 
     def _load_bars(self) -> pd.DataFrame:
-        """惰性加载全量日K parquet（约 340 万行，内存 ~200MB，可接受）。"""
+        """惰性加载全量日K parquet 分片（约 340 万行，内存 ~200MB，可接受）。"""
         if self._bars is None:
-            if not self._bars_path.exists():
+            paths = self._bars_paths
+            if not paths:
                 self._bars = pd.DataFrame()
             else:
-                self._bars = pd.read_parquet(self._bars_path)
+                frames = [pd.read_parquet(p) for p in paths]
+                self._bars = pd.concat(frames, ignore_index=True)
         return self._bars
 
     def _load_constituents(self) -> List[str]:
@@ -119,7 +127,7 @@ class OfflineDataSource:
 
     @staticmethod
     def _norm_symbol(symbol: str) -> str:
-        """归一化股票代码：600519 -> SH600519（对齐 Qlib instrument 命名）。"""
+        """归一化股票代码：600519 -> SH600519（对齐数据文件中的 instrument 命名）。"""
         s = str(symbol).strip().upper().replace(".", "").replace("_", "")
         if s.startswith(("SH", "SZ", "BJ")):
             return s
@@ -130,7 +138,7 @@ class OfflineDataSource:
 
     @staticmethod
     def _de_norm_symbol(inst: str) -> str:
-        """Qlib instrument -> 6 位裸代码：SH600519 -> 600519。"""
+        """instrument 代码 -> 6 位裸代码：SH600519 -> 600519。"""
         s = str(inst).upper()
         if s.startswith(("SH", "SZ", "BJ")) and len(s) == 8:
             return s[2:]
@@ -163,7 +171,7 @@ class OfflineDataSource:
 
         bars = self._load_bars()
         if bars is None or bars.empty:
-            self.last_fetch_info = {"source": "none", "message": "离线数据缺失，请先运行导出脚本"}
+            self.last_fetch_info = {"source": "none", "message": "离线数据缺失，请检查 data/offline/ 目录完整性"}
             return pd.DataFrame()
 
         # 过滤：instrument 精确匹配 + 兼容裸代码
@@ -218,7 +226,7 @@ class OfflineDataSource:
         out["pct_chg"] = out.groupby("symbol")["close"].pct_change().fillna(0.0) * 100.0
         self.last_fetch_info = {
             "source": "offline",
-            "message": f"离线 Qlib 数据（index={self.index}，{len(out)} 行）",
+            "message": f"离线数据（index={self.index}，{len(out)} 行）",
         }
         return out
 
@@ -239,7 +247,7 @@ class OfflineDataSource:
         return out
 
     def get_industry_and_cap(self, symbols: List[str]) -> pd.DataFrame:
-        """Qlib cn_data 无行业/市值字段，返回空（中性化维度缺失，不中断流水线）。"""
+        """离线数据无行业/市值字段，返回空（中性化维度缺失，不中断流水线）。"""
         self.last_fetch_info = {"source": "offline", "message": "离线数据无行业/市值字段，返回空"}
         return pd.DataFrame()
 

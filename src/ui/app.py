@@ -255,21 +255,26 @@ def _init_data_source_session():
 
 
 def _render_offline_status(index: str):
-    """展示离线数据源（Qlib 导出）的当前状态。"""
+    """展示离线数据源（仓库内置本地数据）的当前状态。"""
     import json as _json
     from pathlib import Path as _Path
 
     base = _Path(st.session_state.ui_ds_offline_dir or "data/offline")
     meta_p = base / "meta.json"
-    bars_p = base / f"bars_{index}.parquet"
-    if not bars_p.exists():
+    bars_ps = sorted(base.glob(f"bars_{index}_part*.parquet"))
+    if not bars_ps:
+        single = base / f"bars_{index}.parquet"
+        if single.exists():
+            bars_ps = [single]
+    if not bars_ps:
         st.warning(
-            f"离线数据缺失：{bars_p} 不存在。\n"
-            "请先运行：E:\\Qlib\\runtime\\python311\\python.exe scripts/export_qlib_offline.py"
+            f"离线数据缺失：{base} 下未找到 bars_{index}_part*.parquet。\n"
+            "请确认 data/offline/ 目录完整（随仓库分发，克隆/更新后即可用）。"
         )
         return
+    total_mb = sum(p.stat().st_size for p in bars_ps) / 1e6
     if not meta_p.exists():
-        st.success(f"离线数据文件已就绪：{bars_p}（大小 {bars_p.stat().st_size / 1e6:.1f} MB）")
+        st.success(f"离线数据文件已就绪：{len(bars_ps)} 个分片（共 {total_mb:.1f} MB）")
         return
     with open(meta_p, "r", encoding="utf-8") as f:
         meta = _json.load(f)
@@ -301,20 +306,19 @@ def _render_data_source_panel():
             help=(
                 "legacy=沿用 akshare/sina/tushare 本地自爬（需联网）；"
                 "neodata=走平台稳定源（需可用网关）；"
-                "offline=使用 Qlib 导出的本地 parquet 离线数据（不触网）。"
+                "offline=使用仓库内置的本地 parquet 离线数据（不触网）。"
             ),
         )
 
         if st.session_state.ui_ds_source == "offline":
             st.info(
-                "离线数据源：读取 data/offline/ 下 Qlib 导出的 parquet，完全离线不触网。"
-                " 若数据缺失，请先运行：\n"
-                "E:\\Qlib\\runtime\\python311\\python.exe scripts/export_qlib_offline.py"
+                "离线数据源：读取仓库内置的 data/offline/ 本地 parquet，完全离线不触网。"
+                " 数据随仓库分发，克隆/更新后即可直接使用。"
             )
             st.text_input(
                 "离线指数池",
                 key="ui_ds_offline_index",
-                help="Qlib 导出时使用的指数池名（默认 csi800，对应 bars_csi800.parquet）。",
+                help="指数池名（默认 csi800，对应 data/offline/bars_csi800_part*.parquet）。",
             )
             st.text_input(
                 "离线数据目录（可选）",

@@ -1,0 +1,25 @@
+{
+  "index": "csi800",
+  "start": "2019-01-02",
+  "end": "2026-08-25",
+  "trade_days": 1855,
+  "symbols": 2016,
+  "rows": 3430506,
+  "columns": [
+    "instrument",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount",
+    "factor",
+    "date"
+  ],
+  "exported_at": "2026-08-28 12:48:45",
+  "parts": [
+    "bars_csi800_part1.parquet",
+    "bars_csi800_part2.parquet",
+    "bars_csi800_part3.parquet"
+  ]
+}

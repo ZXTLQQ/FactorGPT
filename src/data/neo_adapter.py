@@ -441,8 +441,8 @@ class DataSourceFactory:
     - ``config=None`` 时自动读取项目全局 ``config.yaml``，保证 ``data.source`` 开关处处生效；
     - ``data.source`` 缺省为 ``legacy``，即保留原有的本地运行数据源（akshare/sina/tushare 自爬）；
     - ``data.source: neodata`` 时走平台稳定数据源（未配置时仍安全回退 legacy）；
-    - ``data.source: offline`` 时使用 ``OfflineDataSource``（Qlib 导出的本地 parquet，
-      完全离线、不触网；需先运行 ``scripts/export_qlib_offline.py`` 导出数据）。
+    - ``data.source: offline`` 时使用 ``OfflineDataSource``（仓库内置的本地 parquet，
+      完全离线、不触网；数据文件随仓库分发在 ``data/offline/``，克隆即用）。
     """
 
     @staticmethod

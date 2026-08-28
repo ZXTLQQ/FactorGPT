@@ -51,9 +51,9 @@ data:
   # 3. Baostock: 免费无需注册，适合批量历史数据，更新较慢
   # 4. efinance: 免费，东方财富数据源，轻量快速
   # 数据源开关：legacy（默认，沿用 akshare/sina/tushare 自爬）| neodata（走平台 NeoData 技能，稳定）
-  #               | offline（使用 Qlib 导出的本地 parquet 离线数据，不触网）
-  # 离线数据源使用：先运行 `E:\Qlib\runtime\python311\python.exe scripts/export_qlib_offline.py` 导出，
-  # 再把本开关置为 offline 即可全流水线离线取数（详见 src/data/offline_adapter.py）。
+  #               | offline（使用仓库内置的本地 parquet 离线数据，不触网）
+  # 离线数据源使用：data/offline/ 数据随仓库分发，克隆即用；把本开关置为 offline
+  # 即可全流水线离线取数（详见 src/data/offline_adapter.py）。
   source: offline
   neodata:                         # 仅当 source=neodata 时生效
     # 真实网关端点（来自平台 neodata-financial-search 技能 SKILL.md）：单 POST 端点，
@@ -71,8 +71,8 @@ data:
     # 现状：neodata 源目前仅作为「研究问答」辅助，不能替代 legacy 执行因子回测；
     #       base_url 已填真实端点，待平台 tempToken 可用且补齐结构化解析后再评估关闭回退。
     fallback_to_legacy: true       # 保持 true：NeoData 无法提供结构化批量数据，必须回退 legacy 才能保证回测可跑
-  offline:                          # 仅当 source=offline 时生效（Qlib 导出的本地离线数据，不触网）
-    index: "csi800"                 # 指数池名，对应 data/offline/bars_csi800.parquet
+  offline:                          # 仅当 source=offline 时生效（仓库内置本地离线数据，不触网）
+    index: "csi800"                 # 指数池名，对应 data/offline/bars_csi800_part*.parquet
     dir: ""                         # 离线数据目录，留空默认 data/offline
   primary_source: akshare          # 主力数据源（legacy 模式下的子优先级）：akshare / tushare / ths / sina
   # prefer_sina：部分网络下东方财富(push2his)的 HTTPS 连接会被对端重置

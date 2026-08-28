@@ -360,7 +360,7 @@ All settings are centralized in `config.yaml`:
 - **refinery**: Six-stage pipeline configuration (Transformer, RL, screening, AlphaPool)
 - **proxy**: HTTP/HTTPS proxy for mainland China network environments
 - **experiment_tracking**: Experiment logging (local JSONL or MLflow)
-- **data.source**: `legacy`（默认，本地 akshare/sina/tushare 自爬）、`neodata`（平台稳定数据源，见下节）或 `offline`（Qlib 导出的本地离线数据，不触网，见下节）
+- **data.source**: `legacy`（默认，本地 akshare/sina/tushare 自爬）、`neodata`（平台稳定数据源，见下节）或 `offline`（仓库内置的本地离线数据，不触网，见下节）
 
 ---
 
@@ -375,22 +375,16 @@ FactorGPT can optionally route all market-data calls through the platform's **Ne
 
 ---
 
-## Offline Data Source (Qlib-exported, no network)
+## Offline Data Source (built-in, no network)
 
-For a **fully offline** environment (no internet, flaky akshare/sina feeds, or deterministic backtesting), FactorGPT can read market data straight from locally exported Qlib data via the `OfflineDataSource` adapter (`src/data/offline_adapter.py`), behind the same `get_data_source()` factory as `legacy`/`neodata` — so all four call sites (`graph.py`, `refinery.py`, `factor_system.py`, `market_data.py`) work unchanged.
+For a **fully offline** environment (no internet, flaky akshare/sina feeds, or deterministic backtesting), FactorGPT ships with a built-in local market dataset under `data/offline/` — cloned straight from the repository, no setup required. It is read through the `OfflineDataSource` adapter (`src/data/offline_adapter.py`), behind the same `get_data_source()` factory as `legacy`/`neodata` — so all four call sites (`graph.py`, `refinery.py`, `factor_system.py`, `market_data.py`) work unchanged.
 
-- **How to enable**: set `data.source: offline` in `config.yaml`.
-- **Data preparation** (one-time, needs a Python with `qlib` installed):
-
-  ```bash
-  # e.g. on this machine: E:\Qlib\runtime\python311\python.exe scripts/export_qlib_offline.py
-  python scripts/export_qlib_offline.py
-  ```
-
-  This exports the Qlib index pool (default `csi800`, ~2016 symbols, 2019-01 ~ latest) into `data/offline/` (`bars_<index>.parquet`, `constituents_<index>.json`, `meta.json`). The directory is git-ignored (large, machine-local).
+- **How to enable**: set `data.source: offline` in `config.yaml` (default).
+- **Data files** (bundled, commit-tracked): `data/offline/bars_<index>_part*.parquet` (daily bars, sharded so each file stays under 100 MB), `constituents_<index>.json`, `meta.json` (trade range, symbol/row counts). The default pool is `csi800` (~2016 symbols, 2019-01 ~ 2026-08, ~3.43M rows). After cloning, the dataset is ready to use — no download, no API key.
 - **What it provides**: daily K-line (qfq-adjusted), index constituents, pct_chg — aligned with the `DataFetcher` column contract (`date/symbol/open/high/low/close/volume/amount/pct_chg`).
-- **What it does not provide**: industry/market-cap/financial/news fields (Qlib `cn_data` has no industry/cap data), so neut/alternative-data dimensions degrade gracefully to empty — the factor pipeline still runs on pure price-volume data.
-- **UI**: the sidebar "数据源设置" panel gained an `offline` option plus a live status readout (trade range, symbol/row counts from `meta.json`).
+- **What it does not provide**: industry/market-cap/financial/news fields, so neut/alternative-data dimensions degrade gracefully to empty — the factor pipeline still runs on pure price-volume data.
+- **Rebuilding locally**: if you ever need to refresh or extend the bundled dataset, the maintainer can regenerate it from a local market-data library; end users never need to — the bundled files are ready to use.
+- **UI**: the sidebar "数据源设置" panel has an `offline` option plus a live status readout (trade range, symbol/row counts from `meta.json`).
 
 ---
 
