@@ -168,6 +168,10 @@ Extracts Alpha signals from multi-modal text data: `TextAnalyzer` (tokenization,
 
 Deeply couples Transformer vector representations with the Agent's cognitive loop: `TransformerCoupling`, `CouplingScheduler`, `AgentContextBuilder`, and `AttentionVisualizer` form a "perception → reasoning → action" closed loop, significantly enhancing factor discovery depth and interpretability.
 
+**运行结果图例（因子检索相关度 Top10）**：
+
+![Transformer-Agent coupling retrieval](docs/assets/feature_transformer_coupling.png)
+
 ### 7. Local Deployment & Offline Resilience
 
 - **Ollama Integration**: One-click script switches to local LLM (qwen2.5-coder:7b, llama3.1:8b, etc.) — no API key needed
