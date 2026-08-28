@@ -61,7 +61,8 @@ CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
 # 供应商预设（OpenAI 兼容接口）
 # ----------------------------------------------------------------------
 PROVIDER_PRESETS = {
-    "DeepSeek": {"provider": "deepseek", "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat"},
+    # 官方文档推荐 base_url（OpenAI 兼容，不带 /v1）；模型名以官方当前 V4 系列为准。
+    "DeepSeek": {"provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"},
     "OpenAI": {"provider": "openai", "base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
     "通义千问 (Qwen)": {"provider": "qwen", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen-plus"},
     "OpenAI 兼容 (自定义)": {"provider": "custom", "base_url": "", "model": ""},
@@ -184,17 +185,28 @@ def _test_connection():
 
     try:
         c = LLMClient()
+        # 防御：清除 Base URL 头尾混入的制表符/空格（常因从文档复制粘贴带入，
+        # 会导致 urllib 报 "Invalid non-printable ASCII character in URL"）。
+        base_url = (st.session_state.ui_base_url or "").strip()
         c.set_model(
             provider=st.session_state.ui_provider_value,
             model=st.session_state.ui_model,
             api_key=st.session_state.ui_api_key,
-            base_url=st.session_state.ui_base_url,
+            base_url=base_url,
             temperature=st.session_state.ui_temp,
         )
-        resp = c.chat([{"role": "user", "content": "ping，只回复 ok"}], max_tokens=16)
+        resp = c.chat([{"role": "user", "content": "ping，只回复 ok"}])
         st.success(f"连接成功 ✅ 模型回复：{str(resp)[:80]}")
     except Exception as e:
-        st.error(f"连接失败 ❌ {e}")
+        msg = str(e)
+        if "404" in msg:
+            st.error(
+                f"连接失败 ❌ 404：请确认 Base URL 为 OpenAI 兼容端点 "
+                f"(DeepSeek 官方为 https://api.deepseek.com，不要填 /anthropic)，"
+                f"且模型名存在。原始错误：{msg}"
+            )
+        else:
+            st.error(f"连接失败 ❌ {msg}")
 
 
 def _save_llm_to_config():
