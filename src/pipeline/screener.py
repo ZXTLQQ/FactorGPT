@@ -66,7 +66,9 @@ class Screener:
             common = common.intersection(s.index)
         common = common[~common.duplicated()]
         X = np.column_stack([s.reindex(common).to_numpy(dtype=float) for s in series])
-        X = np.nan_to_num(X)
+        # nan_to_num 默认只清 NaN；因子值可能产生 ±inf（如除零），一并清理，
+        # 否则 LassoCV 会因「Input contains infinity」崩溃
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         kl = kline.set_index([DATE, SYMBOL])
         if kl.index.duplicated().any():
             kl = kl[~kl.index.duplicated(keep="last")]
@@ -75,7 +77,7 @@ class Screener:
         X, y = X[mask], y[mask]
         if X.shape[0] < 50 or _HAS_SKLEARN is False:
             # 无 sklearn 或样本不足：改用相关性冗余去重（保留与收益相关性最高者）
-            return self._corr_redundancy(candidates, y, common)
+            return self._corr_redundancy(candidates, y, common, mask)
         try:
             model = LassoCV(cv=5, random_state=0, max_iter=5000).fit(X, y)
             coef = model.coef_
@@ -84,17 +86,20 @@ class Screener:
             return keep if keep else candidates
         except Exception as e:  # noqa: BLE001
             logger.warning("LASSO 失败，降级相关性去重: %s", e)
-            return self._corr_redundancy(candidates, y, common)
+            return self._corr_redundancy(candidates, y, common, mask)
 
     @staticmethod
-    def _corr_redundancy(candidates, y, common) -> List[CandidateFactor]:
+    def _corr_redundancy(candidates, y, common, mask=None) -> List[CandidateFactor]:
+        """相关性冗余去重。mask 为 NaN 收益掩码：y 与 f 需按同一掩码对齐。"""
         scores = []
         for c in candidates:
             s = c.series
             if s.index.duplicated().any():
                 s = s[~s.index.duplicated(keep="last")]
             f = s.reindex(common).to_numpy(dtype=float)
-            f = np.nan_to_num(f)
+            f = np.nan_to_num(f, nan=0.0, posinf=0.0, neginf=0.0)
+            if mask is not None:
+                f = f[mask]
             if np.std(f) == 0:
                 scores.append(0.0)
             else:

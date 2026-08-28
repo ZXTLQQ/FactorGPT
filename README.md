@@ -7,6 +7,7 @@
 [![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-orange)](https://github.com/langchain-ai/langgraph)
 [![HF Spaces](https://img.shields.io/badge/🤗%20Demo-Online-ff9a00?logo=huggingface)](https://huggingface.co/spaces/ZXTLQQ/factorgpt-demo)
 [![Status](https://img.shields.io/badge/Status-Active-brightgreen.svg)](https://github.com/ZXTLQQ/FactorGPT)
+[![CI](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml)
 
 **FactorGPT** is an LLM-powered intelligent financial factor industrialization platform that deeply integrates natural language understanding with quantitative finance factor engineering. It supports automated factor extraction, validation, combination optimization, and production-grade deployment from both structured and unstructured data sources — all driven by natural language commands.
 
@@ -26,6 +27,7 @@
 - [Screenshots](#screenshots)
 - [Environment Requirements](#environment-requirements)
 - [Project Structure](#project-structure)
+- [Testing & Quality Assurance](#testing--quality-assurance)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
@@ -107,7 +109,7 @@ python scripts/prefetch_data.py
 streamlit run src/ui/app.py
 ```
 
-Open your browser at `http://localhost:8501` to access the 17-page integrated web dashboard.
+Open your browser at `http://localhost:8501` to access the 20-page integrated web dashboard.
 
 ### Quick Test (No Network Required)
 
@@ -229,7 +231,7 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  Streamlit Web UI (17 Pages)                  │
+│                  Streamlit Web UI (20 Pages)                  │
 ├─────────────────────────────────────────────────────────────┤
 │              Factor Mining Agent (LangGraph)                  │
 │        Retrieve → Generate → Validate → Evaluate → Reflect    │
@@ -286,6 +288,7 @@ For a **fully offline** environment (no internet, flaky akshare/sina feeds, or d
 - **How to enable**: set `data.source: offline` in `config.yaml` (default).
 - **Data files** (bundled, commit-tracked): `data/offline/bars_<index>_part*.parquet` (daily bars, sharded so each file stays under 100 MB), `constituents_<index>.json`, `meta.json` (trade range, symbol/row counts). The default pool is `csi800` (~2016 symbols, 2019-01 ~ 2026-08, ~3.43M rows). After cloning, the dataset is ready to use — no download, no API key.
 - **What it provides**: daily K-line (qfq-adjusted), index constituents, pct_chg — aligned with the `DataFetcher` column contract (`date/symbol/open/high/low/close/volume/amount/pct_chg`).
+- **Physical vs contract schema**: the bundled parquet files store the code column physically as `instrument` (e.g. `sh.600000`); `offline_adapter.py` bridges it to the downstream `symbol` contract via `_de_norm_symbol()` (`instrument→symbol` rename). Never consume `instrument` directly outside the adapter — the documented data contract for all factor/backtest code is `symbol`.
 - **What it does not provide**: industry/market-cap/financial/news fields, so neut/alternative-data dimensions degrade gracefully to empty — the factor pipeline still runs on pure price-volume data.
 - **UI**: the sidebar "数据源设置" panel has an `offline` option plus a live status readout (trade range, symbol/row counts from `meta.json`).
 
@@ -422,7 +425,7 @@ FactorGPT/
 │   ├── pipeline/       # Six-stage refinery pipeline
 │   ├── rag/            # Knowledge base (ChromaDB + retrieval)
 │   ├── llm/            # LLM client (DeepSeek/OpenAI/Ollama compatible)
-│   ├── ui/             # Streamlit web interface (17 pages)
+│   ├── ui/             # Streamlit web interface (20 pages)
 │   ├── store/          # SQLite persistence (memory, chat, experiments)
 │   └── kronos/         # Kronos financial forecasting model integration
 ├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch)
@@ -443,6 +446,16 @@ FactorGPT/
 ├── requirements.txt    # Python dependencies
 └── requirements.lock.txt  # Locked dependencies with hashes (reproducible)
 ```
+
+---
+
+## Testing & Quality Assurance
+
+FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge:
+
+- **CI**: `.github/workflows/ci.yml` runs the full test suite on every push/PR (Python 3.11 + 3.12), then compile-checks all source modules. Status: [![CI](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml)
+- **Core tests** under `tests/`: sandbox security & lookahead-bias rejection (`test_sandbox.py`), the six-stage refinery pipeline end-to-end (`test_refinery.py`), and documentation-contract drift guards (`test_docs_contract.py` — keeps README page/factor counts, the `instrument→symbol` data contract, and `kronos.fallback_to_stub` from silently drifting).
+- **Ablation experiments**: `python scripts/ablation_study.py --seed 42 --n-symbols 20` quantifies each pipeline module's marginal contribution on out-of-sample data (ΔICIR per module); results and interpretation in [docs/ablation_report.md](docs/ablation_report.md).
 
 ---
 

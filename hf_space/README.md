@@ -15,7 +15,7 @@ AI-Driven Quantitative Factor Discovery and Mining Platform for A-Share Markets.
 
 Describe your investment idea in natural language and watch the LLM Agent turn it
 into validated, backtested alpha factors — powered by LangGraph orchestration, a
-six-stage factor refinery pipeline, and a 61-factor built-in knowledge base.
+six-stage factor refinery pipeline, and a 62-factor built-in knowledge base.
 
 ## Try It Online
 

@@ -42,7 +42,7 @@ kronos:
   cache_dir: "./models/kronos" # 权重缓存目录
   hf_endpoint: "https://hf-mirror.com"  # HuggingFace 镜像, 国内可直连时改 ""
   # 真实模型不可用(依赖缺失/权重下载失败)时: true=降级 stub 并告警; false=抛错中断
-  fallback_to_stub: false
+  fallback_to_stub: true
 
 data:
   # ── 免费数据源（推荐优先级从高到低） ──

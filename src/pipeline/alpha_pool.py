@@ -80,7 +80,9 @@ class AlphaPool:
             common = common.intersection(s.index)
         common = common[~common.duplicated()]
         X = np.column_stack([s.reindex(common).to_numpy(dtype=float) for s in series])
-        X = np.nan_to_num(X)
+        # nan_to_num 默认只清 NaN；因子值可能含 ±inf（如除零），
+        # 若不清除，正交化（点积/除法）会溢出产生 NaN，导致合成因子整体失效
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         w = self._icir_weights(candidates)
 
         if self.config.ortho and X.shape[1] > 1:
@@ -133,7 +135,9 @@ class AlphaPool:
         for s in series[1:]:
             common = common.intersection(s.index)
         common = common[~common.duplicated()]
-        X = np.nan_to_num(np.column_stack([s.reindex(common).to_numpy(dtype=float) for s in series]))
+        X = np.nan_to_num(
+            np.column_stack([s.reindex(common).to_numpy(dtype=float) for s in series]),
+            nan=0.0, posinf=0.0, neginf=0.0)
         w = self._icir_weights(candidates)
         if X.shape[1] > 1 and self.config.ortho:
             X = self._orthogonalize(X)
