@@ -318,6 +318,49 @@ div[data-baseweb="tag"] {{ background: {RED} !important; }}
   border: 1px solid {LINE} !important; border-radius: 20px !important;
 }}
 
+/* ---------- 系统暗色模式兼容层 ---------- */
+/* 未配置 .streamlit/config.toml 固定主题时，Streamlit 跟随系统亮/暗色；
+   暗色系统会把大量组件文字渲染成浅色，与白底 .stApp 融合。
+   这里从「主题 CSS 变量 + color-scheme」根上强制浅色，再对具体组件兜底。 */
+html, body {{ color-scheme: light; }}
+html, body, .stApp, [data-testid="stApp"] {{
+  --text-color: {INK} !important;
+  --background-color: {BG} !important;
+  --secondary-background-color: {BG_SOFT} !important;
+  --primary-color: {RED} !important;
+  --body-text-color: {INK} !important;
+  --caption-text-color: {INK_SUB} !important;
+  --widget-text-color: {INK} !important;
+  --sidebar-background-color: #FFFFFF !important;
+  --sidebar-text-color: {INK} !important;
+}}
+/* caption / markdown 正文 */
+[data-testid="stCaptionContainer"] {{ color: {INK_SUB} !important; }}
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li,
+[data-testid="stMarkdownContainer"] span {{
+  color: {INK} !important;
+}}
+/* 下拉框 / 多选 / 日期 / 单选 / 复选 / 滑块 / 文件上传等控件文字 */
+div[data-testid="stSelectbox"] [data-baseweb="select"] span,
+div[data-testid="stMultiselect"] [data-baseweb="select"] span,
+div[data-testid="stDateInput"] input,
+div[data-testid="stRadio"] label, div[data-testid="stRadio"] label *,
+div[data-testid="stCheckbox"] label, div[data-testid="stCheckbox"] label *,
+div[data-testid="stSlider"] [data-testid="stSliderThumbValue"],
+div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] {{
+  color: {INK} !important;
+}}
+/* 多选已选标签：红底白字 */
+div[data-baseweb="tag"], div[data-baseweb="tag"] * {{ color: #fff !important; }}
+/* 聊天消息、JSON、公式 */
+[data-testid="stChatMessage"], [data-testid="stChatMessage"] *,
+[data-testid="stJson"],
+[data-testid="stMetricLabel"] {{
+  color: {INK} !important;
+}}
+[data-testid="stMetricLabel"] {{ color: {INK_SUB} !important; }}
+
 /* ---------- Streamlit 原生警示框（warning/success/info/error） ---------- */
 /* 强制深字，保留各类型默认浅色背景，修复亮色字与浅底融合导致看不清的问题
    （如因子健康度中弱 IC 的 st.warning 黄框、健康因子的 st.success 绿框） */
