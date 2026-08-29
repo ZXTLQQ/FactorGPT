@@ -30,7 +30,8 @@ jobs:
           pip install numpy pandas scipy scikit-learn pyarrow pyyaml jieba statsmodels pytest pytest-timeout
 
       - name: Run test suite
-        run: python -m pytest tests/ -q --maxfail=1 --timeout=180
+        # 不设 --maxfail，让所有失败都可见（避免早期失败掩盖后续缺陷）
+        run: python -m pytest tests/ -q --timeout=180
 
       - name: Compile-check all source modules
         run: |

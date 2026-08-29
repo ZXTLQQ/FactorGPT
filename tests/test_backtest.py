@@ -129,10 +129,11 @@ def test_alphalens_crosscheck():
         import importlib
         importlib.import_module("alphalens.reformed")
     except Exception:  # noqa: BLE001
-        if pytest is None:
-            import unittest
-            raise unittest.SkipTest("alphalens-reformed 未安装，跳过交叉校验")
-        pytest.skip("alphalens-reformed 未安装，跳过交叉校验")
+        # 统一抛 unittest.SkipTest：pytest 会将其识别为 skip，
+        # 且 __main__ 手写运行器（仅捕获 unittest.SkipTest）也不会因
+        # pytest.skip() 抛出的 _pytest.outcomes.Skipped 而崩溃。
+        import unittest
+        raise unittest.SkipTest("alphalens-reformed 未安装，跳过交叉校验")
 
 
 if __name__ == "__main__":

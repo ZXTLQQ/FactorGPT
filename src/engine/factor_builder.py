@@ -72,7 +72,8 @@ def analyze_lookahead(code: str) -> list:
         tree = ast.parse(code)
     except SyntaxError as e:
         return [f"代码语法错误，无法做前视检查：{e}"]
-    future_names = ("fwd_ret", "forward_ret", "future_ret", "next_ret", "target_ret")
+    # 未来/标签变量的通用前缀：覆盖 fwd_ret / next_close / future_ret / target_ret / label 等
+    future_names = ("fwd_", "forward_", "future_", "next_", "target_", "label_")
     # 需要检查是否被 shift(>=1) 包裹的价格/收益列
     price_cols = ("close", "pct_chg", "ret", "open", "high", "low")
 
@@ -130,11 +131,25 @@ def analyze_lookahead(code: str) -> list:
             low = node.value.lower()
             if any(fn in low for fn in future_names):
                 issues.append(f"因子引用了疑似未来/标签变量 '{node.value}'，存在前视偏差风险。")
-        # 3) 未 shift 的价格/收益列出现在算术/比较运算中
+        # 3) 未 shift 的价格/收益列参与运算或被方法消费（如 pct_change / rolling）
         if isinstance(node, ast.Attribute) and node.attr in price_cols \
                 and id(node) not in safe_shifted_ids:
-            parent = parent_map.get(id(node))
-            if parent is not None and isinstance(parent, (ast.BinOp, ast.Compare, ast.UnaryOp, ast.Call)):
+            # 沿父链向上，跳过属性/方法链（如 .close.pct_change 中的 .pct_change），
+            # 找到最近的「消费点」：算术/比较/一元运算，或一个非 shift 的方法调用。
+            # 这样 df.groupby("symbol").close.pct_change() 中未 shift 的 .close 也能被识别，
+            # 而 .close.pct_change().shift(1) 因 .close 已被 safe_shifted_ids 标记而放行。
+            cur = parent_map.get(id(node))
+            while cur is not None and isinstance(cur, ast.Attribute):
+                cur = parent_map.get(id(cur))
+            consumed = False
+            if cur is not None and isinstance(cur, (ast.BinOp, ast.Compare, ast.UnaryOp)):
+                consumed = True
+            elif cur is not None and isinstance(cur, ast.Call):
+                # 若是 .shift(...) 调用：仅当位移量 >=1 才安全（此类已由 safe_shifted_ids 放行，
+                # 此处作为防御）；其余方法调用（pct_change / rolling / transform 等）视为消费。
+                is_shift_call = isinstance(cur.func, ast.Attribute) and cur.func.attr == "shift"
+                consumed = not is_shift_call
+            if consumed:
                 issues.append(
                     f"价格列 '{node.attr}' 在运算中使用但未被 shift(1) 包裹，"
                     "可能引入前视偏差。若该列用作信号源，请对其 .shift(1)。"
@@ -196,6 +211,10 @@ class FactorSandbox:
             try:
                 return self._run_subprocess(code, df)
             except (RuntimeError, OSError) as e:  # 仅子进程基础设施故障时回退
+                # 注意：TimeoutError 是 OSError 的子类。子进程超时（死循环 / 超长执行）
+                # 绝不能回退到进程内执行——那会把死循环放进主进程并卡死整个应用。
+                if isinstance(e, TimeoutError):
+                    raise
                 print(f"[sandbox] 子进程不可用，回退进程内执行：{e}")
                 return self._run_inprocess(code, df)
         return self._run_inprocess(code, df)
