@@ -59,6 +59,9 @@ class KronosForecaster:
         self.cache_dir = cfg.get("cache_dir")
         self.hf_endpoint = cfg.get("hf_endpoint", "")
         self.fallback_to_stub = bool(cfg.get("fallback_to_stub", True))
+        # 是否允许联网下载真实模型权重。合成数据 / 离线 / 单元测试场景应设为
+        # False，避免每次访问 using_stub 都发起 HuggingFace 下载(可能卡数分钟)。
+        self.allow_download = bool(cfg.get("allow_download", True))
 
         self._model = None
         self._using_stub = False
@@ -97,6 +100,12 @@ class KronosForecaster:
         device = self.device
         if device in ("auto", "", None):
             device = "cuda" if (torch.cuda.is_available()) else "cpu"
+        if not self.allow_download:
+            # 禁止联网下载（合成数据/离线/测试场景）：不发起 HuggingFace 请求，
+            # 直接降级 stub，避免访问 using_stub 时阻塞数分钟等网络超时/重试。
+            logger.info("Kronos allow_download=False, 跳过真实权重下载, 降级 stub")
+            self._using_stub = True
+            return
         try:
             tokenizer = KronosTokenizer.from_pretrained(
                 self.tokenizer_name, cache_dir=self.cache_dir or None

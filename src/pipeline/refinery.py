@@ -271,6 +271,10 @@ class RefineryPipeline:
         except Exception as e:  # noqa: BLE001
             logger.warning("Kronos 模块导入失败，跳过 Kronos 因子: %s", e)
             return
+        # 合成数据(use_real_data=False)时 Kronos 预测为空, 真实权重派不上用场;
+        # 强制 allow_download=False, 避免触发 HuggingFace 权重下载(可能卡数分钟)。
+        if not self.config.use_real_data:
+            kcfg = {**kcfg, "allow_download": False}
         try:
             attach_kronos_factor(ore, {"kronos": kcfg})
             logger.info("[refinery] Kronos 预测因子 KRONOS_PRED 已接入因子池")

@@ -28,6 +28,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install numpy pandas scipy scikit-learn pyarrow pyyaml jieba statsmodels pytest pytest-timeout
+          # alphalens-reloaded：供 test_backtest.py 的交叉校验测试使用
+          # （alphalens.reformed 为有效签名研究提供第三方交叉印证）
+          pip install alphalens-reloaded
 
       - name: Run test suite
         # 不设 --maxfail，让所有失败都可见（避免早期失败掩盖后续缺陷）
