@@ -23,8 +23,10 @@
 - ``get_daily_kline``: 从 parquet 过滤 symbol/日期区间，返回
   ``date/open/high/low/close/volume/amount/pct_chg/symbol``（前复权 qfq 对齐 DataFetcher）。
 - ``get_index_constituents``: 读取成分股 JSON（默认 csi800）。
-- ``get_industry_and_cap`` / ``get_industry_classification`` / ``get_financial_data``:
-  离线数据无行业/市值/财务字段，返回空（由上层中性化/多模态能力降级，不影响日K回测）。
+- ``get_industry_and_cap``: 离线数据无行业/市值字段，返回 ``(industry, mkt_cap)``
+  两个全 NaN 的 pd.Series（与 ``DataFetcher`` 同契约），上层中性化检测到缺失自动降级。
+- ``get_industry_classification`` / ``get_financial_data``: 离线无数据，返回空
+  DataFrame（由上层多模态能力降级，不影响日K回测）。
 - 其余方法（新闻情绪/快照/分钟K）无离线数据，返回空，不尝试联网。
 
 注意：parquet 中的复权因子列按区间末因子归一化折算为前复权价（qfq），
@@ -246,10 +248,18 @@ class OfflineDataSource:
             }
         return out
 
-    def get_industry_and_cap(self, symbols: List[str]) -> pd.DataFrame:
-        """离线数据无行业/市值字段，返回空（中性化维度缺失，不中断流水线）。"""
-        self.last_fetch_info = {"source": "offline", "message": "离线数据无行业/市值字段，返回空"}
-        return pd.DataFrame()
+    def get_industry_and_cap(self, symbols: List[str]):
+        """返回与 DataFetcher 同契约的 ``(industry, mkt_cap)`` 两个 pd.Series。
+
+        离线数据无行业/市值字段，故两个 Series 均为全 NaN（索引为 6 位 symbol）。
+        调用方以 ``(ind, cap) = ...`` 解包后，通过 ``notna().any()`` 检测到缺失
+        即优雅降级（中性化/风格维度跳过），不会因返回空 DataFrame 触发解包崩溃。
+        """
+        symbols = [str(s).zfill(6) for s in symbols]
+        self.last_fetch_info = {"source": "offline", "message": "离线数据无行业/市值字段，返回空 Series"}
+        industry = pd.Series(index=pd.Index(symbols, dtype=str), dtype=object)
+        mkt_cap = pd.Series(index=pd.Index(symbols, dtype=str), dtype=float)
+        return industry, mkt_cap
 
     def get_industry_classification(self) -> pd.DataFrame:
         self.last_fetch_info = {"source": "offline", "message": "离线数据无行业分类，返回空"}
