@@ -219,3 +219,28 @@ experiment_tracking:
   backend: local
   dir: "data/experiments"
   experiment_name: factorgpt
+
+# ============ Headline Arena 前瞻检验（forward testing） ============
+# 因子验证（IC 历史检验）回答不了「这个观点向前看还成立吗」。本段把因子层的
+# 宏观观点（利率/风格/商品方向）转成每日概率预测提交到 Headline Arena
+# （https://headlinearena.com/api/v1/agent/onboarding/guide.txt），预测在结果出现
+# 之前锁定、结算标准在出题时冻结、由第三方机械结算（方向 50±50c，宏观 CRPS），
+# 得到一条与回测相互独立、最难反驳的 forward 证据线。
+#
+# - enabled: true 时，LangGraph 因子 Agent 在产出因子后自动追加「影子前瞻节点」：
+#   从因子描述折叠宏观主题 -> 本地账本 dry_run 锁定（绝不因 Agent 运行而真实提交）；
+#   默认 false，不影响既有流水线拓扑。
+# - dry_run: 默认 true（只写 data/forwardtest/ledger.jsonl，预测在本地锁定）。
+#   真实提交请显式执行: python scripts/ha_forward_run.py run --live --theme "..."
+# - 凭据: .env 的 HA_AGENT_ID / HA_CLIENT_SECRET（register 子命令自动写入
+#   ~/.headlinearena/credentials.json；认领 claim 为人工步骤）。
+headline_arena:
+  enabled: false              # true=因子 Agent 产出后挂影子前瞻节点（dry_run 账本）
+  dry_run: true               # 默认只写本地账本；真实提交需脚本显式 --live
+  base_url: ""                # 留空取 HA_BASE_URL 环境变量或官方默认 https://headlinearena.com/api/v1
+  assets: ["GC", "ES", "CL", "ZN", "SI", "HG", "DXY"]  # 关注的宏观资产子集
+  default_theme: ""           # 每日循环默认宏观主题（留空按因子描述推导）
+  ledger_dir: ""              # 留空 -> data/forwardtest/
+  auto_subscribe: true        # live 提交前自动订阅资产 scope（幂等）
+  neutral_when_no_signal: false  # 无方向信号时补中性占位（默认不制造噪声）
+  max_challenges_per_asset: 1    # 每资产每轮最多锁定的挑战数

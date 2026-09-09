@@ -41,3 +41,4 @@ class AgentState(TypedDict, total=False):
     error: str                           # 致命错误
     learned_saved: Optional[dict]        # 本轮是否已写入学习库 {'is_new': bool, 'title': str}
     chart_paths: List[str]               # 标准化回测图（PNG）路径列表
+    forward_test: Optional[dict]         # Headline Arena 前瞻检验影子摘要（dry_run 账本）

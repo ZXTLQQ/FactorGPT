@@ -85,3 +85,5 @@ ima_subscription/crawl_state.json
 
 # 第三方 skill 的本地副本（非本项目源码，按需自行获取）
 third_party/ima_skills/
+# Headline Arena forward-test ledger (local runtime artifact, not source)
+data/forwardtest/

@@ -11,7 +11,7 @@
 
 **FactorGPT** is an LLM-powered intelligent financial factor industrialization platform that deeply integrates natural language understanding with quantitative finance factor engineering. It supports automated factor extraction, validation, combination optimization, and production-grade deployment from both structured and unstructured data sources — all driven by natural language commands.
 
-> **Keywords**: Quantitative Finance, Alpha Factor Mining, LLM Agent, Factor Backtesting, Factor Library, Genetic Programming, Reinforcement Learning, Alternative Data, Streamlit, A-Share, Financial AI, FactorGPT, Factor Refinery, RPN Engine, IC Analysis, Multi-factor Model, LangGraph, Python Quant, EastMoney Miaoxiang MX API, NeoData
+> **Keywords**: Quantitative Finance, Alpha Factor Mining, LLM Agent, Factor Backtesting, Factor Library, Genetic Programming, Reinforcement Learning, Alternative Data, Streamlit, A-Share, Financial AI, FactorGPT, Factor Refinery, RPN Engine, IC Analysis, Multi-factor Model, LangGraph, Python Quant, EastMoney Miaoxiang MX API, NeoData, Forward Testing, Headline Arena, CRPS
 
 ---
 
@@ -225,6 +225,32 @@ Credentials go in `.env` as `IMA_CLIENT_ID` and `IMA_API_KEY` (issued at `ima.qq
 
 ![ima keyword hits](docs/assets/feature_ima_pipeline.png)
 
+### 9. Forward-Testing via Headline Arena (前瞻检验，独立于回测)
+
+Factor validation (IC/IR backtests) is inherently **historical** — no matter how rigorous, it cannot answer "will this factor view still hold going forward?" FactorGPT closes that gap with a third-party, pre-committed forward-testing line through **Headline Arena** (`headlinearena.com`): the macro views embedded in factor-layer research (rates, style, commodity direction) are converted into daily probability predictions on global macro assets (gold `GC`, 10Y treasury `ZN`, WTI crude `CL`, E-mini S&P 500 `ES`, silver `SI`, copper `HG`, dollar `DXY`, …). Each prediction's settlement standard is **frozen at question creation**, predictions are **locked before the outcome exists**, and settlement is **mechanically scored by a third party** against real market data (directional: `50 ± confidence×50`; the platform also publishes per-agent CRPS/Brier calibration APIs). That makes the forward line the hardest-to-dispute form of evidence for factor validity.
+
+```bash
+# 1) One-time: register an HA agent (client_secret shown once, saved to ~/.headlinearena;
+#    then a human claims the agent via claim_url + pairing_code)
+python scripts/ha_forward_run.py register --name FactorGPT-GoldBot --bio "Gold macro view forward tests" \
+    --model-provider DeepSeek --model-name deepseek-chat
+
+# 2) Daily forward loop — turn a macro theme (or a factor methodology report) into locked predictions.
+#    Default is dry_run: predictions are locked into the local ledger, no network/credentials required.
+python scripts/ha_forward_run.py run --theme "避险情绪升温，降息预期增强，油价上行"
+python scripts/ha_forward_run.py run --factor-report output/methodology_report.json
+python scripts/ha_forward_run.py status                 # ledger state
+python scripts/ha_forward_run.py scorecard              # accuracy / Brier / calibration card (Markdown)
+
+# 3) Live submission (needs credentials + claimed agent; auto-subscribes asset scopes)
+python scripts/ha_forward_run.py run --live --theme "油价上行，供给收紧" --assets GC,CL
+
+# 4) Settlement backfill: pull third-party results into the ledger, then re-run scorecard
+python scripts/ha_forward_run.py settle
+```
+
+Mechanics and guarantees: the bridge lives in `src/forwardtest/` (pure stdlib, zero new dependencies): `client.py` (register/auth/scope/challenges/predict/results/calibration), `translator.py` (deterministic macro-theme → asset/direction/confidence mapping), `ledger.py` (append-only JSONL under `data/forwardtest/`; prediction fields are frozen once settled), `scorecard.py` (directional accuracy, Brier vs the 1/3 random baseline, confidence-bucket calibration), and `runner.py` (orchestration). Every run degrades gracefully — no network, no credentials, or a factor description without macro wording simply skips or writes a local dry-run record, never an exception that breaks the factor pipeline. Optional integration: with `headline_arena.enabled: true` in `config.yaml`, the LangGraph agent appends a **shadow forward-test node** after `finalize`, folding each mined factor's description into a locked dry-run ledger record (agents never submit live predictions on their own). Credentials go in `.env` as `HA_AGENT_ID` / `HA_CLIENT_SECRET` (or `~/.headlinearena/credentials.json`); the platform is free, prediction rewards convert to LLM-gateway credits, and the plugin/API references are `github.com/headlinearena/headlinearena-agent-plugin` and `headlinearena.com/api/v1/agent/onboarding/guide.txt`.
+
 ---
 
 ## Architecture Overview
@@ -271,6 +297,7 @@ All settings are centralized in `config.yaml`:
 - **refinery**: Six-stage pipeline configuration (Transformer, RL, screening, AlphaPool)
 - **proxy**: HTTP/HTTPS proxy for mainland China network environments
 - **experiment_tracking**: Experiment logging (local JSONL or MLflow)
+- **headline_arena**: Forward-testing of factor-layer macro views via Headline Arena (enabled toggles the LangGraph shadow node; `dry_run: true` keeps predictions local by default)
 
 ### NeoData Stable Data Source (Experimental)
 
@@ -360,6 +387,8 @@ The included `docker-compose.yml` provides:
 | `MX_APIKEY` | EastMoney Miaoxiang (妙想) API key, see "EastMoney MX" section | - |
 | `IMA_CLIENT_ID` | Tencent ima client ID for the research-report pipeline | - |
 | `IMA_API_KEY` | Tencent ima API key (renew monthly at ima.qq.com/agent-interface) | - |
+| `HA_AGENT_ID` | Headline Arena agent id (forward-testing bridge; also saved to ~/.headlinearena/credentials.json) | - |
+| `HA_CLIENT_SECRET` | Headline Arena client secret (shown once at registration) | - |
 
 ---
 
@@ -427,8 +456,9 @@ FactorGPT/
 │   ├── llm/            # LLM client (DeepSeek/OpenAI/Ollama compatible)
 │   ├── ui/             # Streamlit web interface (20 pages)
 │   ├── store/          # SQLite persistence (memory, chat, experiments)
+│   ├── forwardtest/    # Headline Arena forward-testing bridge (client/ledger/scorecard)
 │   └── kronos/         # Kronos financial forecasting model integration
-├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch)
+├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch, ha_forward_run)
 ├── factorgpt-skill/    # Agent skill packages (SKILL.md + official EastMoney MX skills)
 │   └── skills/         # mx-data / mx-search / mx-xuangu / mx-zixuan / mx-moni / mx-poster
 ├── third_party/        # Third-party integrations (kronos, ima client)
@@ -461,6 +491,7 @@ FactorGPT's "production-grade" claim is backed by automated tests and reproducib
 
 ## Roadmap
 
+- [x] Forward-testing channel for factor-layer macro views (Headline Arena; locked-before-outcome predictions, third-party settlement — see Highlight 9)
 - [ ] Multi-market support (US stocks, Hong Kong stocks, crypto)
 - [ ] Real-time factor monitoring dashboard with alerting
 - [ ] Factor decay analysis and lifecycle management

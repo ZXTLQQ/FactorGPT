@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -324,8 +325,81 @@ class FactorAgent:
             },
         )
         g.add_edge("learn_factor", "finalize")
-        g.add_edge("finalize", END)
+        if self._forward_test_enabled():
+            # Headline Arena 前瞻检验影子节点（config.headline_arena.enabled=true 时挂载）。
+            # 只把因子观点折叠成宏观主题并写入本地 dry_run 账本（预测在本机锁定），
+            # 绝不因 Agent 运行而真实提交；任何异常都不中断因子流水线。
+            g.add_node("forward_test_shadow", self._forward_test_shadow)
+            g.add_edge("finalize", "forward_test_shadow")
+            g.add_edge("forward_test_shadow", END)
+        else:
+            g.add_edge("finalize", END)
         return g.compile()
+
+    # ------------------------------------------------------------------
+    # Headline Arena 前瞻检验（可选影子节点）
+    # ------------------------------------------------------------------
+    def _forward_test_enabled(self) -> bool:
+        cfg = self.config.get("headline_arena") or {}
+        return bool(cfg.get("enabled"))
+
+    @property
+    def _project_root(self) -> Path:
+        """<仓库根> = src/agent/graph.py 向上三级。"""
+        return Path(__file__).resolve().parents[2]
+
+    def _forward_test_shadow(self, state: AgentState) -> Dict[str, Any]:
+        """把本轮因子的宏观含义折叠成前瞻观点，dry_run 锁定到本地账本。
+
+        回测（IC/IR）回答不了"这个因子观点向前看还成立吗"；影子节点把观点
+        落账（预测在结果出现之前锁定），待第三方结算后回填即可形成独立证据线。
+        """
+        if state.get("error"):
+            return {"forward_test": {"mode": "skip", "reason": "graph_error"}}
+        try:
+            from forwardtest.runner import run_forward
+
+            ha_cfg = dict(self.config.get("headline_arena") or {})
+            ha_cfg.setdefault("ledger_dir", str(self._project_root / "data" / "forwardtest"))
+            raw_metrics = state.get("metrics") or {}
+            metrics = {k: v for k, v in raw_metrics.items()
+                       if not str(k).startswith("_") and isinstance(v, (int, float))}
+            summary = run_forward(
+                ha_cfg,
+                factor_desc=state.get("factor_description")
+                or state.get("user_input", ""),
+                factor_name=state.get("factor_name", ""),
+                factor_metrics=metrics,
+                live=False,  # Agent 运行永不真实提交，只做影子账本
+            )
+            ft = {
+                "mode": summary.get("mode"),
+                "submitted": int(summary.get("submitted", 0)),
+                "dry_run": int(summary.get("dry_run", 0)),
+                "ledger_path": summary.get("ledger_path", ""),
+                "warnings": summary.get("warnings", []),
+            }
+        except Exception as e:  # noqa: BLE001 —— 影子节点永不中断主流程
+            ft = {"error": f"{type(e).__name__}: {e}", "submitted": 0, "dry_run": 0}
+        if ft.get("submitted", 0) > 0:
+            head = (
+                "\n\n## 八、前瞻检验（Headline Arena 影子预测）\n"
+                f"> 观点已在结果出现前锁定到本地账本（dry_run）：`{ft.get('ledger_path', '-')}`。\n"
+                f"> 待第三方结算回填后，`python scripts/ha_forward_run.py scorecard` "
+                f"即可生成与回测独立的校准/命中率证据线。\n"
+            )
+            report = f"{state.get('report', '')}{head}"
+        else:
+            report = state.get("report", "")
+            if not ft.get("error"):
+                report += (
+                    "\n\n## 八、前瞻检验（Headline Arena 影子预测）\n"
+                    "> 本轮因子描述未命中宏观方向措辞，未生成影子预测"
+                    "（无信号不制造噪声；可在 config.headline_arena.default_theme 显式给定观点）。\n"
+                )
+            else:
+                logger.info("[forward_test] 影子节点跳过: %s", ft.get("error"))
+        return {"report": report, "forward_test": ft}
 
     def _route_after_validate(self, state: AgentState) -> str:
         if state.get("validation_ok"):
