@@ -4,8 +4,8 @@
 行情 / 财务 / 资讯 / 选股 / 自选 / 组合 / 社区数据通道，可替代易断流的
 akshare / sina 自建爬虫。
 
-> 接口说明文档：<https://marketing.dfcfw.com/res/download/A620260623NIYC2U.md>
-> （已归档到 `文档归档/A620260623NIYC2U.md`）
+> 接口说明文档（外部链接）：<https://marketing.dfcfw.com/res/download/A620260623NIYC2U.md>
+> 仓库内不保留该文档副本（`文档归档/` 目录已移除），字段含义以东方财富官方页面为准。
 
 ## 技能包清单
 

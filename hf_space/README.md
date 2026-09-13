@@ -22,10 +22,40 @@ six-stage factor refinery pipeline, and a 62-factor built-in knowledge base.
 - **Live demo (static build)**: https://zxtlqq-factorgpt-demo.static.hf.space
 - **GitHub Repository**: https://github.com/ZXTLQQ/FactorGPT
 
+## What's Inside
+
+- **LLM factor mining agent** — describe an investment idea in natural language; a
+  LangGraph loop retrieves factor literature, generates code, sandbox-validates it
+  (whitelist imports + AST lookahead detection), backtests, and reflects on the metrics.
+- **Six-stage factor refinery** — ore warehouse → mining layer → grinding →
+  three-tier screening → alloy blending → methodology report.
+- **62-factor built-in library** — name, category, formula (Markdown + LaTeX) and a
+  reference Pandas implementation for every factor.
+- **Report-driven research layer** (`src/mining/`) — the engineering translation of four
+  sell-side methodology reports: 60 operators in a typed expression DSL, a point-in-time
+  safe panel, a four-dimension evaluator (data quality / predictive power / stability /
+  correlation) with turnover and expression-complexity penalties, factor risk &
+  crowding gates, and a Markdown report that pins every number to its evidence.
+- **Bundled offline dataset** — qfq daily bars for the CSI 800 pool ship with the
+  repository, so backtests run with no network and no API keys.
+- **Independent forward testing** — factor-layer macro views become
+  locked-before-outcome predictions that a third party settles and scores; a check that
+  historical IC backtests structurally cannot provide.
+
 ## Data Sources
 
-- AKShare / Tushare / Baostock self-crawled feeds (default, offline-capable)
+- Bundled offline dataset (default; no network, no key)
+- AKShare / Tushare / Baostock self-crawled feeds (fallback chain)
 - NeoData platform service (natural-language market Q&A)
 - EastMoney Miaoxiang (妙想) MX API: market data, news search, smart stock screening,
   watchlist management, simulated portfolio, and financial community content
   (see `factorgpt-skill/skills/` in the repository; configure your own `MX_APIKEY`)
+
+## Documentation
+
+- [Repository README](https://github.com/ZXTLQQ/FactorGPT#readme) — full feature list,
+  architecture, configuration and deployment
+- [Ablation study](https://github.com/ZXTLQQ/FactorGPT/blob/main/docs/ablation_report.md)
+  — per-module out-of-sample contribution (ΔICIR)
+- [Sell-side research report factor layer](https://github.com/ZXTLQQ/FactorGPT#10-sell-side-research-report-factor-framework-srcmining)
+  — how four methodology reports became code

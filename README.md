@@ -11,7 +11,7 @@
 
 **FactorGPT** is an LLM-powered intelligent financial factor industrialization platform that deeply integrates natural language understanding with quantitative finance factor engineering. It supports automated factor extraction, validation, combination optimization, and production-grade deployment from both structured and unstructured data sources — all driven by natural language commands.
 
-> **Keywords**: Quantitative Finance, Alpha Factor Mining, LLM Agent, Factor Backtesting, Factor Library, Genetic Programming, Reinforcement Learning, Alternative Data, Streamlit, A-Share, Financial AI, FactorGPT, Factor Refinery, RPN Engine, IC Analysis, Multi-factor Model, LangGraph, Python Quant, EastMoney Miaoxiang MX API, NeoData, Forward Testing, Headline Arena, CRPS
+> **Keywords**: Quantitative Finance, Alpha Factor Mining, LLM Agent, Factor Backtesting, Factor Library, Genetic Programming, Reinforcement Learning, Alternative Data, Streamlit, A-Share, Financial AI, FactorGPT, Factor Refinery, RPN Engine, IC Analysis, Multi-factor Model, LangGraph, Python Quant, EastMoney Miaoxiang MX API, NeoData, Forward Testing, Headline Arena, CRPS, Operator Grid Miner, PIT Alignment, Sell-Side Research Reports, Factor Crowding
 
 ---
 
@@ -253,11 +253,11 @@ Mechanics and guarantees: the bridge lives in `src/forwardtest/` (pure stdlib, z
 
 ### 10. Sell-Side Research Report Factor Framework (`src/mining/`)
 
-`src/mining/` is a self-contained factor-research layer (~4,300 lines) that turns four sell-side methodology reports into a typed expression language, a PIT-safe panel, and reproducible factor libraries — fully offline, no LLM in the loop.
+`src/mining/` is a self-contained factor-research layer (~4,300 lines) that turns four sell-side methodology reports into a typed expression language, a PIT-safe panel, reproducible factor libraries, and a four-dimension evaluation that collapses to a single comparable score — fully offline, no LLM in the loop.
 
 | Report | What landed |
 |--------|-------------|
-| 山西证券《算子网格搜索》 | 60 registered operators in six families (`elem` 10 / `elem2` 11 / `cs` 6 / `ts` 27 / `ts2` 5 / `cs2` 1); a **typed expression DSL** (`parse` / `validate` / `infer_type` / `render`, with commutativity-aware key de-duplication) whose dimension gate rejects unit-incoherent arithmetic (price + turnover, flags in `log`, …) at build time; an **operator grid miner** that searches operator × window × layer combinations under a hard evaluation budget; and `report.py`, which renders the whole run — layer-by-layer prune counts, per-factor scores, risk gate, correlations, incremental IC and the exact config — into a self-contained Markdown + JSON report |
+| 山西证券《算子网格搜索》 | 60 registered operators in six families (`elem` 10 / `elem2` 11 / `cs` 6 / `ts` 27 / `ts2` 5 / `cs2` 1); a **typed expression DSL** (`parse` / `validate` / `infer_type` / `render`, with commutativity-aware key de-duplication) whose dimension gate rejects unit-incoherent arithmetic (price + turnover, flags in `log`, …) at build time; an **operator grid miner** that searches operator × window × layer combinations under a hard evaluation budget; `evaluator.py`, which splits "is this factor good?" into **four dimensions** — data quality / predictive power / stability / correlation — and folds them into one weighted score *after* subtracting turnover-cost and expression-complexity penalties, because searching on IC alone is guaranteed to overfit; and `report.py`, which renders the whole run — layer-by-layer prune counts, per-factor scores, risk gate, correlations, incremental IC and the exact config — into a self-contained Markdown + JSON report |
 | 天风证券《因子风险与拥挤》 | `risk.py`: exposure regression ΔR², Newey-West-adjusted t-stat, VIF, lag-1 autocorrelation, crowding score, and component risk contribution (components sum to portfolio vol) |
 | 中信建投《"逐鹿"Alpha：量价 × 基本面统一框架》 | `fundamental.py`: PIT installation of quarterly financials; TTM expressed purely with existing operators (`add(add(x, ts_delay(x, 250)), add(ts_delay(x, 500), ts_delay(x, 750)))` = sum of four single-quarter values); 31 fundamental factors (quality / growth / leverage / accrual / valuation) plus cross-domain combination templates |
 | 西部证券《概念数量因子》 | `concept.py`: interval-valid concept membership (differential counting, **no forward-fill**), concept count / niche / heat fields, 20 concept factors, and the **DGTW market-cap grouping operator** (`dgtw_cs`) that absorbs the non-linear part of the size relation which linear neutralisation leaves behind |
@@ -484,14 +484,16 @@ FactorGPT/
 │   ├── forwardtest/    # Headline Arena forward-testing bridge (client/ledger/scorecard)
 │   └── kronos/         # Kronos financial forecasting model integration
 ├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch, ha_forward_run)
+├── tests/              # Test suite (sandbox & lookahead, refinery, mining, forward test, docs contract)
 ├── factorgpt-skill/    # Agent skill packages (SKILL.md + official EastMoney MX skills)
-│   └── skills/         # mx-data / mx-search / mx-xuangu / mx-zixuan / mx-moni / mx-poster
+│   ├── skills/         # mx-data / mx-search / mx-xuangu / mx-zixuan / mx-moni / mx-poster
+│   └── references/     # Data contract (legacy / NeoData / offline field mapping)
 ├── third_party/        # Third-party integrations (kronos, ima client)
 ├── hf_space/           # HuggingFace Spaces static hosting files
-├── docs/assets/        # Documentation screenshots and charts
-├── data/               # Sample data, factor library, offline dataset, experiment tracking
+├── .github/workflows/  # CI (pytest on Python 3.11 + 3.12, then compile check)
+├── docs/               # Ablation report + docs/assets screenshots and charts
+├── data/               # Sample data, factor library, bundled offline dataset, forward-test ledger
 ├── ima_subscription/   # Research-report watchlist, baseline, and change log
-├── 文档归档/           # Archived reference docs (e.g., EastMoney MX API reference)
 ├── demo_output/        # One-command demo backtest charts (python demo_sim.py)
 ├── config.yaml         # Main configuration file
 ├── run_agent.py        # CLI entry point
@@ -506,10 +508,12 @@ FactorGPT/
 
 ## Testing & Quality Assurance
 
-FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge:
+FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge — 101 test functions across 7 files, none of which require network access:
 
 - **CI**: `.github/workflows/ci.yml` runs the full test suite on every push/PR (Python 3.11 + 3.12), then compile-checks all source modules. Status: [![CI](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml)
-- **Core tests** under `tests/`: sandbox security & lookahead-bias rejection (`test_sandbox.py`), the six-stage refinery pipeline end-to-end (`test_refinery.py`), and documentation-contract drift guards (`test_docs_contract.py` — keeps README page/factor counts, the `instrument→symbol` data contract, and `kronos.fallback_to_stub` from silently drifting).
+- **Core tests**: sandbox security & lookahead-bias rejection (`test_sandbox.py`, 15 test functions / 24 cases including parametrized future-column names), the six-stage refinery pipeline end-to-end (`test_refinery.py`, 6), and documentation-contract drift guards (`test_docs_contract.py`, 6 — keeps README page/factor counts, the `instrument→symbol` data contract, and `kronos.fallback_to_stub` from silently drifting).
+- **Backtest math & engineering glue** (`test_backtest.py`, 8 / `test_engineering.py`, 5): IC and rank-IC sign conventions, turnover consistency, lookahead detection on unshifted or negatively-shifted prices, an AlphaLens cross-check, plus experiment tracking, GP mining, LLM routing, batch evaluation and HPO.
+- **Forward-testing bridge** (`test_forwardtest.py`, 29): the deterministic macro-theme → asset/direction/confidence translation, append-only ledger semantics with prediction fields frozen once settled, scorecard math (directional accuracy, Brier against the 1/3 random baseline, confidence-bucket calibration), and the guarantee that a missing network, missing credentials, or a theme without macro wording degrades to a local dry-run record rather than an exception.
 - **Ablation experiments**: `python scripts/ablation_study.py --seed 42 --n-symbols 20` quantifies each pipeline module's marginal contribution on out-of-sample data (ΔICIR per module); results and interpretation in [docs/ablation_report.md](docs/ablation_report.md).
 - **Report factor layer**: `tests/test_mining.py` (32 tests) pins the operator library against pandas / hand-computed references, the type-gate rejections, PIT alignment vs the independent reference implementation, warm-up-aware coverage, the risk-gate identities, grid-miner budget & reproducibility, the expected direction of every fundamental / concept factor, and the report renderer (every section present, `—` instead of `nan`, escaped table pipes, byte-identical output on write).
 - **Warnings are errors** (`pytest.ini`): the failure mode this repo cares about is not a raised exception but an *exception silently swallowed into a plausible number* — `np.corrcoef` returning 0 for a degenerate cross-section, or `np.nanmean` warning on an empty slice and quietly yielding NaN. Every `RuntimeWarning` / `FutureWarning` / `DeprecationWarning` now fails the suite, so those substitutions cannot creep back in.
@@ -519,6 +523,7 @@ FactorGPT's "production-grade" claim is backed by automated tests and reproducib
 ## Roadmap
 
 - [x] Forward-testing channel for factor-layer macro views (Headline Arena; locked-before-outcome predictions, third-party settlement — see Highlight 9)
+- [x] Report-driven factor layer built from four sell-side methodology reports (typed expression DSL, PIT-safe panel, operator grid miner, four-dimension evaluation — see Highlight 10)
 - [ ] Multi-market support (US stocks, Hong Kong stocks, crypto)
 - [ ] Real-time factor monitoring dashboard with alerting
 - [ ] Factor decay analysis and lifecycle management

@@ -1,8 +1,13 @@
-# FactorGPT 数据契约：legacy DataFetcher → NeoData 字段映射
+# FactorGPT 数据契约：三源字段映射（offline / legacy / NeoData）
 
 > 目的：把 FactorGPT 原有自建爬虫（`DataFetcher`）的数据接口，平滑迁移到平台
-> ``neodata-financial-search`` 技能。``NeoDataSource``（``src/data/neo_adapter.py``）
-> 已对齐方法签名，本文件维护字段级映射，便于接入时核对覆盖度。
+> ``neodata-financial-search`` 技能与仓库内置离线数据集。``NeoDataSource``
+> （``src/data/neo_adapter.py``）与 ``OfflineDataSource``（``src/data/offline_adapter.py``）
+> 均已对齐方法签名，本文件维护字段级映射，便于接入时核对覆盖度。
+>
+> 三个数据源由 ``config.yaml`` 的 ``data.source`` 选择（``offline`` 为默认值），
+> 统一经 ``get_data_source(config)`` 工厂（``data.neo_adapter.DataSourceFactory``）取用，
+> 因此上层调用点无需改动。
 
 ## 1. 方法级映射
 
@@ -13,7 +18,7 @@
 | ``get_industry_classification``  | ``get_industry_classification`` | ``/v1/stock/industry``            | 已实现   |
 | ``get_index_constituents``       | ``get_index_constituents`` | ``/v1/index/constituents``             | 已实现   |
 | ``get_news_sentiment``           | ``get_news_sentiment``     | ``/v1/news``                           | 已实现   |
-| ``get_industry_and_cap``         | ``get_industry_and_cap``   | 待按 SKILL.md 聚合端点接入             | 待接入   |
+| ``get_industry_and_cap``         | ``get_industry_and_cap``   | 无稳定的「行业+市值」批量结构化端点     | 回退 legacy（``neo()`` 显式返回空，不伪造数值） |
 | ``get_minute_kline``             | ``get_minute_kline``       | 待接入                                 | 回退     |
 | ``get_intraday_kline``           | ``get_intraday_kline``     | 待接入                                 | 回退     |
 | ``get_market_snapshot``          | ``get_market_snapshot``    | 待接入                                 | 回退     |
@@ -31,7 +36,28 @@
 | ``change_pct``          | ``pct_chg``        | 涨跌幅              |
 | （由代码派生）          | ``symbol``         | 适配器写入          |
 
-## 3. 接入步骤（阶段 0 实测清单）
+## 3. 离线数据源契约（offline，默认）
+
+``OfflineDataSource``（``src/data/offline_adapter.py``）读取随仓库分发的 ``data/offline/``
+（日K parquet 分片 + 成分股 JSON + ``meta.json``），提供与 ``DataFetcher`` 同构的离线数据。
+
+| 方法 | 离线行为 |
+|------|----------|
+| ``get_daily_kline`` | 过滤 parquet 后返回 qfq 前复权日K，列同第 2 节 |
+| ``get_index_constituents`` | 读 ``constituents_<index>.json``（默认 ``csi800``） |
+| ``get_industry_and_cap`` | 无行业/市值字段，返回**两个全 NaN 的 pd.Series**，保持 ``(industry, mkt_cap)`` 同契约；**不得返回 ``None``**，否则调用方解包即崩（上层中性化检测到缺失自动降级） |
+| ``get_industry_classification`` / ``get_financial_data`` | 返回空 DataFrame，由上层多模态能力降级，不影响纯量价回测 |
+| 新闻情绪 / 快照 / 分钟K | 返回空，**不尝试联网** |
+
+两个必须保持的约定：
+
+1. **物理列 vs 契约列**：parquet 中代码列的物理名是 ``instrument``（如 ``sh.600000``），
+   适配器用 ``_de_norm_symbol()`` 桥接为对外契约 ``symbol``。适配层之外不得消费
+   ``instrument`` —— 该约定已由 ``tests/test_docs_contract.py`` 固化为断言。
+2. **复权语义**：复权因子按各自区间的末值归一化折算为前复权价，以对齐 legacy
+   ``DataFetcher`` 的默认语义；跨区间拼接数据时需注意归一化基准会随区间变化。
+
+## 4. 接入步骤（阶段 0 实测清单）
 
 1. 从平台 ``neodata-financial-search`` 技能 SKILL.md 取得真实 ``base_url`` 与端点路径。
 2. 填入 ``config.yaml`` 的 ``data.neodata.base_url``；token 由平台写入
