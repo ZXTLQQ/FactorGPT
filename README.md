@@ -109,7 +109,7 @@ python scripts/prefetch_data.py
 streamlit run src/ui/app.py
 ```
 
-Open your browser at `http://localhost:8501` to access the 20-page integrated web dashboard.
+Open your browser at `http://localhost:8501` to access the 21-page integrated web dashboard.
 
 ### Quick Test (No Network Required)
 
@@ -277,13 +277,22 @@ python scripts/mining_report_demo.py                # one-command demo → demo_
 
 The demo builds a synthetic panel, installs PIT fundamentals and concept memberships, runs a grid search, evaluates four representative factors from the three factor libraries, and writes `demo_output/mining_report.md` (+`.json`). No network, no API keys — the missing-value convention in the report is a hard rule: unmeasurable cells render as `—` and the JSON payload is written with `allow_nan=False`, so a `nan` can never masquerade as a real number.
 
+### 11. AI Factor-System Advisor (`src/engine/system_advisor.py`)
+
+A single backtest produces dozens of numbers, but the decisions a researcher actually has to make are only a handful: can this system enter the portfolio, which factors double-count the same exposure, which one carries the risk, and what to change first. `src/engine/system_advisor.py` compresses one backtest result into a single **fact table** (`distill`) and lets two answer paths share it:
+
+- **Rule path** (`build_rule_answer`) — pure local, zero external calls. Eleven intents (overall quality / overfitting / spectral noise / redundancy / weighting / risk concentration / decay / add-or-drop / capacity / next actions / fallback) each translate the fact table into a verdict plus prioritized actions. It guarantees an actionable answer even with no model configured, and it doubles as the numeric baseline for the LLM path.
+- **LLM path** (`advise(question, result, llm=...)`) — the fact table is the *only* injected context, and the system prompt forbids citing any number that is not in it, so the model cannot dress up a plausible-but-invented figure as analysis. A model failure never raises: the answer degrades to the rule path and the reason is returned in `error`, because a consulting window must not go blank when the provider is down.
+
+Both paths read the same facts, so a new metric has to be added in exactly one place — the "the dashboard shows this number but the advisor cannot cite it" class of drift is structurally impossible. Thresholds are shared with `factor_system.build_findings` (IC ≥ 0.03 and ICIR ≥ 0.4 = effective, |ρ| ≥ 0.8 = redundant, single-factor risk share ≥ 40% = concentrated); otherwise the same backtest would be judged twice, with two different verdicts. The chat page (`因子体系 → AI 体系咨询`) keeps per-system conversation history in the same SQLite store, labels every answer with its source (LLM vs. rule engine) and detected intent, and exposes the fact table itself — so any answer can be audited against its inputs.
+
 ---
 
 ## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  Streamlit Web UI (20 Pages)                  │
+│                  Streamlit Web UI (21 Pages)                  │
 ├─────────────────────────────────────────────────────────────┤
 │              Factor Mining Agent (LangGraph)                  │
 │        Retrieve → Generate → Validate → Evaluate → Reflect    │
@@ -484,12 +493,12 @@ FactorGPT/
 │   ├── mining/         # Report-driven factor layer (typed DSL, PIT panel, ops grid miner)
 │   ├── rag/            # Knowledge base (ChromaDB + retrieval)
 │   ├── llm/            # LLM client (DeepSeek/OpenAI/Ollama compatible)
-│   ├── ui/             # Streamlit web interface (20 pages)
+│   ├── ui/             # Streamlit web interface (21 pages)
 │   ├── store/          # SQLite persistence (memory, chat, experiments)
 │   ├── forwardtest/    # Headline Arena forward-testing bridge (client/ledger/scorecard)
 │   └── kronos/         # Kronos financial forecasting model integration
 ├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch, ha_forward_run)
-├── tests/              # Test suite (sandbox & lookahead, refinery, mining, forward test, docs contract)
+├── tests/              # Test suite (sandbox & lookahead, refinery, mining, forward test, advisor, docs contract)
 ├── factorgpt-skill/    # Agent skill packages (SKILL.md + official EastMoney MX skills)
 │   ├── skills/         # mx-data / mx-search / mx-xuangu / mx-zixuan / mx-moni / mx-poster
 │   └── references/     # Data contract (legacy / NeoData / offline field mapping)
@@ -513,7 +522,7 @@ FactorGPT/
 
 ## Testing & Quality Assurance
 
-FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge — 101 test functions across 7 files, none of which require network access:
+FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge — 146 test functions across 10 files (167 cases after parametrisation), none of which require network access:
 
 - **CI**: `.github/workflows/ci.yml` runs the full test suite on every push/PR (Python 3.11 + 3.12), then compile-checks all source modules. Status: [![CI](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml)
 - **Core tests**: sandbox security & lookahead-bias rejection (`test_sandbox.py`, 15 test functions / 24 cases including parametrized future-column names), the six-stage refinery pipeline end-to-end (`test_refinery.py`, 6), and documentation-contract drift guards (`test_docs_contract.py`, 6 — keeps README page/factor counts, the `instrument→symbol` data contract, and `kronos.fallback_to_stub` from silently drifting).

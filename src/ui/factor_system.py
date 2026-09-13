@@ -21,6 +21,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from engine import system_advisor
 from engine.factor_system import (
     WEIGHT_DIMENSION,
     WEIGHT_EQUAL,
@@ -42,7 +43,7 @@ from store import runs as runs_repo
 from store import state as state_repo
 from store import systems as systems_repo
 
-from . import theme
+from . import nav, theme
 
 # 体系维度：比原始 category 更贴近投研语言，可自由改写
 DIMENSIONS: List[str] = [
@@ -750,7 +751,8 @@ def _render_dashboard(result: Dict[str, Any]) -> None:
         for f in findings:
             theme.insight(f["text"], f.get("tone", "red"))
 
-    tabs = st.tabs(["结构透视", "收益表现", "稳定性诊断", "相关性与主成分", "因子明细"])
+    tabs = st.tabs(["结构透视", "收益表现", "稳定性诊断", "相关性与主成分",
+                    "谱清洗与风险", "因子明细"])
 
     with tabs[0]:
         _tab_structure(result)
@@ -761,6 +763,8 @@ def _render_dashboard(result: Dict[str, Any]) -> None:
     with tabs[3]:
         _tab_correlation(result)
     with tabs[4]:
+        _tab_spectrum(result)
+    with tabs[5]:
         _tab_detail(result)
 
 
@@ -1115,6 +1119,249 @@ def _tab_correlation(result: Dict[str, Any]) -> None:
         theme.insight("未发现 |ρ| ≥ 0.8 的高相关因子对，体系冗余度可控。", "ok")
 
 
+# --------------------------------------------------- Tab: 谱清洗与风险分解
+def _tab_spectrum(result: Dict[str, Any]) -> None:
+    """论文 2607.23068v1 的落地视图：样本相关矩阵的谱清洗与风险分解。
+
+    这一页回答的是"体系的权重该怎么定"，而不是"因子好不好" —— 因子层的 IC/ICIR 在
+    其他标签页；这里只看**相关结构**：哪些方向是估计噪声、风险实际由谁承担、
+    换一组权重能省多少波动。
+    """
+    spec = result.get("spectral") or {}
+    if not spec.get("ok"):
+        theme.empty_state("谱清洗不可用", str(spec.get("reason", "因子数不足 2")), "◌")
+        return
+
+    sd = spec.get("spectrum_dict") or {}
+    risk = spec.get("risk")
+    bias = spec.get("bias") or {}
+    display = {m.get("factor_name"): m.get("display_name", m.get("factor_name"))
+               for m in (result.get("members") or [])}
+
+    def _lbl(name: Any) -> str:
+        return str(display.get(name, name))[:14]
+
+    lam_lo = _num(sd.get("lambda_minus"))
+    lam_hi = _num(sd.get("lambda_plus"))
+    noise = _num(sd.get("noise_ratio"))
+    eff_b = _num(sd.get("effective_factors_before"))
+    eff_a = _num(sd.get("effective_factors_after"))
+    cond_b = _num(sd.get("cond_before"))
+    cond_a = _num(sd.get("cond_after"))
+    eff_risk = _num(getattr(risk, "effective_n_risk", float("nan")), float("nan"))
+    gap = _num(bias.get("vol_gap_pct"), float("nan"))
+
+    theme.kpi_row([
+        {"label": "噪声方向占比", "value": _fmt(noise, pct=True),
+         "sub": f"低于噪声带下界 λ₋={lam_lo:.2f}",
+         "tone": "warn" if noise >= 0.5 else "pos"},
+        {"label": "带内方向", "value": int(_num(sd.get("n_inband"))),
+         "sub": f"λ∈[{lam_lo:.2f}, {lam_hi:.2f}]，无法判定", "tone": "neutral"},
+        {"label": "信号方向", "value": int(_num(sd.get("n_signal"))),
+         "sub": f"λ>λ₊ 上界 {lam_hi:.2f}", "tone": "ink"},
+        {"label": "有效独立方向", "value": f"{eff_b:.1f} → {eff_a:.1f}",
+         "sub": "清洗前 → 清洗后", "tone": "neutral"},
+        {"label": "条件数", "value": f"{cond_b:.1f} → {cond_a:.1f}",
+         "sub": "越小越稳定", "tone": "pos" if cond_a <= cond_b else "warn"},
+        {"label": "体系波动偏移", "value": _fmt(gap, 2) + "%" if math.isfinite(gap) else "—",
+         "sub": "原始矩阵相对清洗后", "tone": "warn" if gap > 1 else "neutral"},
+    ], columns=6)
+
+    if sd.get("notes"):
+        for note in sd.get("notes") or []:
+            theme.insight(str(note), "info")
+
+    # ---- 特征值谱 + MP 噪声带
+    ev = [float(v) for v in (sd.get("eigenvalues") or [])]
+    evc = [float(v) for v in (sd.get("eigenvalues_clean") or [])]
+    if ev:
+        xs = [f"λ{i + 1}" for i in range(len(ev))]
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=xs, y=ev, name="原始特征值",
+            marker=dict(color=theme.RED, opacity=0.82),
+            hovertemplate="%{x}<br>原始 λ = %{y:.3f}<extra></extra>",
+        ))
+        if evc:
+            fig.add_trace(go.Scatter(
+                x=xs, y=evc, name="清洗后", mode="markers+lines",
+                line=dict(color=theme.BLUE, width=1.6, dash="dot"),
+                marker=dict(size=8, symbol="diamond"),
+                hovertemplate="%{x}<br>清洗后 λ = %{y:.3f}<extra></extra>",
+            ))
+        if lam_hi > lam_lo:
+            fig.add_shape(type="rect", x0=-0.5, x1=len(ev) - 0.5,
+                          y0=lam_lo, y1=lam_hi, fillcolor="rgba(138,148,166,0.16)",
+                          line_width=0, layer="below")
+            fig.add_annotation(x=len(ev) - 1, y=lam_hi, yshift=10,
+                               text=f"MP 噪声带 [{lam_lo:.2f}, {lam_hi:.2f}]",
+                               showarrow=False, font=dict(size=10, color=theme.INK_SUB))
+        st.plotly_chart(
+            theme.style_fig(fig, height=360, title="特征值谱与 Marchenko–Pastur 噪声带"),
+            use_container_width=True,
+        )
+        st.caption(
+            "落在灰色带内的方向无法与纯噪声区分；低于下界的方向被判为噪声主导并抬平到"
+            "噪声均值。清洗**只动明确噪声**，不动带内方向 —— 因此带内方向的估计误差仍在。"
+        )
+
+    # ---- 权重方案对照
+    sols = spec.get("solutions_dict") or []
+    ok_sols = [s for s in sols if s.get("success")]
+    if ok_sols:
+        theme.section("权重方案对照", "同一张清洗后相关矩阵上的五种权重口径，选与你目标一致的即可")
+        rows = []
+        for s in sols:
+            rows.append({
+                "方案": s.get("label", s.get("mode")),
+                "波动(清洗后)": round(_num(s.get("vol"), float("nan")), 5),
+                "方差": round(_num(s.get("variance"), float("nan")), 6),
+                "分散化比率": round(_num(s.get("diversification_ratio"), float("nan")), 4),
+                "隐含 ICIR": round(_num(s.get("expected_icir"), float("nan")), 4),
+                "求解": "成功" if s.get("success") else "失败",
+            })
+        cur = spec.get("weights_current") or {}
+        if cur:
+            theme.kpi_row([
+                {"label": "当前权重口径", "value": str(result.get("weight_mode", "-")),
+                 "sub": "构建体系时选定", "tone": "ink"},
+                {"label": "当前体系波动", "value": _fmt(_num(getattr(risk, "portfolio_vol", float("nan")), float("nan")), 5),
+                 "sub": "清洗后矩阵口径", "tone": "neutral"},
+                {"label": "最低可得波动", "value": _fmt(min(_num(s.get("vol"), 1e9) for s in ok_sols), 5),
+                 "sub": "五方案最优", "tone": "pos"},
+            ], columns=3)
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+        wdf = pd.DataFrame(
+            {s.get("label", s.get("mode")): {_lbl(k): v for k, v in (s.get("weights") or {}).items()}
+             for s in ok_sols if s.get("weights")}
+        )
+        if not wdf.empty:
+            fig = go.Figure()
+            for i, col in enumerate(wdf.columns):
+                fig.add_trace(go.Bar(
+                    x=wdf.index.tolist(), y=(wdf[col] * 100).tolist(), name=str(col),
+                    marker=dict(color=theme.PALETTE[i % len(theme.PALETTE)]),
+                    hovertemplate="%{x}<br>" + str(col) + " = %{y:.2f}%<extra></extra>",
+                ))
+            fig.update_layout(barmode="group", yaxis=dict(title="权重(%)"))
+            st.plotly_chart(
+                theme.style_fig(fig, height=max(320, 20 * len(wdf) + 200), title="各方案权重分布"),
+                use_container_width=True,
+            )
+
+    # ---- 风险分解
+    if risk is not None and getattr(risk, "table", None) is not None and not risk.table.empty:
+        theme.section("风险分解（当前权重）", "权重是名义的，风险贡献才是真实的；两者差距越大越该调整")
+        rdf = risk.table.copy()
+        rdf.index = [_lbl(i) for i in rdf.index]
+        show = [c for c in ("weight", "vol", "risk_pct", "var_pct", "vol_share",
+                            "corr_with_system") if c in rdf.columns]
+        out = rdf[show].sort_values("risk_pct", ascending=False).reset_index()
+        out.columns = ["因子"] + [{
+            "weight": "权重", "vol": "因子波动", "risk_pct": "风险占比(%)",
+            "var_pct": "方差占比(%)", "vol_share": "波动权重占比",
+            "corr_with_system": "与体系相关",
+        }.get(c, c) for c in show]
+        st.dataframe(
+            out, hide_index=True, use_container_width=True,
+            height=min(460, 60 + 34 * len(out)),
+            column_config={
+                "风险占比(%)": st.column_config.ProgressColumn(
+                    "风险占比(%)", min_value=0.0,
+                    max_value=float(max(out["风险占比(%)"].max(), 1.0)) if "风险占比(%)" in out else 100.0,
+                    format="%.2f"),
+                "权重": st.column_config.NumberColumn("权重", format="%.4f"),
+            },
+        )
+        theme.kpi_row([
+            {"label": "有效风险来源", "value": _fmt(eff_risk, 2),
+             "sub": "权重倒数(HHI)折算", "tone": "pos" if eff_risk >= 3 else "warn"},
+            {"label": "分散化比率", "value": _fmt(_num(getattr(risk, "diversification_ratio", float("nan")), float("nan")), 3),
+             "sub": "Σwᵢσᵢ / σ_p", "tone": "neutral"},
+            {"label": "风险集中度 HHI", "value": _fmt(_num(getattr(risk, "hhi", float("nan")), float("nan")), 4),
+             "sub": "0.25 以上偏集中", "tone": "warn" if _num(getattr(risk, "hhi", 0.0)) >= 0.25 else "pos"},
+            {"label": "最大风险来源", "value": _lbl(getattr(risk, "top_risk", "-")),
+             "sub": f"占 {_num(getattr(risk, 'top_risk_pct', 0.0)) * 100:.1f}%", "tone": "ink"},
+        ], columns=4)
+
+    # ---- 边际价值排行
+    add = spec.get("addition") or []
+    if add:
+        theme.section("边际价值排行", "把仓位重新分配给该因子后体系波动的下降幅度；降幅≈0 说明它在体系里是重复配置")
+        rows = []
+        for r in add:
+            rows.append({
+                "因子": _lbl(r.get("name")),
+                "当前权重": round(_num(r.get("weight_now"), float("nan")), 4),
+                "最优纳入比例 α*": round(_num(r.get("alpha"), float("nan")), 4),
+                "波动降幅(%)": round(_num(r.get("vol_reduction_pct"), float("nan")), 3),
+                "与体系相关": round(_num(r.get("corr_with_system"), float("nan")), 3),
+                "IR 变化": round(_num(r.get("ir_gain"), float("nan")), 4),
+                "状态": "已在体系" if _num(r.get("in_system")) > 0 else "候选新增",
+            })
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.caption(
+            "α* 为 0 且降幅为 0：该因子与现有组合完全重复，加不加都一样；"
+            "α* 较大且降幅明显：值得从其他因子上挪仓位过来。"
+            "IR 变化为负说明它虽然降波动，但也在摊薄收益端。"
+        )
+
+    # ---- 相关矩阵对照
+    raw = spec.get("corr_raw")
+    cln = spec.get("corr_clean")
+    if raw is not None and cln is not None:
+        with st.expander("清洗前后相关矩阵对照", expanded=False):
+            labs = [_lbl(c) for c in (spec.get("names") or [])]
+            c1, c2 = st.columns(2)
+            for col, mat, title in ((c1, raw, "原始样本相关矩阵"),
+                                    (c2, cln, "谱清洗后相关矩阵")):
+                with col:
+                    m = mat.to_numpy() if isinstance(mat, pd.DataFrame) else np.asarray(mat)
+                    fig = go.Figure(go.Heatmap(
+                        z=m, x=labs, y=labs, zmid=0, zmin=-1, zmax=1,
+                        colorscale=theme.COLORSCALE_DIVERGING,
+                        colorbar=dict(thickness=10, len=0.8, tickfont=dict(size=9)),
+                        hovertemplate="%{y} × %{x}<br>ρ = %{z:.3f}<extra></extra>",
+                    ))
+                    fig.update_xaxes(tickangle=-40, tickfont=dict(size=8))
+                    fig.update_yaxes(tickfont=dict(size=8))
+                    st.plotly_chart(
+                        theme.style_fig(fig, height=max(300, 20 * len(labs) + 140),
+                                        legend=False, title=title),
+                        use_container_width=True,
+                    )
+            st.caption(
+                "两图的对角线完全相同（相关矩阵恒为单位对角），差异只在非对角："
+                "清洗把低于噪声下界的方向上的偏相关推回 0 附近。"
+            )
+
+    with st.expander("方法与口径说明", expanded=False):
+        st.markdown(
+            f"""
+**这一步在做什么。** 直接用样本相关矩阵做权重优化，等于假设"N 个因子有 N 个独立方向"。
+但 N×T 的样本矩阵里，只有少数方向是真实信号，其余是估计噪声 ——
+随机矩阵理论给出的判据是 Marchenko–Pastur 律：噪声特征值几乎必然落在
+`[{lam_lo:.3f}, {lam_hi:.3f}]`（本样本 q = N/T = {_num(sd.get('q'), float('nan')):.4f}）。
+
+**清洗规则。** 低于下界 `λ₋` 的方向被判为噪声主导，其特征值统一抬到噪声均值
+（等价于把这些方向上的偏相关拉回 0）；`λ > λ₊` 的方向原样保留为信号；带内方向不动。
+矩阵的迹（总方差）因此守恒，改变的是方差在方向上的分配。
+
+**为什么该看清洗后的口径。** 论文的核心经验事实是：样本相关矩阵会系统性高估分散化。
+本样本下同一组权重在两个矩阵上的体系波动相差 **{gap:+.2f}%**、分散化比率相差
+**{_num(bias.get('fake_div_pct'), float('nan')):+.2f}%** —— 这个差值就是估计误差的代价。
+
+**权重口径怎么选。** 因子已做截面标准化（各因子波动≈1），此时"最小方差"与
+"最大分散化"同解；如果更看重收益端，用 ICIR 倾斜（最大化 wᵀμ/√(wᵀCw)），
+代价是波动会上升。风险平价介于两者之间，适合不想对 IC 估计下注的场景。
+
+**已知边界。** 谱清洗假设因子分布近似椭球、噪声同质；当样本极度短（T < 3N）时
+MP 带会宽到几乎没有方向能被判为噪声，此时本页的所有结论都只是弱提示。
+            """
+        )
+
+
 # --------------------------------------------------------- Tab: 因子明细
 def _tab_detail(result: Dict[str, Any]) -> None:
     stats = result.get("factor_stats") or {}
@@ -1211,3 +1458,199 @@ def _render_run_history(system_id: int) -> None:
                           yaxis2=dict(title="ICIR", overlaying="y", side="right", showgrid=False))
         st.plotly_chart(theme.style_fig(fig, height=280, title="历次回测走势"),
                         use_container_width=True)
+
+
+# ===========================================================================
+# 页面三：AI 体系咨询
+# ===========================================================================
+_ADVISOR_CHAT_KEY = "fs_advisor_chat"   # 持久化：{体系 id: [消息, ...]}
+_ADVISOR_MAX_TURNS = 40                 # 单个体系最多保留的消息条数
+
+
+def _advisor_llm(enabled: bool):
+    """构造咨询用的 LLM 客户端。
+
+    返回 ``(client, error)``：未启用时 ``client=None``、``error=None``；构造失败时
+    把原因带回界面——否则用户关掉了开关和没配好 Key 会长得一模一样，分不清是哪种。
+    """
+    if not enabled:
+        return None, None
+    try:
+        from llm.client import LLMClient, load_config
+        cfg = dict(load_config())
+        override = st.session_state.get("llm_cfg")
+        if isinstance(override, dict):
+            llm_cfg = dict(cfg.get("llm") or {})
+            for k in ("provider", "model", "api_key", "base_url", "temperature"):
+                if k in override:
+                    llm_cfg[k] = override[k]
+            cfg["llm"] = llm_cfg
+        return LLMClient(cfg), None
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def _advisor_history(system_id: int) -> List[Dict[str, Any]]:
+    """取某个体系的咨询会话（按体系分开存，切换体系不会串台）。"""
+    store = _restore(_ADVISOR_CHAT_KEY, {})
+    if not isinstance(store, dict):
+        return []
+    msgs = store.get(str(system_id)) or []
+    return list(msgs) if isinstance(msgs, list) else []
+
+
+def _advisor_save(system_id: int, messages: Sequence[Dict[str, Any]]) -> None:
+    store = _restore(_ADVISOR_CHAT_KEY, {})
+    if not isinstance(store, dict):
+        store = {}
+    store[str(system_id)] = list(messages)[-_ADVISOR_MAX_TURNS:]
+    _persist(_ADVISOR_CHAT_KEY, store)
+
+
+def _advisor_ask(system_id: int, question: str, result: Dict[str, Any],
+                 use_llm: bool) -> None:
+    """提一个问题，把「用户提问 + 回答」追加进会话历史。"""
+    question = (question or "").strip()
+    if not question:
+        return
+    history = _advisor_history(system_id)
+    llm, llm_err = _advisor_llm(use_llm)
+    with st.spinner("正在读回测结果…"):
+        out = system_advisor.advise(question, result, llm=llm, history=history)
+
+    answer = out["answer"]
+    notes = []
+    if llm_err:
+        notes.append(f"未能初始化模型（{llm_err}），本次由离线规则引擎作答。")
+    if out.get("error"):
+        notes.append(f"模型调用失败（{out['error']}），已退回离线规则引擎。")
+    if notes:
+        answer = "> " + " ".join(notes) + "\n\n" + answer
+
+    history.append({"role": "user", "content": question})
+    history.append({
+        "role": "assistant", "content": answer,
+        "mode": out["mode"], "intent": out["intent_label"],
+    })
+    _advisor_save(system_id, history)
+
+
+def render_system_advisor() -> None:
+    """AI 体系咨询对话窗口。"""
+    items = systems_repo.list()
+    if not items:
+        theme.empty_state(
+            "还没有可咨询的因子体系",
+            "请先到「因子体系 → 体系搭建」创建并保存一个体系。",
+            "◌",
+        )
+        return
+
+    active_sid = _restore("fs_active_system", items[0]["id"])
+    names = [it["name"] for it in items]
+    idx = next((i for i, it in enumerate(items) if it["id"] == active_sid), 0)
+
+    c1, c2, c3 = st.columns([2.4, 1.4, 1])
+    with c1:
+        pick = st.selectbox("咨询对象", names, index=idx, key="fs_adv_sys")
+    sysobj = next((it for it in items if it["name"] == pick), items[0])
+    _persist("fs_active_system", sysobj["id"])
+    with c2:
+        use_llm = st.checkbox(
+            "用大模型作答", value=True, key="fs_adv_llm",
+            help="关闭后走内置离线规则引擎；两条路径引用同一份回测事实表，数字口径一致",
+        )
+    with c3:
+        if st.button("清空会话", use_container_width=True, key="fs_adv_clear"):
+            _advisor_save(sysobj["id"], [])
+            st.rerun()
+
+    result = st.session_state.get(f"fs_result_{sysobj['id']}")
+    if not result:
+        theme.empty_state(
+            "这个体系还没有回测结果",
+            "咨询以 IC / ICIR / 相关性 / 谱清洗 / 风险分解等指标为依据，"
+            "请先到「体系回测分析」运行一次回测。",
+            "◌",
+        )
+        if st.button("前往体系回测分析", type="primary", key="fs_adv_goto"):
+            nav.goto("sys_analysis")
+            st.rerun()
+        return
+
+    facts = system_advisor.distill(result)
+    actions = system_advisor.build_actions(facts)
+
+    theme.kpi_row([
+        {"label": "体系 IC", "value": _fmt(facts.get("ic")),
+         "sub": "咨询依据：本次回测",
+         "tone": "pos" if _num(facts.get("ic")) >= 0.03 else "warn"},
+        {"label": "ICIR", "value": _fmt(facts.get("icir"), 2),
+         "sub": "IC 稳定性", "tone": "pos" if _num(facts.get("icir")) >= 0.4 else "warn"},
+        {"label": "有效维度", "value": _fmt(facts.get("effective_factors"), 1),
+         "sub": f"{facts.get('n_factors', 0)} 个因子折算", "tone": "neutral"},
+        {"label": "噪声方向占比", "value": _fmt(facts.get("noise_ratio"), pct=True),
+         "sub": "谱清洗口径",
+         "tone": "warn" if _num(facts.get("noise_ratio")) >= 0.5 else "neutral"},
+        {"label": "最大风险贡献", "value": _fmt(facts.get("top_risk_pct"), pct=True),
+         "sub": str(facts.get("top_risk") or "—"),
+         "tone": "warn" if _num(facts.get("top_risk_pct")) >= 0.4 else "neutral"},
+        {"label": "待处理动作", "value": len(actions),
+         "sub": "按优先级排序", "tone": "ink" if actions else "pos"},
+    ], columns=6)
+
+    left, right = st.columns([2.1, 1])
+
+    with left:
+        theme.section(
+            "咨询会话",
+            f"基于体系「{sysobj['name']}」本次回测的事实表作答，只引用回测产出的数字",
+        )
+        history = _advisor_history(sysobj["id"])
+        if not history:
+            theme.insight(
+                "还没有提问。可以从下面的快捷问题开始，也可以直接在底部输入；"
+                "每轮回答都会标注来源（大模型 / 离线规则引擎）与识别到的意图。",
+                "info",
+            )
+        for m in history:
+            is_user = str(m.get("role")) == "user"
+            with st.chat_message("user" if is_user else "assistant",
+                                 avatar="🧑" if is_user else "🩺"):
+                st.markdown(str(m.get("content", "")))
+                if not is_user:
+                    st.caption(
+                        f"意图：{m.get('intent') or '—'}｜来源："
+                        f"{'大模型' if m.get('mode') == 'llm' else '离线规则引擎'}"
+                    )
+
+        theme.section("快捷问题", "按当前体系触发的问题阈值自动生成，点一下即可提问")
+        quick = system_advisor.suggest_questions(result)
+        qcols = st.columns(2)
+        for i, q in enumerate(quick):
+            with qcols[i % 2]:
+                if st.button(q, key=f"fs_adv_q_{sysobj['id']}_{i}",
+                             use_container_width=True):
+                    _advisor_ask(sysobj["id"], q, result, use_llm)
+                    st.rerun()
+
+    with right:
+        theme.section("诊断动作", "与聊天回答同源，按优先级排序")
+        if not actions:
+            theme.insight("未触发任何风险阈值，各项指标都在可接受区间。", "pos")
+        for a in actions:
+            theme.insight(
+                f'<b>P{a["priority"]}｜{a["title"]}</b><br/>{a["detail"]}',
+                "warn" if a["priority"] <= 2 else "info",
+            )
+        with st.expander("本次咨询依据（事实表）", expanded=False):
+            st.code(system_advisor.facts_markdown(facts), language="text")
+        st.caption(
+            "事实表是在回测结果上剥离出的全部可用指标；离线规则引擎与大模型共用它，"
+            "所以关掉模型开关时结论口径不会变，只是措辞更模板化。"
+        )
+
+    prompt = st.chat_input("问点什么：这套体系能不能用？哪里重复了？下一步改什么？")
+    if prompt:
+        _advisor_ask(sysobj["id"], prompt, result, use_llm)
+        st.rerun()

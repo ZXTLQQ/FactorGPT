@@ -2,11 +2,11 @@
 FactorGPT — Streamlit 交互入口
 ==============================
 
-界面采用「红白配色 + 复合式二级目录」，17 个功能页按业务域整合为 6 个分组：
+界面采用「红白配色 + 复合式二级目录」，21 个功能页按业务域整合为 6 个分组：
 
 - ◈ 工作台：系统概览、操作记忆
 - ⚗ 因子挖掘：智能挖掘 Agent、对话式挖掘、因子精炼厂、遗传规划挖掘、Vibe Trading
-- 🧱 因子体系：体系搭建、体系回测分析、系统因子库、因子监控
+- 🧱 因子体系：体系搭建、体系回测分析、AI 体系咨询、系统因子库、因子监控
 - 📈 数据中心：行情中心、期货 & 期权、基金行情、债券 / 外汇
 - 🧠 智能分析：非结构化数据、Transformer 分析、知识库
 - ⚙ 系统：产品交付、运行配置
@@ -14,6 +14,8 @@ FactorGPT — Streamlit 交互入口
 核心能力：
 - 因子体系搭建：把挖掘产出与系统因子库中的因子组装成带维度与权重的因子体系，
   一键执行合成回测并输出 IC / ICIR / 分层 / 相关性 / 主成分 / 衰减全景诊断。
+- AI 体系咨询：把回测结果压成事实表，用大模型或内置规则引擎回答「能不能用、哪里
+  重复、风险压在谁身上、下一步改哪一处」，答案里每个结论都对应回测里的具体数字。
 - 操作记忆：界面选择、操作日志、挖掘产出、因子体系与回测结果全部落盘到本地
   SQLite（``data/factorgpt.db``），关闭应用后重新打开自动恢复现场。
 - 模型可切换：侧边栏支持 DeepSeek / OpenAI / Qwen / 任意 OpenAI 兼容端点
@@ -43,7 +45,11 @@ from agent.integration import (
 from ui.methodologist import run_methodologist, get_factor_name_from_report  # noqa: E402
 from ui.market_hub import render_market_hub  # noqa: E402
 from ui import nav, theme  # noqa: E402
-from ui.factor_system import render_system_analysis, render_system_builder  # noqa: E402
+from ui.factor_system import (  # noqa: E402
+    render_system_advisor,
+    render_system_analysis,
+    render_system_builder,
+)
 from rag.chroma_store import ensure_chroma  # noqa: E402
 from rag.retriever import rag_vector_enabled  # noqa: E402
 from store import chats as chat_repo  # noqa: E402
@@ -1796,6 +1802,7 @@ DISPATCH = {
     "vibe": render_vibe_trading,
     "sys_build": render_system_builder,
     "sys_analysis": render_system_analysis,
+    "sys_advisor": render_system_advisor,
     "library": render_traditional_factors,
     "monitor": render_monitor,
     "market": render_market_hub,

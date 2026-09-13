@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-UI_PAGE_COUNT = 20
+UI_PAGE_COUNT = 21
 FACTOR_COUNT = 62
 
 
@@ -26,8 +26,8 @@ def test_ui_page_count_matches_readme():
     assert len(keys) == UI_PAGE_COUNT, (
         f"src/ui/nav.py 应含 {UI_PAGE_COUNT} 个页面 key，当前 {len(keys)}")
     readme = _read("README.md")
-    assert re.search(r"20[- ]?page|20\s*页", readme, re.IGNORECASE), \
-        "README 未声明 20 页界面，需同步更新"
+    assert re.search(r"21[- ]?page|21\s*页", readme, re.IGNORECASE), \
+        "README 未声明 21 页界面，需同步更新"
 
 
 def test_factor_count_matches_docs():
