@@ -60,17 +60,28 @@ data:
     # 请求体为 {"query","channel":"neodata","sub_channel":"workbuddy"}，返回 data.apiData.apiRecall[].content 文本块。
     base_url: "https://copilot.tencent.com/agenttool/v1/neodata"
     token_env: NEODATA_TOKEN       # token 环境变量名；或由平台自动写入 ~/.workbuddy/.neodata_token
-    # ⚠️ fallback_to_legacy 当前【严禁设为 false】，原因（已实测验证）：
-    #   1) 真实 NeoData 是「自然语言查询」服务，返回的是自由文本块（apiRecall[].content），
-    #      并非结构化批量行情/财务 REST 接口；无法为因子引擎提供必需的结构化批量数据——
-    #      完整日K线时序（回测核心）、完整指数成分股列表、行业/市值映射、结构化财务报表。
-    #      因此 get_daily_kline / get_index_constituents / get_industry_and_cap / get_financial_data
-    #      经 NeoData 解析后为空，必须回退 legacy 才能跑通回测。
-    #   2) 联调验证受阻：本环境 connect_cloud_service 返回的是 IDE 会话 token（audience=account），
-    #      NeoData 代理需要平台专属 tempToken，实测请求返回 HTTP 401，无法在本地做全量字段联调。
-    # 现状：neodata 源目前仅作为「研究问答」辅助，不能替代 legacy 执行因子回测；
-    #       base_url 已填真实端点，待平台 tempToken 可用且补齐结构化解析后再评估关闭回退。
-    fallback_to_legacy: true       # 保持 true：NeoData 无法提供结构化批量数据，必须回退 legacy 才能保证回测可跑
+    # ⚠️ 能力边界（2026-09-13 实测复核，markdown 表格解析已实现）：
+    #   网关真实可用：POST 返回 HTTP 200 / suc=true，content 就是标准 markdown 表格，
+    #   src/data/neo_adapter.py 已内置表格解析（_parse_md_tables + 各 _map_*）。
+    #   但服务端**单次响应有篇幅上限**（实测 ~1.5–1.7KB，表格恒定 6–11 行），由此划线：
+    #     · 可独立取数：≤5 个交易日窗口的日 K（实测 5 日窗口 1154 字符完整无省略，
+    #       分块可拼完整时序）；单股财务（利润表/综合财务指标，取最新报告期）。
+    #     · 必须回退 legacy：>5 个交易日的日 K（表格中段被省略并插「禁止推断补全」占位行，
+    #       行数不随区间增长）；指数成分股（中证800 实测只给前 11 只）；全市场行业映射
+    #       （问「申万一级行业列表」返回的是某指数的行业分布且数值全为 --）；新闻（返回空）；
+    #       行业+市值（只能逐股查，800 只 = 800 次请求）。
+    #   设计原则：**残缺数据一律返回 None 触发回退，绝不硬凑**——把不完整时序或残缺票池
+    #   喂给回测会静默失真，比报错更危险。
+    #   鉴权：IDE 会话令牌（connect_cloud_service 现签发）可直接调用；有效期约 12 小时，
+    #   过期返回 HTTP 401。历史结论「IDE 会话 token 必 401」已不成立，勿再据此判断。
+    fallback_to_legacy: true       # 保持 true：长时序/成分股/行业/新闻仍须 legacy，NeoData 无法独撑回测
+    # allow_partial：是否接受服务端截断的残缺结果（默认 false）。仅研究性查看时开启；
+    # 回测链路务必保持 false，否则票池会从 800 只静默缩到 11 只、时序只剩首尾几根。
+    allow_partial: false
+    # max_chunk_requests：短窗口分块抓取的总请求预算（1 次请求 ≈ 5 个交易日 × 1 只标的）。
+    # 超预算即判定 NeoData 不适用并直接回退 legacy，避免对「数年 × 数百只」的回测区间
+    # 打出成千上万次请求（单标的 5 年 ≈ 250 次）。默认 8 ≈ 单标的 2 个月。
+    max_chunk_requests: 8
   offline:                          # 仅当 source=offline 时生效（仓库内置本地离线数据，不触网）
     index: "csi800"                 # 指数池名，对应 data/offline/bars_csi800_part*.parquet
     dir: ""                         # 离线数据目录，留空默认 data/offline

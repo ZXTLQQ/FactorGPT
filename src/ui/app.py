@@ -233,12 +233,15 @@ def _init_data_source_session():
     仅当用户在面板中主动「应用」或「保存」时才会覆写对应值，未调整则维持原默认。
     """
     data = load_config().get("data", {}) or {}
+    # neodata 是嵌套段（data.neodata.base_url），不能按 ui_ds_* 的扁平规则取，
+    # 否则输入框恒为空、点「保存配置」会把 config.yaml 里的真实网关地址清空。
+    neo_cfg = data.get("neodata") or {}
     defaults = {
         "ui_ds_source": "legacy",
         "ui_ds_primary": "akshare",
         "ui_ds_prefer_sina": True,
         "ui_ds_tushare_token": "",
-        "ui_ds_neodata_base_url": "",
+        "ui_ds_neodata_base_url": str(neo_cfg.get("base_url") or ""),
         "ui_ds_ths_base_url": "",
         "ui_ds_ths_token": "",
         "ui_ds_offline_index": "csi800",
@@ -390,6 +393,7 @@ def _render_data_source_panel():
 
 def _collect_data_source_cfg():
     """从会话状态收集 data 段字段（仅覆盖用户可调项，保留其余默认项）。"""
+    cur = load_config().get("data") or {}
     offline = {}
     if st.session_state.ui_ds_source == "offline":
         offline = {
@@ -401,7 +405,9 @@ def _collect_data_source_cfg():
         "primary_source": st.session_state.ui_ds_primary,
         "prefer_sina": bool(st.session_state.ui_ds_prefer_sina),
         "tushare_token": st.session_state.ui_ds_tushare_token or "",
-        "neodata": {"base_url": st.session_state.ui_ds_neodata_base_url or ""},
+        # 保留 neodata 段其余键（token_env / fallback_to_legacy），避免保存时被整块替换掉
+        "neodata": {**(cur.get("neodata") or {}),
+                    "base_url": st.session_state.ui_ds_neodata_base_url or ""},
         "offline": offline,
         "ths_api_base_url": st.session_state.ui_ds_ths_base_url or "",
         "ths_api_token": st.session_state.ui_ds_ths_token or "",
