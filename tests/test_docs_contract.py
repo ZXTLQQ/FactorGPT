@@ -81,8 +81,12 @@ def test_no_debug_residue_in_scripts():
 
 
 def test_no_debug_residue_in_root():
-    """仓库根目录不得出现调试/临时脚本。"""
+    """仓库根目录不得出现调试/临时脚本（含 ``_tmp_*.py`` 冒烟脚本）。
+
+    一次性的验证脚本用完必须清掉，其断言应固化到 ``tests/`` 里；留在根目录
+    会让"临时脚本"随时间变成无人维护的影子测试。
+    """
     root_files = {f for f in os.listdir(ROOT) if os.path.isfile(os.path.join(ROOT, f))}
     residue = [f for f in root_files
-               if re.match(r"^(_smoke|norm_test|sina_probe|verify_mh|test_agent_quick|启动)", f)]
+               if re.match(r"^(_smoke|_tmp_|norm_test|sina_probe|verify_mh|test_agent_quick|启动)", f)]
     assert not residue, f"仓库根目录存在调试残留: {residue}"

@@ -65,6 +65,7 @@ models/
 # demo 运行的临时输出（日志/报告），仅入库 PNG 回测图
 demo_output/*.txt
 demo_output/*_report.md
+demo_output/*_report.json
 
 # 数据产物（整矿缓存 / 导入产物 / 图片型 PDF / OCR 知识语料）
 data/cache/

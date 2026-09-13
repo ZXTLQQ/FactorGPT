@@ -251,6 +251,30 @@ python scripts/ha_forward_run.py settle
 
 Mechanics and guarantees: the bridge lives in `src/forwardtest/` (pure stdlib, zero new dependencies): `client.py` (register/auth/scope/challenges/predict/results/calibration), `translator.py` (deterministic macro-theme → asset/direction/confidence mapping), `ledger.py` (append-only JSONL under `data/forwardtest/`; prediction fields are frozen once settled), `scorecard.py` (directional accuracy, Brier vs the 1/3 random baseline, confidence-bucket calibration), and `runner.py` (orchestration). Every run degrades gracefully — no network, no credentials, or a factor description without macro wording simply skips or writes a local dry-run record, never an exception that breaks the factor pipeline. Optional integration: with `headline_arena.enabled: true` in `config.yaml`, the LangGraph agent appends a **shadow forward-test node** after `finalize`, folding each mined factor's description into a locked dry-run ledger record (agents never submit live predictions on their own). Credentials go in `.env` as `HA_AGENT_ID` / `HA_CLIENT_SECRET` (or `~/.headlinearena/credentials.json`); the platform is free, prediction rewards convert to LLM-gateway credits, and the plugin/API references are `github.com/headlinearena/headlinearena-agent-plugin` and `headlinearena.com/api/v1/agent/onboarding/guide.txt`.
 
+### 10. Sell-Side Research Report Factor Framework (`src/mining/`)
+
+`src/mining/` is a self-contained factor-research layer (~4,300 lines) that turns four sell-side methodology reports into a typed expression language, a PIT-safe panel, and reproducible factor libraries — fully offline, no LLM in the loop.
+
+| Report | What landed |
+|--------|-------------|
+| 山西证券《算子网格搜索》 | 60 registered operators in six families (`elem` 10 / `elem2` 11 / `cs` 6 / `ts` 27 / `ts2` 5 / `cs2` 1); a **typed expression DSL** (`parse` / `validate` / `infer_type` / `render`, with commutativity-aware key de-duplication) whose dimension gate rejects unit-incoherent arithmetic (price + turnover, flags in `log`, …) at build time; an **operator grid miner** that searches operator × window × layer combinations under a hard evaluation budget; and `report.py`, which renders the whole run — layer-by-layer prune counts, per-factor scores, risk gate, correlations, incremental IC and the exact config — into a self-contained Markdown + JSON report |
+| 天风证券《因子风险与拥挤》 | `risk.py`: exposure regression ΔR², Newey-West-adjusted t-stat, VIF, lag-1 autocorrelation, crowding score, and component risk contribution (components sum to portfolio vol) |
+| 中信建投《"逐鹿"Alpha：量价 × 基本面统一框架》 | `fundamental.py`: PIT installation of quarterly financials; TTM expressed purely with existing operators (`add(add(x, ts_delay(x, 250)), add(ts_delay(x, 500), ts_delay(x, 750)))` = sum of four single-quarter values); 31 fundamental factors (quality / growth / leverage / accrual / valuation) plus cross-domain combination templates |
+| 西部证券《概念数量因子》 | `concept.py`: interval-valid concept membership (differential counting, **no forward-fill**), concept count / niche / heat fields, 20 concept factors, and the **DGTW market-cap grouping operator** (`dgtw_cs`) that absorbs the non-linear part of the size relation which linear neutralisation leaves behind |
+
+Anti-lookahead is enforced structurally rather than by convention:
+
+- **`asof_align`** projects `announcement date + lag` onto trading days, and **`pit_reference`** re-derives the same series with a deliberately naive loop as an independent cross-check; `check_pit` compares them point by point *and* separately asserts "no value before the first visible day", so a shared bug cannot hide behind itself.
+- **`lookback`** computes the mandatory warm-up window of any expression (`ts_mean(ts_delay(close, 250), 20)` → 269 days) and **`coverage_adj`** measures coverage *after* that warm-up — so "not enough history" is no longer misdiagnosed as "dead factor" (`check_history` fails loudly instead).
+- **RankIC** ranks each variable cross-sectionally first, then correlates on the pairwise-complete sample (the pandas `rank → corrwith` convention). This definition is pinned by `tests/test_mining.py::test_cs_corr_rank_convention` so it cannot be silently "fixed" later.
+
+```bash
+python -m pytest tests/test_mining.py -q            # 32 tests, ~15 s, fully offline
+python scripts/mining_report_demo.py                # one-command demo → demo_output/mining_report.md
+```
+
+The demo builds a synthetic panel, installs PIT fundamentals and concept memberships, runs a grid search, evaluates four representative factors from the three factor libraries, and writes `demo_output/mining_report.md` (+`.json`). No network, no API keys — the missing-value convention in the report is a hard rule: unmeasurable cells render as `—` and the JSON payload is written with `allow_nan=False`, so a `nan` can never masquerade as a real number.
+
 ---
 
 ## Architecture Overview
@@ -452,6 +476,7 @@ FactorGPT/
 │   ├── engine/         # Factor builder, backtester, optimizer, traditional factors
 │   ├── data/           # Data fetcher, cleaner, feature forge, offline/neo adapters
 │   ├── pipeline/       # Six-stage refinery pipeline
+│   ├── mining/         # Report-driven factor layer (typed DSL, PIT panel, ops grid miner)
 │   ├── rag/            # Knowledge base (ChromaDB + retrieval)
 │   ├── llm/            # LLM client (DeepSeek/OpenAI/Ollama compatible)
 │   ├── ui/             # Streamlit web interface (20 pages)
@@ -486,6 +511,8 @@ FactorGPT's "production-grade" claim is backed by automated tests and reproducib
 - **CI**: `.github/workflows/ci.yml` runs the full test suite on every push/PR (Python 3.11 + 3.12), then compile-checks all source modules. Status: [![CI](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml)
 - **Core tests** under `tests/`: sandbox security & lookahead-bias rejection (`test_sandbox.py`), the six-stage refinery pipeline end-to-end (`test_refinery.py`), and documentation-contract drift guards (`test_docs_contract.py` — keeps README page/factor counts, the `instrument→symbol` data contract, and `kronos.fallback_to_stub` from silently drifting).
 - **Ablation experiments**: `python scripts/ablation_study.py --seed 42 --n-symbols 20` quantifies each pipeline module's marginal contribution on out-of-sample data (ΔICIR per module); results and interpretation in [docs/ablation_report.md](docs/ablation_report.md).
+- **Report factor layer**: `tests/test_mining.py` (32 tests) pins the operator library against pandas / hand-computed references, the type-gate rejections, PIT alignment vs the independent reference implementation, warm-up-aware coverage, the risk-gate identities, grid-miner budget & reproducibility, the expected direction of every fundamental / concept factor, and the report renderer (every section present, `—` instead of `nan`, escaped table pipes, byte-identical output on write).
+- **Warnings are errors** (`pytest.ini`): the failure mode this repo cares about is not a raised exception but an *exception silently swallowed into a plausible number* — `np.corrcoef` returning 0 for a degenerate cross-section, or `np.nanmean` warning on an empty slice and quietly yielding NaN. Every `RuntimeWarning` / `FutureWarning` / `DeprecationWarning` now fails the suite, so those substitutions cannot creep back in.
 
 ---
 

@@ -30,6 +30,30 @@ _ROL_W = [3, 5, 10, 20, 60]
 _MAX_DEPTH = 3
 
 
+def _groupwise_corr(f: np.ndarray, y: np.ndarray, codes: np.ndarray,
+                    n_groups: int) -> np.ndarray:
+    """按组（截面）计算 Pearson 相关，**向量化**：一次 bincount 聚合完所有截面。
+
+    等价于 ``panel.groupby("date").apply(lambda g: g["f"].corr(g["y"]))``，
+    但适应度函数每一代要被调用上千次，``groupby.apply`` 的 Python 层开销是主要
+    瓶颈；显式分组码还避免了 pandas 未来版本剔除分组列带来的语义变化。
+    组内方差为 0（样本 < 2 或常数截面）时返回 NaN。
+    """
+    cnt = np.bincount(codes, minlength=n_groups).astype(float)
+    safe = np.maximum(cnt, 1.0)
+    mf = np.bincount(codes, weights=f, minlength=n_groups) / safe
+    my = np.bincount(codes, weights=y, minlength=n_groups) / safe
+    df_ = f - mf[codes]
+    dy_ = y - my[codes]
+    cov = np.bincount(codes, weights=df_ * dy_, minlength=n_groups)
+    vx = np.bincount(codes, weights=df_ * df_, minlength=n_groups)
+    vy = np.bincount(codes, weights=dy_ * dy_, minlength=n_groups)
+    den = np.sqrt(vx * vy)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out = cov / den
+    return np.where((den > 0) & np.isfinite(out), out, np.nan)
+
+
 class GeneticFactorMiner:
     """用遗传编程演化因子表达式树，适应度 = 样本内 IC。"""
 
@@ -142,13 +166,15 @@ class GeneticFactorMiner:
             panel = panel.replace([np.inf, -np.inf], np.nan).dropna()
             if len(panel) < 50:
                 return -1e9
-            ic = panel.groupby("date").apply(
-                lambda g: g["f"].corr(g["y"]) if g["f"].std() > 0 else np.nan
-            )
-            ic = ic.dropna()
-            if len(ic) == 0:
+            codes, uniq = pd.factorize(panel["date"].to_numpy())
+            ic = _groupwise_corr(panel["f"].to_numpy(dtype=float),
+                                 panel["y"].to_numpy(dtype=float),
+                                 codes, len(uniq))
+            ic = ic[np.isfinite(ic)]
+            if ic.size == 0:
                 return -1e9
             return float(ic.mean())
+
         except Exception:
             return -1e9
 

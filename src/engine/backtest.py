@@ -66,7 +66,7 @@ def portfolio_turnover(factor_series: pd.Series, kline: pd.DataFrame, top_frac: 
         merged["weight"] = np.where(merged["rank_in_date"] < k, 1.0 / k, 0.0)
         merged = merged.sort_values(["symbol", "date"])
         merged["w_prev"] = merged.groupby("symbol")["weight"].shift(1).fillna(0.0)
-        day_turn = merged.groupby("date").apply(lambda g: float(np.abs(g["weight"] - g["w_prev"]).sum()))
+        day_turn = (merged["weight"] - merged["w_prev"]).abs().groupby(merged["date"]).sum()
         return float(day_turn.mean()) if len(day_turn) else None
     except Exception:
         return None
@@ -87,7 +87,12 @@ def _ic_series(panel: pd.DataFrame, method: str = "pearson") -> pd.Series:
     for i, d in enumerate(uniq):
         m = dates == d
         xv, yv = f[m].copy(), y[m].copy()
-        if len(xv) < 2 or np.nanstd(xv) == 0 or np.nanstd(yv) == 0:
+        # 截面退化（样本不足 / 含缺失 / 常数）一律给 NaN 并丢弃。
+        # 这里不用 np.nanstd：全 NaN 切片上它会抛 ``Mean of empty slice``
+        # 告警，而"某天整列没数据"是正常数据状态而非异常。
+        if len(xv) < 2 or not (np.isfinite(xv).all() and np.isfinite(yv).all()):
+            continue
+        if np.ptp(xv) == 0 or np.ptp(yv) == 0:
             continue
         if method == "spearman":
             xv = pd.Series(xv).rank().to_numpy()

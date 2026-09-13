@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 
@@ -79,7 +79,8 @@ class ExperimentTracker:
     ) -> dict:
         """记录一次因子评估。返回写入的记录字典。"""
         record = {
-            "ts": datetime.utcnow().isoformat() + "Z",
+            # utcnow() 已废弃（且返回 naive 时间），改用带时区的 UTC 并保留 Z 后缀
+            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "experiment": self.experiment,
             "name": name,
             "status": status,
