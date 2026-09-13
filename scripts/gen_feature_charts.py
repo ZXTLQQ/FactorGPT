@@ -415,17 +415,17 @@ def fig_unstructured() -> None:
         "股权激励计划出炉，绑定核心团队利益",
     ]
     pos = neg = neu = 0
-    tags = Counter()
+    scores = []
     for t in corpus:
         r = ta.analyze(t)
         senti = r.get("sentiment_score", r.get("sentiment", 0))
+        scores.append(float(senti))
         if senti > 0.05:
             pos += 1
         elif senti < -0.05:
             neg += 1
         else:
             neu += 1
-        tags[r.get("top_tags")[0] if r.get("top_tags") else "一般"] += 1
 
     fig, axes = plt.subplots(1, 2, figsize=(10.0, 4.4), dpi=130)
     cats = ["积极", "中性", "消极"]
@@ -441,20 +441,24 @@ def fig_unstructured() -> None:
     ax.set_ylim(0, max(vals) * 1.18)
     ax.grid(alpha=0.25, axis="y")
 
-    tg = tags.most_common(6)
+    tg = sorted(enumerate(scores), key=lambda kv: kv[1])[-12:]
     ax = axes[1]
     ypos = np.arange(len(tg))
-    bars = ax.barh(ypos, [v for _, v in tg], color="#8172B2", height=0.55)
+    bar_colors = ["#55A868" if v > 0 else "#C44E52" for _, v in tg]
+    bars = ax.barh(ypos, [v for _, v in tg], color=bar_colors, height=0.55)
     for i, (b, (_, v)) in enumerate(zip(bars, tg)):
-        ax.text(v + 0.05, i, str(v), va="center", fontsize=9.5, color="#333333")
+        ax.text(v + (0.03 if v >= 0 else -0.03), i, f"{v:+.2f}", va="center",
+                ha="left" if v >= 0 else "right", fontsize=9, color="#333333")
     ax.set_yticks(ypos)
-    ax.set_yticklabels([k for k, _ in tg], fontsize=9.5)
+    ax.set_yticklabels([f"句{k + 1}" for k, _ in tg], fontsize=9)
     ax.invert_yaxis()
-    ax.set_xlabel("命中次数", fontsize=10)
-    ax.set_title("(b) 主题标签 Top6", fontsize=11)
+    ax.set_xlabel("情绪得分（-1 ~ 1）", fontsize=10)
+    ax.set_title("(b) 逐句情绪量化得分", fontsize=11)
     ax.grid(alpha=0.25, axis="x")
+    ax.axvline(0, color="#888888", lw=0.8)
+    ax.set_xlim(-1.15, 1.15)
 
-    fig.suptitle("Unstructured Mining · 非结构化数据因子挖掘 · 文本情绪与主题", fontsize=12.5)
+    fig.suptitle("Unstructured Mining · 非结构化数据因子挖掘 · 文本情绪量化", fontsize=12.5)
     fig.tight_layout(rect=[0, 0.02, 1, 0.95])
     fig.savefig(ASSETS / "feature_unstructured.png")
     plt.close(fig)
