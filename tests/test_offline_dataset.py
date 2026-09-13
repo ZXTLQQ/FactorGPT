@@ -35,8 +35,13 @@ def _bars_parts():
                   if p.startswith("bars_") and p.endswith(".parquet"))
 
 
+def meta_micro_industry() -> int:
+    """meta.micro 中声明有行业的股票数（断言用，避免测试里写死数字）。"""
+    return int(_meta()["micro"]["coverage"]["industry"])
+
+
 def test_offline_supplement_files_exist() -> None:
-    for name in ("index_daily.parquet", "trade_calendar.json",
+    for name in ("index_daily.parquet", "trade_calendar.json", "micro_snapshot.parquet",
                  "constituents_csi300.json", "constituents_csi500.json",
                  "constituents_csi800.json"):
         path = os.path.join(OFFLINE, name)
@@ -102,6 +107,74 @@ def test_offline_adapter_reads_supplements() -> None:
     assert len(ds.get_index_constituents("csi500")) == _meta()["constituents"]["csi500"], \
         "按票池名切换票池失败"
     print("test_offline_adapter_reads_supplements OK")
+
+
+def test_micro_snapshot_schema_and_meta() -> None:
+    """微观快照（行业/板块/地区/市值）物理契约：列完备、与 meta 计数一致。"""
+    path = os.path.join(OFFLINE, "micro_snapshot.parquet")
+    assert os.path.exists(path), "离线微观快照缺失：micro_snapshot.parquet"
+    df = pd.read_parquet(path)
+    meta = _meta()["micro"]
+    for col in ("symbol", "instrument", "name", "board", "industry",
+                "industry_l2", "industry_l3", "area", "price", "total_mv",
+                "float_mv", "shares_total", "shares_float", "pe", "pb",
+                "source", "quote_source", "as_of"):
+        assert col in df.columns, f"micro_snapshot.parquet 缺少列 {col}"
+    assert len(df) == meta["symbols"] == meta["coverage"]["industry"], \
+        "快照行数 / 行业覆盖与 meta 不一致"
+    assert df["symbol"].str.len().eq(6).all(), "symbol 未归一化为 6 位代码"
+    assert df["symbol"].is_unique, "symbol 存在重复"
+    assert all(len(i) == 8 and i[:2] in ("SH", "SZ", "BJ") for i in df["instrument"]), \
+        "instrument 命名异常"
+    assert set(df["board"]) <= {"沪市主板", "深市主板", "创业板", "科创板", "北交所", "其他"}, \
+        f"板块取值异常：{sorted(set(df['board']))}"
+    assert int(df["board"].ne("其他").sum()) >= 0.99 * len(df), "板块判定覆盖率过低"
+    # 市值单位必须是元（若误写成亿元，数量级会差 1e8）
+    assert df["total_mv"].max() > 1e10, "total_mv 量级异常，单位应为元"
+    assert (df["total_mv"].dropna() > 0).all(), "存在非正市值"
+    assert meta["coverage"]["total_mv"] >= 0.98 * len(df), "市值覆盖率过低"
+    assert meta["coverage"]["area"] >= 0.99 * len(df), "注册地覆盖率过低"
+    # 股本可由市值/价格自洽还原
+    chk = df.dropna(subset=["total_mv", "price", "shares_total"])
+    assert (abs(chk["total_mv"] / chk["price"] - chk["shares_total"])
+            <= 1e-6 * chk["shares_total"]).all(), "shares_total 与市值/价格不自洽"
+    counts = df.groupby("board").size()
+    assert {str(k): int(v) for k, v in counts.items()} == meta["boards"], \
+        "板块分布与 meta 不一致"
+    print("test_micro_snapshot_schema_and_meta OK")
+
+
+def test_offline_adapter_reads_micro() -> None:
+    """``OfflineDataSource`` 的行业/市值/板块/快照读取路径（含 level 与顺序契约）。"""
+    ds = OfflineDataSource({"data": {"offline": {"index": "csi800"}}})
+    micro = ds.get_micro_snapshot(["600519", "000001"])
+    assert len(micro) == 2, "微观快照按代码过滤失败"
+    assert ds.last_fetch_info["source"] == "offline"
+
+    # 行业/市值：索引顺序与入参一致，未知代码为 NaN，市值单位为元
+    ind, cap = ds.get_industry_and_cap(["000001", "600519", "999999"])
+    assert list(ind.index) == ["000001", "600519", "999999"], "索引顺序未被保留"
+    assert ind.notna().sum() == 2, "行业命中数与预期不符"
+    assert pd.isna(ind["999999"]) and pd.isna(cap["999999"]), "未知代码应为 NaN"
+    assert cap["600519"] > 1e10, "市值量级异常（单位应为元）"
+
+    # 三级行业粒度更细：一级行业数 < 二级行业数 <= 三级行业数
+    lv1, _ = ds.get_industry_and_cap(["600519"])
+    lv3, _ = ds.get_industry_and_cap(["600519"], level=3)
+    assert lv1["600519"] != lv3["600519"], "level 参数未生效"
+    cls1 = ds.get_industry_classification()
+    cls2 = ds.get_industry_classification(level=2)
+    assert 0 < len(cls1) <= len(cls2), "行业层级汇总单调性异常"
+    assert int(cls1["n_symbols"].sum()) == meta_micro_industry(), \
+        "行业成分数合计与快照不一致"
+    assert cls1["total_mv_100m"].is_monotonic_decreasing, "行业表未按总市值降序"
+
+    snap = ds.get_market_snapshot(["600519"])
+    assert list(snap.columns) == ["代码", "名称", "快照价", "总市值", "流通市值",
+                                  "市盈率-动态", "市净率", "所属行业", "板块", "快照日期"], \
+        "行情快照列契约变更"
+    assert snap["板块"].iloc[0] == "沪市主板", "板块判定异常"
+    print("test_offline_adapter_reads_micro OK")
 
 
 def test_meta_rows_match_parquet_parts() -> None:

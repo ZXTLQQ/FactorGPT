@@ -51,6 +51,40 @@
     "end": "2026-08-25",
     "trade_days": 1855
   },
-  "updated_at": "2026-09-13 13:38:07",
-  "generator": "scripts/build_offline_dataset.py"
+  "updated_at": "2026-09-13 14:53:39",
+  "generator": "scripts/build_offline_dataset.py",
+  "micro": {
+    "file": "micro_snapshot.parquet",
+    "as_of": "2026-09-11",
+    "symbols": 1977,
+    "industries": {
+      "level1": 27,
+      "level2": 102,
+      "areas": 33
+    },
+    "coverage": {
+      "industry": 1977,
+      "industry_l2": 1977,
+      "area": 1977,
+      "total_mv": 1975,
+      "pe": 1411,
+      "pb": 1923
+    },
+    "boards": {
+      "沪市主板": 940,
+      "深市主板": 747,
+      "创业板": 172,
+      "科创板": 117,
+      "其他": 1
+    },
+    "sources": {
+      "eastmoney": 1977
+    },
+    "quote_sources": {
+      "tencent": 1975,
+      "None": 2
+    },
+    "generator": "scripts/build_offline_micro.py",
+    "note": "行业/地区来自东财公司概况报表（东财三级行业、注册地省份），价格与市值/估值为构建时刻的腾讯行情静态快照（市值单位元）；市场板块由代码前缀本地判定。概念板块、上市日期需东财 push2 通道，该接口按 IP 限流，暂未纳入。"
+  }
 }

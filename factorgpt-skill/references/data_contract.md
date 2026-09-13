@@ -41,8 +41,8 @@
 ## 3. 离线数据源契约（offline，默认）
 
 ``OfflineDataSource``（``src/data/offline_adapter.py``）读取随仓库分发的 ``data/offline/``
-（日K parquet 分片 + 多票池成分股 JSON + 指数日线 parquet + 交易日历 JSON + ``meta.json``），
-提供与 ``DataFetcher`` 同构的离线数据。
+（日K parquet 分片 + 多票池成分股 JSON + 指数日线 parquet + 交易日历 JSON +
+微观快照 parquet + ``meta.json``），提供与 ``DataFetcher`` 同构的离线数据。
 
 | 方法 | 离线行为 |
 |------|----------|
@@ -50,9 +50,16 @@
 | ``get_index_constituents`` | 读 ``constituents_<pool>.json``（支持 ``000300/000905/000906/000852`` 或 ``csi300/csi500/csi800/csi1000``），默认 ``csi800`` |
 | ``get_index_daily`` | 读 ``index_daily.parquet``，默认返回中证800（``000906``）指数日线，列同 ``date/close/high/low/volume/amount/pct_chg`` |
 | ``get_trade_calendar`` | 读 ``trade_calendar.json``，返回 ``YYYY-MM-DD`` 交易日列表（可按区间裁剪） |
-| ``get_industry_and_cap`` | 无行业/市值字段，返回**两个全 NaN 的 pd.Series**，保持 ``(industry, mkt_cap)`` 同契约；**不得返回 ``None``**，否则调用方解包即崩（上层中性化检测到缺失自动降级） |
-| ``get_industry_classification`` / ``get_financial_data`` | 返回空 DataFrame，由上层多模态能力降级，不影响纯量价回测 |
-| 新闻情绪 / 快照 / 分钟K | 返回空，**不尝试联网** |
+| ``get_industry_and_cap(symbols, level=1)`` | 读 ``micro_snapshot.parquet``，返回 ``(industry, mkt_cap)``：行业取东财 1/2/3 级（``industry`` / ``industry_l2`` / ``industry_l3``），市值取总市值（**元**，构建时刻快照）。索引为 6 位 ``symbol`` 且顺序与入参一致，未命中为 ``NaN``；快照文件缺失时退化为**两个全 NaN 的 pd.Series**（**不得返回 ``None``**，否则调用方解包即崩） |
+| ``get_industry_classification(level=1)`` | 由快照汇总的行业板块表（``industry`` / ``n_symbols`` / ``total_mv_100m`` / ``float_mv_100m`` / ``median_pe`` / ``median_pb``，市值单位亿元），按总市值降序 |
+| ``get_micro_snapshot(symbols=None)`` | 快照明细（名称/板块/东财三级行业/注册地省份/价/市值/股本/PE/PB/来源/``as_of``），可按代码过滤 |
+| ``get_market_snapshot(symbols=None)`` | 由快照拼出的行情快照（``代码/名称/快照价/总市值/流通市值/市盈率-动态/市净率/所属行业/板块/快照日期``），**快照口径非实时** |
+| ``get_financial_data`` | 返回空 DataFrame，由上层多模态能力降级，不影响纯量价回测 |
+| 新闻情绪 / 分钟K | 返回空，**不尝试联网** |
+
+微观快照由 ``scripts/build_offline_micro.py`` 生成（东财公司概况报表取行业/地区，腾讯批量
+报价取价/市值/PE/PB，板块由代码前缀本地判定），粒度是**构建时刻的静态截面**——市值中性化
+在历史日期上是近似值，跨期使用需重新生成快照。
 
 两个必须保持的约定：
 

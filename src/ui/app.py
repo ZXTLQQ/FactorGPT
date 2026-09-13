@@ -278,12 +278,22 @@ def _render_offline_status(index: str):
         return
     with open(meta_p, "r", encoding="utf-8") as f:
         meta = _json.load(f)
+    micro = meta.get("micro") or {}
+    cov = micro.get("coverage") or {}
+    ind_lv = micro.get("industries") or {}
+    micro_line = (
+        f"- 微观截面：行业 {cov.get('industry', 0)} 只"
+        f"（一级 {ind_lv.get('level1', '-')} / 二级 {ind_lv.get('level2', '-')} 个行业）、"
+        f"市值 {cov.get('total_mv', 0)} 只、as_of {micro.get('as_of', '-')}\n"
+        if micro else ""
+    )
     st.success(
         f"离线数据就绪（index={meta.get('index', index)}）：\n"
         f"- 时间范围：{meta.get('start')} ~ {meta.get('end')}\n"
         f"- 交易日：{meta.get('trade_days')} 天\n"
         f"- 股票数：{meta.get('symbols')} 只\n"
         f"- 总行数：{meta.get('rows'):,} 行\n"
+        f"{micro_line}"
         f"- 导出时间：{meta.get('exported_at')}"
     )
 

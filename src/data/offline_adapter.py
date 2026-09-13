@@ -18,6 +18,7 @@
     data/offline/constituents_<index>.json    # 指数成分股列表（csi300/csi500/csi800/...）
     data/offline/index_daily.parquet          # 主要宽基指数日线（含中证800基准）
     data/offline/trade_calendar.json          # 区间内交易日历
+    data/offline/micro_snapshot.parquet       # 微观快照（行业三级/板块/地区/市值/估值）
     data/offline/meta.json                    # 导出元信息（时间范围、股票数、交易日数）
 
 离线数据源各方法
@@ -29,11 +30,17 @@
 - ``get_index_daily``: 读取 ``index_daily.parquet`` 的宽基指数日线（默认中证800 000906），
   用于离线基准/大盘对比。
 - ``get_trade_calendar``: 读取 ``trade_calendar.json`` 的交易日列表（可按区间裁剪）。
-- ``get_industry_and_cap``: 离线数据无行业/市值字段，返回 ``(industry, mkt_cap)``
-  两个全 NaN 的 pd.Series（与 ``DataFetcher`` 同契约），上层中性化检测到缺失自动降级。
-- ``get_industry_classification`` / ``get_financial_data``: 离线无数据，返回空
-  DataFrame（由上层多模态能力降级，不影响日K回测）。
-- 其余方法（新闻情绪/快照/分钟K）无离线数据，返回空，不尝试联网。
+- ``get_industry_and_cap``: 读取 ``micro_snapshot.parquet``，返回 ``(industry, mkt_cap)``
+  两个 pd.Series（索引为 6 位 symbol，与 ``DataFetcher`` 同契约）；行业为东财行业，
+  ``level`` 可选 1/2/3 级；市值单位元（总市值，构建时刻快照）。快照缺失时退化为全 NaN，
+  上层中性化自动降级。
+- ``get_industry_classification``: 由快照汇总的行业板块表（成分数 / 总市值 / 流通市值 /
+  PE、PB 中位数，市值单位亿元），``level`` 可选 1/2/3 级。
+- ``get_micro_snapshot``: 快照明细（名称/行业三级/板块/地区/市值/估值/快照日期），供
+  行业、板块、地区与市值维度的离线统计与展示。
+- ``get_market_snapshot``: 由快照拼出的离线行情快照（快照价/市值/估值/行业/板块）。
+- ``get_financial_data``: 离线无财务数据，返回空 DataFrame（上层多模态能力降级）。
+- 其余方法（新闻情绪/分钟K）无离线数据，返回空，不尝试联网。
 
 注意：parquet 中的复权因子列按区间末因子归一化折算为前复权价（qfq），
 以对齐 legacy DataFetcher 的默认复权语义。
@@ -71,6 +78,9 @@ class OfflineDataSource:
         "000985": "csiall",
     }
 
+    #: 行业层级 → 快照列名（东财一级/二级/三级行业）
+    _INDUSTRY_COLS: Dict[int, str] = {1: "industry", 2: "industry_l2", 3: "industry_l3"}
+
     def __init__(self, config: Optional[dict] = None, **kwargs: Any) -> None:
         cfg = config or {}
         data_cfg = cfg.get("data", {}) or {}
@@ -85,6 +95,7 @@ class OfflineDataSource:
         self._meta: Dict[str, Any] = {}
         self._index_daily: Optional[pd.DataFrame] = None
         self._calendar: Optional[List[str]] = None
+        self._micro: Optional[pd.DataFrame] = None
 
         # 启动时预检查数据文件，缺失时给出明确指引
         if not self._bars_paths:
@@ -159,6 +170,18 @@ class OfflineDataSource:
             self._calendar = (json.loads(path.read_text(encoding="utf-8"))
                               if path.exists() else [])
         return self._calendar
+
+    def _load_micro(self) -> pd.DataFrame:
+        """惰性加载微观快照（``micro_snapshot.parquet``，缺失时返回空表）。"""
+        if self._micro is None:
+            path = self.base / "micro_snapshot.parquet"
+            if path.exists():
+                df = pd.read_parquet(path)
+                df["symbol"] = df["symbol"].astype(str).str.zfill(6)
+                self._micro = df
+            else:
+                self._micro = pd.DataFrame()
+        return self._micro
 
     @staticmethod
     def _norm_index(index_code: str) -> str:
@@ -344,22 +367,97 @@ class OfflineDataSource:
         }
         return cal
 
-    def get_industry_and_cap(self, symbols: List[str]):
+    def get_micro_snapshot(self, symbols: Optional[List[str]] = None) -> pd.DataFrame:
+        """离线微观快照（行业三级/板块/地区/市值/估值），可按股票代码过滤。
+
+        列见 ``build_offline_micro.py``：``symbol/instrument/name/board/industry/
+        industry_l2/industry_l3/area/price/total_mv/float_mv/shares_total/shares_float/
+        pe/pb/source/quote_source/as_of``。数据是**构建时刻的静态快照**（``as_of`` 列
+        给出日期），不是实时行情；缺少 ``micro_snapshot.parquet`` 时返回空表（不联网）。
+        """
+        micro = self._load_micro()
+        if micro.empty:
+            self.last_fetch_info = {
+                "source": "none",
+                "message": f"离线微观快照缺失：{self.base / 'micro_snapshot.parquet'} 不存在",
+            }
+            return micro
+        out = micro
+        if symbols:
+            want = {self._de_norm_symbol(self._norm_symbol(s)) for s in symbols}
+            out = micro[micro["symbol"].isin(want)]
+        out = out.reset_index(drop=True)
+        as_of = sorted(set(out["as_of"])) if "as_of" in out.columns and len(out) else []
+        self.last_fetch_info = {
+            "source": "offline",
+            "message": f"离线微观快照（{len(out)} 只，as_of={as_of[0] if as_of else '-'}）",
+        }
+        return out
+
+    def get_industry_and_cap(self, symbols: List[str], level: int = 1):
         """返回与 DataFetcher 同契约的 ``(industry, mkt_cap)`` 两个 pd.Series。
 
-        离线数据无行业/市值字段，故两个 Series 均为全 NaN（索引为 6 位 symbol）。
-        调用方以 ``(ind, cap) = ...`` 解包后，通过 ``notna().any()`` 检测到缺失
-        即优雅降级（中性化/风格维度跳过），不会因返回空 DataFrame 触发解包崩溃。
+        取自 ``micro_snapshot.parquet``：``industry`` 为东财行业（``level`` 取 1/2/3 级，
+        分别对应东财一级/二级/三级行业），``mkt_cap`` 为总市值（单位元，构建时刻快照）。
+        索引为 6 位 symbol 且顺序与入参一致；快照缺失或个股无数据时为 NaN，调用方以
+        ``notna().any()`` 检测后优雅降级。
         """
-        symbols = [str(s).zfill(6) for s in symbols]
-        self.last_fetch_info = {"source": "offline", "message": "离线数据无行业/市值字段，返回空 Series"}
-        industry = pd.Series(index=pd.Index(symbols, dtype=str), dtype=object)
-        mkt_cap = pd.Series(index=pd.Index(symbols, dtype=str), dtype=float)
+        norms = [self._de_norm_symbol(self._norm_symbol(s)) for s in symbols]
+        idx = pd.Index(norms, dtype=str)
+        micro = self._load_micro()
+        if micro.empty:
+            self.last_fetch_info = {
+                "source": "none",
+                "message": "离线微观快照缺失，行业/市值返回空 Series",
+            }
+            return (pd.Series(index=idx, dtype=object),
+                    pd.Series(index=idx, dtype=float))
+
+        col = self._INDUSTRY_COLS.get(int(level), "industry")
+        sub = micro.drop_duplicates("symbol").set_index("symbol")
+        industry = (sub.reindex(idx)[col] if col in sub.columns else
+                    pd.Series(index=idx, dtype=object))
+        industry.index = idx
+        mkt_cap = pd.to_numeric(
+            sub.reindex(idx)["total_mv"] if "total_mv" in sub.columns else
+            pd.Series(index=idx, dtype=float), errors="coerce")
+        mkt_cap.index = idx
+        self.last_fetch_info = {
+            "source": "offline",
+            "message": (f"离线行业(L{level})/市值（{int(industry.notna().sum())}/{len(idx)} 只命中，"
+                        f"as_of={micro['as_of'].iloc[0] if 'as_of' in micro.columns else '-'}）"),
+        }
         return industry, mkt_cap
 
-    def get_industry_classification(self) -> pd.DataFrame:
-        self.last_fetch_info = {"source": "offline", "message": "离线数据无行业分类，返回空"}
-        return pd.DataFrame()
+    def get_industry_classification(self, level: int = 1) -> pd.DataFrame:
+        """由微观快照汇总的行业板块表（离线口径，``level`` 取 1/2/3 级东财行业）。
+
+        列：``industry`` / ``n_symbols`` / ``total_mv_100m`` / ``float_mv_100m`` /
+        ``median_pe`` / ``median_pb``（市值单位亿元，PE/PB 取中位数），按总市值降序。
+        """
+        micro = self._load_micro()
+        col = self._INDUSTRY_COLS.get(int(level), "industry")
+        if micro.empty or col not in micro.columns:
+            self.last_fetch_info = {"source": "none", "message": "离线微观快照缺失，行业分类返回空"}
+            return pd.DataFrame()
+        grp = micro.dropna(subset=[col]).groupby(col)
+        if grp.ngroups == 0:
+            self.last_fetch_info = {"source": "none", "message": "离线快照无行业字段，返回空"}
+            return pd.DataFrame()
+        out = pd.DataFrame({
+            "industry": list(grp.size().index),
+            "n_symbols": grp.size().to_numpy(),
+            "total_mv_100m": (grp["total_mv"].sum() / 1e8).round(2).to_numpy(),
+            "float_mv_100m": (grp["float_mv"].sum() / 1e8).round(2).to_numpy(),
+            "median_pe": grp["pe"].median().round(2).to_numpy(),
+            "median_pb": grp["pb"].median().round(3).to_numpy(),
+        }).sort_values("total_mv_100m", ascending=False).reset_index(drop=True)
+        self.last_fetch_info = {
+            "source": "offline",
+            "message": (f"离线行业板块 L{level}（{len(out)} 个行业，"
+                        f"{int(out['n_symbols'].sum())} 只）"),
+        }
+        return out
 
     def get_financial_data(self, symbol: str, report_type: str = "年报") -> pd.DataFrame:
         self.last_fetch_info = {"source": "offline", "message": "离线数据无财务字段，返回空"}
@@ -369,9 +467,33 @@ class OfflineDataSource:
         self.last_fetch_info = {"source": "offline", "message": "离线数据无新闻情绪，返回空"}
         return pd.DataFrame()
 
-    def get_market_snapshot(self, *args: Any, **kwargs: Any) -> pd.DataFrame:
-        self.last_fetch_info = {"source": "offline", "message": "离线数据无市场快照，返回空"}
-        return pd.DataFrame()
+    def get_market_snapshot(self, symbols: Optional[List[str]] = None,
+                            *args: Any, **kwargs: Any) -> pd.DataFrame:
+        """离线行情快照（列名对齐 akshare 口径，取自构建时刻的微观快照）。
+
+        列：``代码/名称/快照价/总市值/流通市值/市盈率-动态/市净率/所属行业/板块/快照日期``。
+        价格与市值是**快照时刻**的静态值（见 ``快照日期``），不是实时行情。
+        """
+        micro = self.get_micro_snapshot(symbols)
+        if micro.empty:
+            return micro
+        out = pd.DataFrame({
+            "代码": micro["symbol"],
+            "名称": micro["name"],
+            "快照价": micro["price"],
+            "总市值": micro["total_mv"],
+            "流通市值": micro["float_mv"],
+            "市盈率-动态": micro["pe"],
+            "市净率": micro["pb"],
+            "所属行业": micro["industry"],
+            "板块": micro["board"],
+            "快照日期": micro["as_of"],
+        })
+        self.last_fetch_info = {
+            "source": "offline",
+            "message": f"离线行情快照（{len(out)} 只，快照口径非实时）",
+        }
+        return out
 
     def get_minute_kline(self, *args: Any, **kwargs: Any) -> pd.DataFrame:
         self.last_fetch_info = {"source": "offline", "message": "离线数据无分钟K，返回空"}
@@ -392,3 +514,16 @@ if __name__ == "__main__":
     idx = ds.get_index_daily("000906", "2024-01-01", "2024-01-10")
     print("中证800 日线:", idx.shape, "| last close:", idx["close"].iloc[-1] if not idx.empty else None)
     print("交易日历:", len(ds.get_trade_calendar("2024-01-01", "2024-12-31")), "天（2024）")
+
+    micro = ds.get_micro_snapshot(["600519", "000001"])
+    print("微观快照:", micro[["symbol", "name", "board", "industry", "industry_l3",
+                              "area", "total_mv"]].to_dict("records"))
+    ind, cap = ds.get_industry_and_cap(["600519", "000001", "999999"])
+    print("一级行业:", ind.to_dict(), "\n市值:", cap.round(0).to_dict())
+    ind3, _ = ds.get_industry_and_cap(["600519", "000001"], level=3)
+    print("三级行业:", ind3.to_dict())
+    cls = ds.get_industry_classification()
+    print("一级行业板块前 3:", cls.head(3).to_dict("records"))
+    cls2 = ds.get_industry_classification(level=2)
+    print("二级行业板块前 3:", cls2.head(3).to_dict("records"))
+    print("行情快照:", ds.get_market_snapshot(["600519"]).to_dict("records"))
