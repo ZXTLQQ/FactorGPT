@@ -59,6 +59,10 @@ scripts/_ocr_pdf.err
 *作品申报书*
 *项目报告*
 
+# 阶段性复审/加固报告：本地留存的内部过程文档，不入库
+project_review_*.md
+research_report_*.md
+
 # 模型权重（大体积，下载产物，非源码）
 models/
 
