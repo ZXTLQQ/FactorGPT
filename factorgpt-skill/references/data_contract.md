@@ -17,6 +17,8 @@
 | ``get_financial_data``           | ``get_financial_data``     | ``/v1/stock/fundamentals``             | 已实现   |
 | ``get_industry_classification``  | ``get_industry_classification`` | ``/v1/stock/industry``            | 已实现   |
 | ``get_index_constituents``       | ``get_index_constituents`` | ``/v1/index/constituents``             | 已实现   |
+| ``get_index_daily``              | ``get_index_daily``        | ``/v1/quote/index``                    | 已实现（离线） |
+| ``get_trade_calendar``           | ``get_trade_calendar``     | ``/v1/calendar``                       | 已实现（离线） |
 | ``get_news_sentiment``           | ``get_news_sentiment``     | ``/v1/news``                           | 已实现   |
 | ``get_industry_and_cap``         | ``get_industry_and_cap``   | 无稳定的「行业+市值」批量结构化端点     | 回退 legacy（``neo()`` 显式返回空，不伪造数值） |
 | ``get_minute_kline``             | ``get_minute_kline``       | 待接入                                 | 回退     |
@@ -39,12 +41,15 @@
 ## 3. 离线数据源契约（offline，默认）
 
 ``OfflineDataSource``（``src/data/offline_adapter.py``）读取随仓库分发的 ``data/offline/``
-（日K parquet 分片 + 成分股 JSON + ``meta.json``），提供与 ``DataFetcher`` 同构的离线数据。
+（日K parquet 分片 + 多票池成分股 JSON + 指数日线 parquet + 交易日历 JSON + ``meta.json``），
+提供与 ``DataFetcher`` 同构的离线数据。
 
 | 方法 | 离线行为 |
 |------|----------|
 | ``get_daily_kline`` | 过滤 parquet 后返回 qfq 前复权日K，列同第 2 节 |
-| ``get_index_constituents`` | 读 ``constituents_<index>.json``（默认 ``csi800``） |
+| ``get_index_constituents`` | 读 ``constituents_<pool>.json``（支持 ``000300/000905/000906/000852`` 或 ``csi300/csi500/csi800/csi1000``），默认 ``csi800`` |
+| ``get_index_daily`` | 读 ``index_daily.parquet``，默认返回中证800（``000906``）指数日线，列同 ``date/close/high/low/volume/amount/pct_chg`` |
+| ``get_trade_calendar`` | 读 ``trade_calendar.json``，返回 ``YYYY-MM-DD`` 交易日列表（可按区间裁剪） |
 | ``get_industry_and_cap`` | 无行业/市值字段，返回**两个全 NaN 的 pd.Series**，保持 ``(industry, mkt_cap)`` 同契约；**不得返回 ``None``**，否则调用方解包即崩（上层中性化检测到缺失自动降级） |
 | ``get_industry_classification`` / ``get_financial_data`` | 返回空 DataFrame，由上层多模态能力降级，不影响纯量价回测 |
 | 新闻情绪 / 快照 / 分钟K | 返回空，**不尝试联网** |

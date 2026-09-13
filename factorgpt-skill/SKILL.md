@@ -67,4 +67,4 @@ python -m pytest tests/test_mining.py -q  # 32 项测试，全离线约 15s
 - 东财妙想 MX 技能包说明与安装：``factorgpt-skill/skills/README.md``
 - 仓库总览 / 部署 / 配置：``README.md``
 - 消融实验与各模块 OOS 贡献：``docs/ablation_report.md``
-- 离线数据集口径（时间范围 / 股票数 / 交易日数）：``data/offline/meta.json``
+- 离线数据集口径（时间范围 / 股票数 / 交易日数 / 基准指数 / 票池成分股）：``data/offline/meta.json``

@@ -3,7 +3,7 @@
   "start": "2019-01-02",
   "end": "2026-08-25",
   "trade_days": 1855,
-  "symbols": 2016,
+  "symbols": 1977,
   "rows": 3430506,
   "columns": [
     "instrument",
@@ -21,5 +21,36 @@
     "bars_csi800_part1.parquet",
     "bars_csi800_part2.parquet",
     "bars_csi800_part3.parquet"
-  ]
+  ],
+  "indices": {
+    "file": "index_daily.parquet",
+    "codes": [
+      "SH000300",
+      "SH000852",
+      "SH000905",
+      "SH000906"
+    ],
+    "names": {
+      "SH000300": "沪深300",
+      "SH000905": "中证500",
+      "SH000906": "中证800",
+      "SH000852": "中证1000"
+    },
+    "rows": 7419
+  },
+  "constituents": {
+    "csi1000": 1224,
+    "csi300": 913,
+    "csi500": 1780,
+    "csi800": 1977,
+    "csiall": 1969
+  },
+  "calendar": {
+    "file": "trade_calendar.json",
+    "start": "2019-01-02",
+    "end": "2026-08-25",
+    "trade_days": 1855
+  },
+  "updated_at": "2026-09-13 13:38:07",
+  "generator": "scripts/build_offline_dataset.py"
 }

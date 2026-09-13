@@ -531,7 +531,7 @@ def fig_offline_data() -> None:
             rows.append((pn.replace("bars_csi800_", "").replace(".parquet", ""),
                          round(pp.stat().st_size / 1e6, 1)))
 
-    fig, axes = plt.subplots(1, 2, figsize=(10.0, 4.4), dpi=130)
+    fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.4), dpi=130)
     if rows:
         labels = [r[0] for r in rows]
         sizes = [r[1] for r in rows]
@@ -544,17 +544,35 @@ def fig_offline_data() -> None:
         axes[0].set_title("(a) 离线行情分片大小", fontsize=11)
         axes[0].set_ylim(0, max(sizes) * 1.16)
         axes[0].grid(alpha=0.25, axis="y")
-    axes[1].text(0.5, 0.55,
-                 f"指数池：{meta.get('index', 'csi800')}\n"
+    pools = meta.get("constituents", {}) or {}
+    if pools:
+        pn = list(pools.keys())
+        pc = [pools[k] for k in pn]
+        hb = axes[1].barh(pn, pc, color=_PALETTE[2], height=0.55)
+        for b, c in zip(hb, pc):
+            axes[1].text(b.get_width() + max(pc) * 0.015,
+                         b.get_y() + b.get_height() / 2, f"{c}",
+                         va="center", fontsize=9, color="#333333")
+        axes[1].set_xlim(0, max(pc) * 1.2)
+        axes[1].invert_yaxis()
+        axes[1].set_xlabel("成分股数 (只)", fontsize=10)
+        axes[1].set_title("(b) 离线票池成分股（按需切换）", fontsize=11)
+        axes[1].grid(alpha=0.25, axis="x")
+    idx_meta = meta.get("indices", {}) or {}
+    idx_names = "、".join(idx_meta.get("names", {}).values()) or "-"
+    axes[2].text(0.5, 0.55,
+                 f"主票池：{meta.get('index', 'csi800')}\n"
                  f"股票数：{meta.get('symbols', '-')}\n"
                  f"交易日：{meta.get('trade_days', '-')}\n"
                  f"数据行数：{meta.get('rows', '-')}\n"
-                 f"区间：{meta.get('start', '-')} ~ {meta.get('end', '-')}",
-                 ha="center", va="center", fontsize=11,
+                 f"区间：{meta.get('start', '-')} ~ {meta.get('end', '-')}\n"
+                 f"基准指数日线：{idx_meta.get('rows', '-')} 行\n"
+                 f"基准指数：{idx_names}",
+                 ha="center", va="center", fontsize=10,
                  bbox=_INFO_BOX)
-    axes[1].axis("off")
-    axes[1].set_title("(b) 内置离线数据源 · 开箱即用", fontsize=11)
-    fig.suptitle("Offline Data · 本地部署与离线韧性 · CSI800 行情覆盖", fontsize=12.5)
+    axes[2].axis("off")
+    axes[2].set_title("(c) 内置离线数据源 · 开箱即用", fontsize=11)
+    fig.suptitle("Offline Data · 本地部署与离线韧性 · 行情 + 基准 + 多票池", fontsize=12.5)
     fig.tight_layout(rect=[0, 0.02, 1, 0.95])
     fig.savefig(ASSETS / "feature_offline_data.png")
     plt.close(fig)

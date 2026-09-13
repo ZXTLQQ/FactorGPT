@@ -15,14 +15,20 @@
 ``data/offline/`` 下按指数池存放：
 
     data/offline/bars_<index>_part*.parquet   # 日K分片（含复权因子列）
-    data/offline/constituents_<index>.json    # 指数成分股列表
+    data/offline/constituents_<index>.json    # 指数成分股列表（csi300/csi500/csi800/...）
+    data/offline/index_daily.parquet          # 主要宽基指数日线（含中证800基准）
+    data/offline/trade_calendar.json          # 区间内交易日历
     data/offline/meta.json                    # 导出元信息（时间范围、股票数、交易日数）
 
 离线数据源各方法
 ----------------
 - ``get_daily_kline``: 从 parquet 过滤 symbol/日期区间，返回
   ``date/open/high/low/close/volume/amount/pct_chg/symbol``（前复权 qfq 对齐 DataFetcher）。
-- ``get_index_constituents``: 读取成分股 JSON（默认 csi800）。
+- ``get_index_constituents``: 读取成分股 JSON，按 ``index_code``（000300/000905/000906/
+  000852）或票池名选择 ``constituents_<pool>.json``（默认 csi800）。
+- ``get_index_daily``: 读取 ``index_daily.parquet`` 的宽基指数日线（默认中证800 000906），
+  用于离线基准/大盘对比。
+- ``get_trade_calendar``: 读取 ``trade_calendar.json`` 的交易日列表（可按区间裁剪）。
 - ``get_industry_and_cap``: 离线数据无行业/市值字段，返回 ``(industry, mkt_cap)``
   两个全 NaN 的 pd.Series（与 ``DataFetcher`` 同契约），上层中性化检测到缺失自动降级。
 - ``get_industry_classification`` / ``get_financial_data``: 离线无数据，返回空
@@ -56,6 +62,15 @@ def _default_offline_dir() -> Path:
 class OfflineDataSource:
     """与 DataFetcher 接口对齐的完全离线数据源。"""
 
+    #: 指数代码 → 离线票池后缀（用于切换成分股文件）
+    CODE_TO_POOL: Dict[str, str] = {
+        "000300": "csi300",
+        "000905": "csi500",
+        "000906": "csi800",
+        "000852": "csi1000",
+        "000985": "csiall",
+    }
+
     def __init__(self, config: Optional[dict] = None, **kwargs: Any) -> None:
         cfg = config or {}
         data_cfg = cfg.get("data", {}) or {}
@@ -66,8 +81,10 @@ class OfflineDataSource:
         self.index = str(index).lower()
         self.last_fetch_info: Dict[str, Any] = {"source": None, "message": ""}
         self._bars: Optional[pd.DataFrame] = None
-        self._constituents: Optional[List[str]] = None
+        self._constituents: Dict[str, List[str]] = {}
         self._meta: Dict[str, Any] = {}
+        self._index_daily: Optional[pd.DataFrame] = None
+        self._calendar: Optional[List[str]] = None
 
         # 启动时预检查数据文件，缺失时给出明确指引
         if not self._bars_paths:
@@ -93,9 +110,8 @@ class OfflineDataSource:
             globs = [single]
         return globs
 
-    @property
-    def _constituents_path(self) -> Path:
-        return self.base / f"constituents_{self.index}.json"
+    def _constituents_path(self, pool: Optional[str] = None) -> Path:
+        return self.base / f"constituents_{pool or self.index}.json"
 
     @property
     def _meta_path(self) -> Path:
@@ -112,20 +128,45 @@ class OfflineDataSource:
                 self._bars = pd.concat(frames, ignore_index=True)
         return self._bars
 
-    def _load_constituents(self) -> List[str]:
-        if self._constituents is None:
-            if self._constituents_path.exists():
-                with open(self._constituents_path, "r", encoding="utf-8") as f:
-                    self._constituents = json.load(f)
+    def _load_constituents(self, pool: Optional[str] = None) -> List[str]:
+        key = (pool or self.index).lower()
+        if key not in self._constituents:
+            path = self._constituents_path(key)
+            if path.exists():
+                with open(path, "r", encoding="utf-8") as f:
+                    self._constituents[key] = json.load(f)
             else:
-                self._constituents = []
-        return self._constituents
+                self._constituents[key] = []
+        return self._constituents[key]
 
     def _load_meta(self) -> Dict[str, Any]:
         if not self._meta and self._meta_path.exists():
             with open(self._meta_path, "r", encoding="utf-8") as f:
                 self._meta = json.load(f)
         return self._meta
+
+    def _load_index_daily(self) -> pd.DataFrame:
+        """惰性加载指数日线（``index_daily.parquet``，缺失时返回空）。"""
+        if self._index_daily is None:
+            path = self.base / "index_daily.parquet"
+            self._index_daily = pd.read_parquet(path) if path.exists() else pd.DataFrame()
+        return self._index_daily
+
+    def _load_calendar(self) -> List[str]:
+        """惰性加载交易日历（``trade_calendar.json``，缺失时返回空列表）。"""
+        if self._calendar is None:
+            path = self.base / "trade_calendar.json"
+            self._calendar = (json.loads(path.read_text(encoding="utf-8"))
+                              if path.exists() else [])
+        return self._calendar
+
+    @staticmethod
+    def _norm_index(index_code: str) -> str:
+        """归一化指数代码：000906 -> SH000906，399006 -> SZ399006。"""
+        s = str(index_code).strip().upper().replace(".", "").replace("_", "")
+        if s.startswith(("SH", "SZ", "BJ")):
+            return s
+        return ("SZ" if s.startswith("399") else "SH") + s
 
     @staticmethod
     def _norm_symbol(symbol: str) -> str:
@@ -233,20 +274,75 @@ class OfflineDataSource:
         return out
 
     def get_index_constituents(self, index_code: str = "000906") -> List[str]:
-        """返回离线成分股列表（6 位裸代码）。"""
-        codes = self._load_constituents()
+        """返回离线成分股列表（6 位裸代码）。
+
+        ``index_code`` 可传指数代码（000300/000905/000906/000852）或票池名
+        （csi300/csi500/csi800/csi1000），据此选择 ``constituents_<pool>.json``；
+        文件缺失时回退到 ``data.offline.index`` 指定的默认票池。
+        """
+        key = str(index_code).strip().lower()
+        pool = self.CODE_TO_POOL.get(key.zfill(6), key)
+        if not self._constituents_path(pool).exists():
+            pool = self.index
+        codes = self._load_constituents(pool)
         out = [self._de_norm_symbol(c) for c in codes]
         if not out:
             self.last_fetch_info = {
                 "source": "none",
-                "message": f"离线成分股缺失：{self._constituents_path} 不存在",
+                "message": f"离线成分股缺失：{self._constituents_path(pool)} 不存在",
             }
         else:
             self.last_fetch_info = {
                 "source": "offline",
-                "message": f"离线成分股（index={self.index}，{len(out)} 只）",
+                "message": f"离线成分股（pool={pool}，{len(out)} 只）",
             }
         return out
+
+    def get_index_daily(
+        self,
+        index_code: str = "000906",
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """读取离线指数日线（benchmark/大盘），列含 ``close/high/low/volume/amount/pct_chg``。
+
+        默认返回中证800（000906），即离线票池 ``csi800`` 对应的基准指数；
+        未收录的指数返回空 DataFrame，不尝试联网。
+        """
+        bars = self._load_index_daily()
+        want = self._norm_index(index_code)
+        have = set(bars["instrument"]) if not bars.empty else set()
+        if want not in have:
+            self.last_fetch_info = {
+                "source": "none",
+                "message": f"离线指数日线缺失：{want}（可用 {sorted(have)}）",
+            }
+            return pd.DataFrame()
+        sub = bars[bars["instrument"] == want].copy()
+        if start:
+            sub = sub[sub["date"] >= str(start)[:10]]
+        if end:
+            sub = sub[sub["date"] <= str(end)[:10]]
+        sub = sub.sort_values("date").reset_index(drop=True)
+        self.last_fetch_info = {
+            "source": "offline",
+            "message": f"离线指数日线（{want}，{len(sub)} 行）",
+        }
+        return sub
+
+    def get_trade_calendar(self, start: Optional[str] = None,
+                           end: Optional[str] = None) -> List[str]:
+        """返回离线交易日历（``YYYY-MM-DD`` 列表，可按区间裁剪）。"""
+        cal = self._load_calendar()
+        if start:
+            cal = [d for d in cal if d >= str(start)[:10]]
+        if end:
+            cal = [d for d in cal if d <= str(end)[:10]]
+        self.last_fetch_info = {
+            "source": "offline",
+            "message": f"离线交易日历（{len(cal)} 天）",
+        }
+        return cal
 
     def get_industry_and_cap(self, symbols: List[str]):
         """返回与 DataFetcher 同契约的 ``(industry, mkt_cap)`` 两个 pd.Series。
@@ -288,7 +384,11 @@ if __name__ == "__main__":
     print("meta:", ds._load_meta())
     cons = ds.get_index_constituents()
     print("成分股数量:", len(cons), "| 前3:", cons[:3])
+    print("csi300 成分股:", len(ds.get_index_constituents("000300")))
     kl = ds.get_daily_kline(["600519"], "2024-01-01", "2024-01-10")
     print("茅台日K:", kl.shape)
     if not kl.empty:
         print(kl.head(3))
+    idx = ds.get_index_daily("000906", "2024-01-01", "2024-01-10")
+    print("中证800 日线:", idx.shape, "| last close:", idx["close"].iloc[-1] if not idx.empty else None)
+    print("交易日历:", len(ds.get_trade_calendar("2024-01-01", "2024-12-31")), "天（2024）")
