@@ -31,11 +31,16 @@ six-stage factor refinery pipeline, and a 62-factor built-in knowledge base.
   three-tier screening → alloy blending → methodology report.
 - **62-factor built-in library** — name, category, formula (Markdown + LaTeX) and a
   reference Pandas implementation for every factor.
-- **Report-driven research layer** (`src/mining/`) — the engineering translation of four
-  sell-side methodology reports: 60 operators in a typed expression DSL, a point-in-time
-  safe panel, a four-dimension evaluator (data quality / predictive power / stability /
-  correlation) with turnover and expression-complexity penalties, factor risk &
+- **Typed factor research layer** (`src/mining/`) — 60 operators in a typed expression DSL,
+  a point-in-time safe panel, a four-dimension evaluator (data quality / predictive power /
+  stability / correlation) with turnover and expression-complexity penalties, factor risk &
   crowding gates, and a Markdown report that pins every number to its evidence.
+- **AI factor-system advisor** — one backtest is compressed into a single fact table that a
+  local rule engine and an LLM both answer from; the model may not cite a number that is not
+  in the table, and degrades to the rule answer when it fails instead of going blank.
+- **Spectral cleaning of the factor correlation matrix** — random-matrix noise bounds,
+  cleaning, weight solving and per-factor risk decomposition, rendered in the factor-system
+  page and read straight into the advisor's diagnosis.
 - **Bundled offline dataset** — qfq daily bars for the CSI 800 pool ship with the
   repository, so backtests run with no network and no API keys.
 - **Independent forward testing** — factor-layer macro views become
@@ -57,5 +62,5 @@ six-stage factor refinery pipeline, and a 62-factor built-in knowledge base.
   architecture, configuration and deployment
 - [Ablation study](https://github.com/ZXTLQQ/FactorGPT/blob/main/docs/ablation_report.md)
   — per-module out-of-sample contribution (ΔICIR)
-- [Sell-side research report factor layer](https://github.com/ZXTLQQ/FactorGPT#10-sell-side-research-report-factor-framework-srcmining)
-  — how four methodology reports became code
+- [Typed factor research layer](https://github.com/ZXTLQQ/FactorGPT#10-typed-factor-research-layer-srcmining)
+  — expression DSL, PIT-safe panel and operator grid miner
