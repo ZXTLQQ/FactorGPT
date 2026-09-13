@@ -174,6 +174,8 @@ Introduces three enhancements over traditional GP: **Factor Clusters** (maintain
 
 ![Enhanced GP evolution](docs/assets/feature_gp_evolution.png)
 
+*Panels: (a) per-cluster convergence, migration generations marked; (b) uniqueness vs. invalid-ratio; (c) real expression tree of the top factor; (d) per-cluster evolution gain; (e) OOS train-vs-test IC; (f) event-window weighted fitness. Rendered from the bundled offline data.
+
 ### 5. Unstructured Data Factor Mining
 
 Extracts Alpha signals from multi-modal text data: `TextAnalyzer` (tokenization, entity recognition, sentiment quantification), `AlternativeDataManager` (supply chain, sentiment, satellite text), and `UnstructuredFactorIntegrator` (fusion with structured factors, incremental information contribution evaluation).

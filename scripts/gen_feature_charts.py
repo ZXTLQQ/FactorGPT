@@ -24,6 +24,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -35,7 +37,11 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-from engine.genetic_enhanced import EnhancedFactorEvolver  # noqa: E402
+from engine.genetic_enhanced import (  # noqa: E402
+    EnhancedFactorEvolver,
+    EventWindow,
+    eval_expr,
+)
 from engine.factor_system import build_synthetic_panel  # noqa: E402
 from engine.factor_library import FactorLibrary  # noqa: E402
 from engine.unstructured_miner import TextAnalyzer  # noqa: E402
@@ -72,34 +78,307 @@ def fig_factor_library() -> None:
     print(f"  ✓ feature_factor_library.png  (total={stats.get('total', 0)})")
 
 
+# ---------------------------------------------------------------------------
+# 功能 4：增强遗传编程（真实离线行情 + 真实演化轨迹）
+# ---------------------------------------------------------------------------
+
+CLUSTER_COLORS = ["#4C72B0", "#55A868", "#C44E52", "#8172B2", "#CCB974", "#64B5CD"]
+GP_GENERATIONS = 6
+GP_POP_PER_CLUSTER = 20
+GP_MIGRATE_EVERY = 3
+GP_MIGRATION_RATE = 2
+# 需要滚动窗口参数的算子（窗口位位于子节点末尾）
+_WINDOW_OPS = {"ts_zscore", "ts_rank", "ts_min", "ts_max", "rol", "ts_corr"}
+
+
+def _gp_panel() -> tuple:
+    """取一段真实离线行情；离线数据缺失时回退到合成面板。"""
+    try:
+        from data.offline_adapter import OfflineDataSource
+
+        ds = OfflineDataSource({"data": {"offline": {"index": "csi800"}}})
+        panel = ds.get_daily_kline(ds.get_index_constituents()[:45], "2023-01-01", "2024-03-31")
+        if panel is not None and len(panel) > 5000:
+            panel = panel.copy()
+            panel["pct_chg"] = panel["pct_chg"].astype(float)
+            print(f"    真实离线行情：{panel['symbol'].nunique()} 只 × {panel['date'].nunique()} 个交易日")
+            return panel, "离线行情"
+        print("    离线行情不足，回退合成面板")
+    except Exception as exc:  # noqa: BLE001
+        print(f"    离线行情不可用（{exc}），回退合成面板")
+
+    panel = build_synthetic_panel(n_symbols=40, days=300, seed=7)
+    panel["pct_chg"] = panel.groupby("symbol")["close"].pct_change() * 100.0
+    return panel, "合成面板"
+
+
+def _derive_event_window(panel: pd.DataFrame) -> tuple:
+    """从真实行情定位「市场状态」事件窗口：日均波动率峰值前后各 10 个交易日。
+
+    窗口由数据自身决定（非人工指定），保证图中所画事件区间可复现、可解释。
+    """
+    daily = panel.groupby("date")["pct_chg"].mean().sort_index()
+    vol = daily.rolling(20, min_periods=20).std().dropna()
+    if vol.empty:
+        days = sorted(panel["date"].unique())
+        return str(days[0]), str(days[-1]), None
+    peak = vol.idxmax()
+    i = int(vol.index.get_loc(peak))
+    lo, hi = max(0, i - 10), min(len(vol) - 1, i + 10)
+    return str(vol.index[lo]), str(vol.index[hi]), str(peak)
+
+
+def _daily_ic(panel: pd.DataFrame, expr) -> pd.Series:
+    """逐日截面 IC 序列（与引擎 _fitness 内部口径一致，仅去掉事件加权）。"""
+    df = panel.sort_values(["symbol", "date"]).reset_index(drop=True).copy()
+    df["_fwd_ret"] = df.groupby("symbol")["pct_chg"].shift(-1)
+    fac = eval_expr(expr, df)
+    tbl = pd.DataFrame({
+        "f": np.asarray(fac, dtype=float),
+        "y": df["_fwd_ret"].to_numpy(dtype=float),
+        "date": df["date"].to_numpy(),
+    })
+    tbl = tbl.replace([np.inf, -np.inf], np.nan).dropna()
+    if tbl.empty:
+        return pd.Series(dtype=float)
+    return tbl.groupby("date").apply(
+        lambda g: g["f"].corr(g["y"]) if g["f"].std() > 0 else np.nan
+    ).dropna()
+
+
+def _tree_label(expr, role: str = "val") -> str:
+    kind = expr[0]
+    if kind == "col":
+        return str(expr[1])
+    if kind == "const":
+        return f"w={float(expr[1]):g}" if role == "win" else f"{float(expr[1]):g}"
+    return str(kind)
+
+
+def _draw_expr_tree(ax, expr, caption: str = "") -> None:
+    """把演化产出的表达式树按真实结构绘制成节点图（非示意图）。"""
+    nodes: list = []
+    xs: dict = {}
+    seq = [0.0]
+
+    def walk(e, parent, depth, role="val"):
+        idx = len(nodes)
+        nodes.append({"idx": idx, "parent": parent, "depth": depth,
+                      "kind": e[0], "label": _tree_label(e, role)})
+        kids = []
+        for i, sub in enumerate(e[1:]):
+            if not isinstance(sub, tuple):
+                continue
+            is_win = e[0] in _WINDOW_OPS and (
+                (e[0] == "ts_corr" and i == 2) or (e[0] != "ts_corr" and i == 1)
+            )
+            kids.append((sub, "win" if is_win else "val"))
+        if kids:
+            x = sum(walk(sub, idx, depth + 1, r) for sub, r in kids) / len(kids)
+        else:
+            x, seq[0] = seq[0], seq[0] + 1.0
+        xs[idx] = x
+        return x
+
+    walk(expr, None, 0)
+    for n in nodes:
+        if n["parent"] is None:
+            continue
+        p = nodes[n["parent"]]
+        ax.plot([xs[p["idx"]], xs[n["idx"]]], [-p["depth"], -n["depth"]],
+                color="#B0B7C3", lw=1.0, zorder=1)
+    for n in nodes:
+        if n["kind"] == "col":
+            fc, ec = "#E8F1E4", "#55A868"
+        elif n["kind"] == "const":
+            fc, ec = "#FDF3E3", "#CCB974"
+        else:
+            fc, ec = "#E6EDF7", "#4C72B0"
+        ax.text(xs[n["idx"]], -n["depth"], n["label"], ha="center", va="center",
+                fontsize=8.5, zorder=2,
+                bbox=dict(boxstyle="round,pad=0.32", fc=fc, ec=ec, lw=1.0))
+    depth_max = max(n["depth"] for n in nodes)
+    ax.set_xlim(-0.95, seq[0] - 0.05)
+    ax.set_ylim(-depth_max - 0.85, 0.8)
+    ax.axis("off")
+    ax.set_title("(c) 最优演化因子表达式树", fontsize=11)
+    if caption:
+        ax.text(0.5, 0.02, caption, transform=ax.transAxes, ha="center", va="bottom",
+                fontsize=8.5, color="#444",
+                bbox=dict(boxstyle="round,pad=0.35", fc="#F7F8FA", ec="#D6DAE2"))
+
+
 def fig_gp_evolution() -> None:
-    """功能 4：增强遗传编程——训练 IC vs 测试 IC 演化散点。"""
-    panel = build_synthetic_panel(n_symbols=24, days=200, seed=7)
-    panel["pct_chg"] = panel.groupby("symbol")["close"].pct_change()
-    evolver = EnhancedFactorEvolver(kline=panel, seed=11)
+    """功能 4：增强遗传编程——因子簇 × 岛屿迁移 × 事件窗口的真实演化诊断图。"""
+    panel, src = _gp_panel()
+    ew_start, ew_end, vol_peak = _derive_event_window(panel)
+
+    evolver = EnhancedFactorEvolver(kline=panel, library=FactorLibrary(), seed=17)
+    evolver.add_event_window(EventWindow(
+        name="高波动市场状态", date_range=(ew_start, ew_end),
+        event_type="market_state", weight=3.0,
+    ))
     results = evolver.evolve_clusters(
-        generations=8, pop_per_cluster=24, top_k=18, verbose=False
+        generations=GP_GENERATIONS, pop_per_cluster=GP_POP_PER_CLUSTER, top_k=12,
+        migration_rate=GP_MIGRATION_RATE, migrate_every=GP_MIGRATE_EVERY,
+        auto_save=False, include_expr=True,
+    )
+    if not results:
+        print("  ! feature_gp_evolution.png 跳过（未产出因子）")
+        return
+
+    hist = pd.DataFrame(evolver.history)
+    labels = list(dict.fromkeys(hist["cluster_label"]))
+    label_of = dict(zip(hist["cluster"], hist["cluster_label"]))
+    color_of = {lb: CLUSTER_COLORS[i % len(CLUSTER_COLORS)] for i, lb in enumerate(labels)}
+    best_expr = results[0]["expr"]
+    gen_first, gen_last = int(hist["gen"].min()), int(hist["gen"].max())
+    mig_gens = sorted({m["gen"] for m in evolver.migrations})
+
+    fig = plt.figure(figsize=(13.8, 7.9), dpi=130)
+    gs = fig.add_gridspec(2, 3, hspace=0.46, wspace=0.30,
+                          left=0.125, right=0.975, top=0.865, bottom=0.075)
+
+    # (a) 各簇收敛轨迹 + 迁移事件
+    ax = fig.add_subplot(gs[0, 0])
+    for lb in labels:
+        sub = hist[hist["cluster_label"] == lb].sort_values("gen")
+        ax.plot(sub["gen"], sub["best_ic"], marker="o", ms=4, lw=1.6,
+                color=color_of[lb], label=lb)
+    mean_ic = hist.groupby("gen")["mean_ic"].mean()
+    ax.plot(mean_ic.index, mean_ic.values, color="#555555", lw=1.4, ls="--",
+            marker="^", ms=4, label="全体种群均值 IC")
+    lo, hi = ax.get_ylim()
+    for mg in mig_gens:
+        ax.axvline(mg, color="#C44E52", lw=1.0, ls=":", alpha=0.85)
+    if mig_gens:
+        ax.text(mig_gens[0], hi, f"  第 {mig_gens[0]} 代起：岛屿精英环形迁移",
+                fontsize=8, color="#C44E52", va="top", ha="left")
+    ax.set_xlabel("演化代数")
+    ax.set_ylabel("训练集截面 IC")
+    ax.set_title("(a) 因子簇并行演化收敛轨迹", fontsize=11)
+    ax.set_xticks(range(gen_first, gen_last + 1))
+    ax.grid(alpha=0.25)
+    ax.legend(loc="lower right", fontsize=7.5)
+
+    # (b) 多样性保持与个体有效性
+    ax = fig.add_subplot(gs[0, 1])
+    uni = hist.groupby("gen")["unique_ratio"].agg(["mean", "std"]).fillna(0.0)
+    inv = hist.groupby("gen")["invalid_ratio"].mean()
+    ax.plot(uni.index, uni["mean"], color="#4C72B0", marker="o", ms=4, lw=1.6,
+            label="种群唯一表达式占比")
+    ax.fill_between(uni.index, uni["mean"] - uni["std"], uni["mean"] + uni["std"],
+                    color="#4C72B0", alpha=0.15)
+    ax.set_ylim(0, 1.06)
+    ax.set_xlabel("演化代数")
+    ax.set_ylabel("唯一表达式占比", color="#4C72B0")
+    ax.tick_params(axis="y", labelcolor="#4C72B0")
+    ax2 = ax.twinx()
+    ax2.plot(inv.index, inv.values, color="#C44E52", marker="s", ms=4, lw=1.6,
+             label="无效个体占比")
+    ax2.set_ylim(0, 1.06)
+    ax2.set_ylabel("无效个体占比", color="#C44E52")
+    ax2.tick_params(axis="y", labelcolor="#C44E52")
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, loc="center right", fontsize=7.5)
+    ax.set_title("(b) 多样性保持与表达式有效性", fontsize=11)
+    ax.set_xticks(range(gen_first, gen_last + 1))
+    ax.grid(alpha=0.25)
+
+    # (c) 最优演化因子表达式树
+    ax = fig.add_subplot(gs[0, 2])
+    _draw_expr_tree(
+        ax, best_expr,
+        caption=(f"训练 IC={results[0]['train_ic']:.4f} | "
+                 f"测试 IC={results[0]['test_ic']:.4f} | 过拟合差={results[0]['overfit_gap']:.4f}"),
     )
 
-    train_ic = [r.get("train_ic", r.get("ic", 0)) for r in results]
-    test_ic = [r.get("test_ic", r.get("oos_ic", 0)) for r in results]
-    names = [r.get("name", f"因子{i}") for i, r in enumerate(results)]
+    # (d) 各簇初代 → 末代 best IC 演化增益
+    ax = fig.add_subplot(gs[1, 0])
+    first = hist[hist["gen"] == gen_first].set_index("cluster_label")["best_ic"]
+    last = hist[hist["gen"] == gen_last].set_index("cluster_label")["best_ic"]
+    rows = [lb for lb in labels if lb in first.index and lb in last.index]
+    ypos = np.arange(len(rows))
+    ax.barh(ypos + 0.19, [first[lb] for lb in rows], height=0.34,
+            color="#C3CCDA", label=f"第 {gen_first} 代")
+    ax.barh(ypos - 0.19, [last[lb] for lb in rows], height=0.34,
+            color=[color_of[lb] for lb in rows], label=f"第 {gen_last} 代")
+    for i, lb in enumerate(rows):
+        gain = (last[lb] - first[lb]) / abs(first[lb]) if first[lb] else 0.0
+        ax.text(max(first[lb], last[lb]) + 0.0015, i, f"{gain:+.0%}",
+                va="center", fontsize=8.5, color="#444444")
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(rows, fontsize=8.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("该簇最优个体训练集 IC")
+    ax.set_title("(d) 各因子簇演化增益", fontsize=11)
+    ax.set_xlim(0, max(max(first), max(last)) * 1.22)
+    ax.legend(loc="lower right", fontsize=8)
+    ax.grid(alpha=0.25, axis="x")
 
-    fig, ax = plt.subplots(figsize=(7.2, 4.2), dpi=110)
-    ax.scatter(train_ic, test_ic, s=46, c="#4C72B0", alpha=0.85, edgecolor="white", lw=0.5)
-    lims = [min(min(train_ic), min(test_ic)) - 0.01, max(max(train_ic), max(test_ic)) + 0.01]
+    # (e) 样本外体检：训练 IC vs 测试 IC
+    ax = fig.add_subplot(gs[1, 1])
+    for lb in labels:
+        pts = [r for r in results if label_of.get(r["cluster"]) == lb]
+        if pts:
+            ax.scatter([r["train_ic"] for r in pts], [r["test_ic"] for r in pts],
+                       s=54, color=color_of[lb], alpha=0.9,
+                       edgecolor="white", lw=0.6, label=lb)
+    tr = [r["train_ic"] for r in results]
+    te = [r["test_ic"] for r in results]
+    lims = [min(min(tr), min(te)) - 0.008, max(max(tr), max(te)) + 0.008]
     ax.plot(lims, lims, "k--", lw=0.9, alpha=0.5, label="test = train（无过拟合）")
     ax.axhline(0, color="#C44E52", lw=0.8, ls=":", alpha=0.7)
     ax.axvline(0, color="#C44E52", lw=0.8, ls=":", alpha=0.7)
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
     ax.set_xlabel("训练集 IC")
     ax.set_ylabel("测试集 IC")
-    ax.set_title("增强遗传编程 · 因子簇/岛屿演化结果", fontsize=12)
-    ax.legend(loc="lower right", fontsize=9)
+    ov = float(np.mean([r["overfit_gap"] for r in results]))
+    ax.set_title(f"(e) 样本外体检（平均过拟合差 {ov:+.4f}）", fontsize=11)
+    ax.legend(loc="upper left", fontsize=7, ncol=2)
     ax.grid(alpha=0.25)
-    fig.tight_layout()
+
+    # (f) 事件窗口感知的适应度加权
+    ax = fig.add_subplot(gs[1, 2])
+    ic = _daily_ic(panel, best_expr)
+    if not ic.empty:
+        xd = pd.to_datetime(pd.Index(ic.index))
+        ax.axhline(0, color="#888888", lw=0.8)
+        ax.plot(xd, ic.to_numpy(dtype=float), color="#9FB4D0", lw=0.8,
+                alpha=0.9, label="每日截面 IC")
+        ax.plot(xd, ic.rolling(21, min_periods=5).mean().to_numpy(dtype=float),
+                color="#4C72B0", lw=1.8, label="21 日滚动均值")
+        ax.axvspan(pd.to_datetime(ew_start), pd.to_datetime(ew_end),
+                   color="#E7A93B", alpha=0.22, label="事件窗口（波动率峰值 ±10 日）")
+        # 同一表达式在「关闭事件窗口」与「开启事件窗口」下的适应度对比
+        saved = evolver._event_windows
+        evolver._event_windows = []
+        plain = evolver._fitness(best_expr, evolver.df)
+        evolver._event_windows = saved
+        weighted = evolver._fitness(best_expr, evolver.df)
+        ax.text(0.02, 0.03,
+                f"未加权 IC = {plain:.4f}\n事件窗口加权 IC = {weighted:.4f}",
+                transform=ax.transAxes, va="bottom", fontsize=8.5,
+                bbox=dict(boxstyle="round,pad=0.4", fc="#FFF9EC", ec="#E7A93B"))
+        ax.legend(loc="upper right", fontsize=7.5)
+    peak_note = f"，峰值 {vol_peak}" if vol_peak else ""
+    ax.set_title(f"(f) 事件窗口加权（{ew_start} ~ {ew_end}{peak_note}）", fontsize=10.5)
+    ax.set_ylabel("截面 IC")
+    ax.tick_params(axis="x", labelsize=7.5, rotation=20)
+    ax.grid(alpha=0.25)
+
+    fig.suptitle(
+        f"Enhanced Genetic Programming · 因子簇 × 岛屿迁移 × 事件窗口"
+        f"（{src} {panel['symbol'].nunique()} 只 × {panel['date'].nunique()} 个交易日，"
+        f"{len(labels)} 个因子簇，{GP_GENERATIONS} 代，迁移 {len(evolver.migrations)} 次）",
+        fontsize=12.5,
+    )
     fig.savefig(ASSETS / "feature_gp_evolution.png")
     plt.close(fig)
-    print(f"  ✓ feature_gp_evolution.png  (factors={len(results)})")
+    print(f"  ✓ feature_gp_evolution.png  (factors={len(results)}, "
+          f"migrations={len(evolver.migrations)}, clusters={len(labels)}, src={src})")
 
 
 def fig_unstructured() -> None:
