@@ -54,28 +54,44 @@ ASSETS.mkdir(parents=True, exist_ok=True)
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
+# ---------------------------------------------------------------------------
+# 统一视觉风格（与 feature_gp_evolution.png 保持一致）
+# ---------------------------------------------------------------------------
+_PALETTE = ["#4C72B0", "#55A868", "#C44E52", "#8172B2", "#CCB974", "#64B5CD"]
+_CAPTION_BOX = dict(boxstyle="round,pad=0.35", fc="#F7F8FA", ec="#D6DAE2")
+_INFO_BOX = dict(boxstyle="round,pad=0.5", fc="#F7F8FA", ec="#4C72B0")
+
 
 def fig_factor_library() -> None:
-    """功能 3：61 个内置传统因子五大类分布。"""
+    """功能 3：内置传统因子库五大类分布。"""
     lib = FactorLibrary()
     stats = lib.statistics()
     by_cat = stats.get("by_category", {})
     cats = list(by_cat.keys())
     counts = [by_cat[c] for c in cats]
+    total = stats.get("total", 0)
+    colors = _PALETTE[: len(cats)]
 
-    fig, ax = plt.subplots(figsize=(7.2, 4.2), dpi=110)
-    colors = ["#4C72B0", "#55A868", "#C44E52", "#8172B2", "#CCB974"]
-    bars = ax.bar(cats, counts, color=colors[: len(cats)], width=0.62)
-    for b, c in zip(bars, counts):
-        ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 0.15, str(c),
-                ha="center", fontsize=10)
-    ax.set_ylabel("因子数量")
-    ax.set_title(f"内置传统因子库 · 共 {stats.get('total', 0)} 个因子 · 5 大类", fontsize=12)
-    ax.set_ylim(0, max(counts) * 1.2)
-    fig.tight_layout()
+    fig, ax = plt.subplots(figsize=(8.0, 4.4), dpi=130)
+    ypos = np.arange(len(cats))
+    bars = ax.barh(ypos, counts, color=colors, height=0.58)
+    for i, (b, c) in enumerate(zip(bars, counts)):
+        ax.text(c + max(counts) * 0.02, i, f"{c}  ({c / total:.0%})",
+                va="center", fontsize=9.5, color="#333333")
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(cats, fontsize=9.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("因子数量", fontsize=10)
+    ax.set_xlim(0, max(counts) * 1.22)
+    ax.set_title("(a) 五大类因子数量与占比", fontsize=11)
+    ax.grid(alpha=0.25, axis="x")
+    ax.text(0.98, 0.03, f"总因子数：{total}", transform=ax.transAxes,
+            ha="right", va="bottom", fontsize=9.5, bbox=_CAPTION_BOX)
+    fig.suptitle("Factor Library · 内置传统因子库 · 5 大类", fontsize=12.5)
+    fig.tight_layout(rect=[0, 0.02, 1, 0.95])
     fig.savefig(ASSETS / "feature_factor_library.png")
     plt.close(fig)
-    print(f"  ✓ feature_factor_library.png  (total={stats.get('total', 0)})")
+    print(f"  ✓ feature_factor_library.png  (total={total})")
 
 
 # ---------------------------------------------------------------------------
@@ -411,18 +427,35 @@ def fig_unstructured() -> None:
             neu += 1
         tags[r.get("top_tags")[0] if r.get("top_tags") else "一般"] += 1
 
-    fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.9), dpi=110)
-    axes[0].bar(["积极", "中性", "消极"], [pos, neu, neg],
-                color=["#55A868", "#CCB974", "#C44E52"], width=0.55)
-    axes[0].set_title("文本情绪量化分布（示例语料）", fontsize=11)
-    axes[0].set_ylabel("句子数")
-    axes[0].grid(alpha=0.25, axis="y")
+    fig, axes = plt.subplots(1, 2, figsize=(10.0, 4.4), dpi=130)
+    cats = ["积极", "中性", "消极"]
+    vals = [pos, neu, neg]
+    colors = ["#55A868", "#CCB974", "#C44E52"]
+    ax = axes[0]
+    bars = ax.bar(cats, vals, color=colors, width=0.55)
+    for b, v in zip(bars, vals):
+        ax.text(b.get_x() + b.get_width() / 2, b.get_height() + 0.08,
+                str(v), ha="center", fontsize=10, color="#333333")
+    ax.set_ylabel("句子数", fontsize=10)
+    ax.set_title("(a) 文本情绪量化分布", fontsize=11)
+    ax.set_ylim(0, max(vals) * 1.18)
+    ax.grid(alpha=0.25, axis="y")
 
     tg = tags.most_common(6)
-    axes[1].barh([k for k, _ in tg], [v for _, v in tg], color="#8172B2")
-    axes[1].set_title("主题标签 Top6", fontsize=11)
-    axes[1].grid(alpha=0.25, axis="x")
-    fig.tight_layout()
+    ax = axes[1]
+    ypos = np.arange(len(tg))
+    bars = ax.barh(ypos, [v for _, v in tg], color="#8172B2", height=0.55)
+    for i, (b, (_, v)) in enumerate(zip(bars, tg)):
+        ax.text(v + 0.05, i, str(v), va="center", fontsize=9.5, color="#333333")
+    ax.set_yticks(ypos)
+    ax.set_yticklabels([k for k, _ in tg], fontsize=9.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("命中次数", fontsize=10)
+    ax.set_title("(b) 主题标签 Top6", fontsize=11)
+    ax.grid(alpha=0.25, axis="x")
+
+    fig.suptitle("Unstructured Mining · 非结构化数据因子挖掘 · 文本情绪与主题", fontsize=12.5)
+    fig.tight_layout(rect=[0, 0.02, 1, 0.95])
     fig.savefig(ASSETS / "feature_unstructured.png")
     plt.close(fig)
     print(f"  ✓ feature_unstructured.png  (pos={pos}, neg={neg}, neu={neu})")
@@ -448,17 +481,29 @@ def fig_transformer_coupling() -> None:
                  "相对强弱", "乖离率", "振幅因子", "流动性", "价格形态"]
         scores = [0.98, 0.91, 0.84, 0.77, 0.72, 0.66, 0.60, 0.54, 0.49, 0.44]
 
-    fig, ax = plt.subplots(figsize=(7.2, 4.2), dpi=110)
-    y = range(len(names))
-    ax.barh(list(y), scores, color="#4C72B0", alpha=0.9)
-    ax.set_yticks(list(y))
-    ax.set_yticklabels(names)
+    fig, ax = plt.subplots(figsize=(8.4, 4.8), dpi=130)
+    ypos = np.arange(len(names))
+    # 按相关度从低到高着色，形成渐变
+    norm = plt.Normalize(min(scores), max(scores))
+    cmap = plt.cm.colors.LinearSegmentedColormap.from_list(
+        "blues", ["#9FB4D0", "#4C72B0"]
+    )
+    bar_colors = cmap(norm(scores))
+    bars = ax.barh(ypos, scores, color=bar_colors, height=0.55, edgecolor="white", lw=0.6)
+    for i, (b, s) in enumerate(zip(bars, scores)):
+        ax.text(s + 0.015, i, f"{s:.2f}", va="center", fontsize=8.5, color="#333333")
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(names, fontsize=9.5)
     ax.invert_yaxis()
-    ax.set_xlabel("与用户意图的相关度")
-    ax.set_title("Transformer-Agent 深度耦合 · 因子检索 Top10", fontsize=12)
-    ax.set_xlim(0, 1.05)
+    ax.set_xlabel("与用户意图的相关度", fontsize=10)
+    ax.set_xlim(0, 1.06)
+    ax.set_title("(a) 因子检索相关度 Top10", fontsize=11)
     ax.grid(alpha=0.25, axis="x")
-    fig.tight_layout()
+    ax.text(0.98, 0.03, f"意图：中期动量 + 波动率控制",
+            transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=9, bbox=_CAPTION_BOX)
+    fig.suptitle("Transformer-Agent Coupling · 深度耦合 · 语义检索 Top10", fontsize=12.5)
+    fig.tight_layout(rect=[0, 0.02, 1, 0.95])
     fig.savefig(ASSETS / "feature_transformer_coupling.png")
     plt.close(fig)
     print(f"  ✓ feature_transformer_coupling.png  (top={len(names)})")
@@ -472,7 +517,7 @@ def fig_offline_data() -> None:
         return
     meta = json.loads(meta_p.read_text(encoding="utf-8"))
 
-    # 各分片行数
+    # 各分片大小
     part_names = meta.get("parts", [])
     rows = []
     for pn in part_names:
@@ -481,24 +526,31 @@ def fig_offline_data() -> None:
             rows.append((pn.replace("bars_csi800_", "").replace(".parquet", ""),
                          round(pp.stat().st_size / 1e6, 1)))
 
-    fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.9), dpi=110)
+    fig, axes = plt.subplots(1, 2, figsize=(10.0, 4.4), dpi=130)
     if rows:
         labels = [r[0] for r in rows]
         sizes = [r[1] for r in rows]
-        axes[0].bar(labels, sizes, color="#55A868", width=0.5)
-        axes[0].set_title("离线行情分片大小 (MB)", fontsize=11)
+        colors = _PALETTE[1]  # #55A868
+        bars = axes[0].bar(labels, sizes, color=colors, width=0.5, edgecolor="white", lw=0.6)
+        for b, s in zip(bars, sizes):
+            axes[0].text(b.get_x() + b.get_width() / 2, b.get_height() + max(sizes) * 0.015,
+                         f"{s} MB", ha="center", fontsize=9, color="#333333")
+        axes[0].set_ylabel("大小 (MB)", fontsize=10)
+        axes[0].set_title("(a) 离线行情分片大小", fontsize=11)
+        axes[0].set_ylim(0, max(sizes) * 1.16)
         axes[0].grid(alpha=0.25, axis="y")
-    axes[1].text(0.5, 0.62,
-                 f"指数池: {meta.get('index', 'csi800')}\n"
-                 f"股票数: {meta.get('symbols', '-')}\n"
-                 f"交易日: {meta.get('trade_days', '-')}\n"
-                 f"数据行数: {meta.get('rows', '-')}\n"
-                 f"区间: {meta.get('start', '-')} ~ {meta.get('end', '-')}",
-                 ha="center", va="center", fontsize=12,
-                 bbox=dict(boxstyle="round,pad=0.6", fc="#f4f6f9", ec="#4C72B0"))
+    axes[1].text(0.5, 0.55,
+                 f"指数池：{meta.get('index', 'csi800')}\n"
+                 f"股票数：{meta.get('symbols', '-')}\n"
+                 f"交易日：{meta.get('trade_days', '-')}\n"
+                 f"数据行数：{meta.get('rows', '-')}\n"
+                 f"区间：{meta.get('start', '-')} ~ {meta.get('end', '-')}",
+                 ha="center", va="center", fontsize=11,
+                 bbox=_INFO_BOX)
     axes[1].axis("off")
-    axes[1].set_title("内置离线数据源 · 开箱即用", fontsize=11)
-    fig.tight_layout()
+    axes[1].set_title("(b) 内置离线数据源 · 开箱即用", fontsize=11)
+    fig.suptitle("Offline Data · 本地部署与离线韧性 · CSI800 行情覆盖", fontsize=12.5)
+    fig.tight_layout(rect=[0, 0.02, 1, 0.95])
     fig.savefig(ASSETS / "feature_offline_data.png")
     plt.close(fig)
     print(f"  ✓ feature_offline_data.png  (rows={meta.get('rows', 0)})")
@@ -518,16 +570,37 @@ def fig_ima_pipeline() -> None:
     ki = header.index("关键词") if "关键词" in header else 0
     hits = Counter(r[ki] for r in rows[1:] if len(r) > ki and r[ki].strip())
     top = hits.most_common(10)
+    total_hits = sum(hits.values())
 
-    fig, ax = plt.subplots(figsize=(7.2, 4.2), dpi=110)
-    ax.barh([k for k, _ in top][::-1], [v for _, v in top][::-1], color="#C44E52")
-    ax.set_xlabel("命中研报数")
-    ax.set_title(f"研报知识管线 · 关键词命中 Top10（累计 {sum(hits.values())} 条）", fontsize=12)
+    fig, ax = plt.subplots(figsize=(8.4, 4.8), dpi=130)
+    keywords = [k for k, _ in top][::-1]
+    counts = [v for _, v in top][::-1]
+    ypos = np.arange(len(keywords))
+    # 按命中数渐变
+    norm = plt.Normalize(min(counts), max(counts))
+    cmap = plt.cm.colors.LinearSegmentedColormap.from_list(
+        "reds", ["#E8A0A0", "#C44E52"]
+    )
+    bar_colors = cmap(norm(counts))
+    bars = ax.barh(ypos, counts, color=bar_colors, height=0.55, edgecolor="white", lw=0.6)
+    for i, (b, c) in enumerate(zip(bars, counts)):
+        ax.text(c + max(counts) * 0.01, i, str(c),
+                va="center", fontsize=9, color="#333333")
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(keywords, fontsize=9.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("命中研报数", fontsize=10)
+    ax.set_xlim(0, max(counts) * 1.16)
+    ax.set_title("(a) 关键词命中 Top10", fontsize=11)
     ax.grid(alpha=0.25, axis="x")
-    fig.tight_layout()
+    ax.text(0.98, 0.03, f"累计命中：{total_hits} 条",
+            transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=9, bbox=_CAPTION_BOX)
+    fig.suptitle("IMA Pipeline · 研报知识管线 · 关键词命中统计", fontsize=12.5)
+    fig.tight_layout(rect=[0, 0.02, 1, 0.95])
     fig.savefig(ASSETS / "feature_ima_pipeline.png")
     plt.close(fig)
-    print(f"  ✓ feature_ima_pipeline.png  (hits={sum(hits.values())})")
+    print(f"  ✓ feature_ima_pipeline.png  (hits={total_hits})")
 
 
 def main() -> None:
