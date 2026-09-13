@@ -211,14 +211,15 @@ def _draw_expr_tree(ax, expr, caption: str = "") -> None:
         else:
             fc, ec = "#E6EDF7", "#4C72B0"
         ax.text(xs[n["idx"]], -n["depth"], n["label"], ha="center", va="center",
-                fontsize=8.5, zorder=2,
+                fontsize=8.0, zorder=2,
                 bbox=dict(boxstyle="round,pad=0.32", fc=fc, ec=ec, lw=1.0))
     depth_max = max(n["depth"] for n in nodes)
-    ax.set_xlim(-0.95, seq[0] - 0.05)
-    ax.set_ylim(-depth_max - 0.85, 0.8)
+    ax.set_xlim(-1.45, seq[0] + 0.45)
+    ax.set_ylim(-depth_max - 1.15, 0.9)
     ax.axis("off")
     ax.set_title("(c) 最优演化因子表达式树", fontsize=11)
     if caption:
+        caption = caption.replace(" | ", "\n")
         ax.text(0.5, 0.02, caption, transform=ax.transAxes, ha="center", va="bottom",
                 fontsize=8.5, color="#444",
                 bbox=dict(boxstyle="round,pad=0.35", fc="#F7F8FA", ec="#D6DAE2"))
@@ -374,13 +375,13 @@ def fig_gp_evolution() -> None:
         plain = evolver._fitness(best_expr, evolver.df)
         evolver._event_windows = saved
         weighted = evolver._fitness(best_expr, evolver.df)
+        win_note = f"{ew_start} ~ {ew_end}"
         ax.text(0.02, 0.03,
-                f"未加权 IC = {plain:.4f}\n事件窗口加权 IC = {weighted:.4f}",
+                f"事件窗口：{win_note}\n未加权 IC = {plain:.4f}\n事件窗口加权 IC = {weighted:.4f}",
                 transform=ax.transAxes, va="bottom", fontsize=8.5,
                 bbox=dict(boxstyle="round,pad=0.4", fc="#FFF9EC", ec="#E7A93B"))
         ax.legend(loc="upper right", fontsize=7.5)
-    peak_note = f"，峰值 {vol_peak}" if vol_peak else ""
-    ax.set_title(f"(f) 事件窗口加权（{ew_start} ~ {ew_end}{peak_note}）", fontsize=10.5)
+    ax.set_title("(f) 事件窗口感知的适应度加权", fontsize=11)
     ax.set_ylabel("截面 IC")
     ax.tick_params(axis="x", labelsize=7.5, rotation=20)
     ax.grid(alpha=0.25)
