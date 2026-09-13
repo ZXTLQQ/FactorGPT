@@ -216,7 +216,13 @@ def eval_expr(expr: Any, df: pd.DataFrame) -> pd.Series:
     raise ValueError(f"未知算子 {kind}")
 
 
-def expr_to_code(expr: Any, name: str = "gp_factor") -> str:
+def expr_to_expr_str(expr: Any) -> str:
+    """把表达式树渲染成可直接内联进因子代码的 Python 表达式字符串。
+
+    这是表达式渲染的**唯一入口**：:func:`expr_to_code` 与多尺度挖掘的代码生成
+    都经由此处，因此"离线求值口径"和"落库代码口径"不会各自漂移（两套渲染器
+    最常见的失效方式就是除零/窗口预热细节只在一侧被修好）。
+    """
     def _emit(e: Any) -> str:
         kind = e[0]
         if kind == "col":
@@ -272,7 +278,11 @@ def expr_to_code(expr: Any, name: str = "gp_factor") -> str:
             raise ValueError(f"expr_to_code: 不支持的算子 '{kind}'")
         return f"({_emit(e[1])} {sym} {_emit(e[2])})"
 
-    expr_str = _emit(expr)
+    return _emit(expr)
+
+
+def expr_to_code(expr: Any, name: str = "gp_factor") -> str:
+    expr_str = expr_to_expr_str(expr)
     return (
         "import pandas as pd\n"
         "import numpy as np\n"

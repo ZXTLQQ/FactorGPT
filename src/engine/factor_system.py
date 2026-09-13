@@ -9,7 +9,8 @@
 * :func:`load_market_panel`  —— 准备回测用的行情面板（优先走本地缓存，可离线）。
 * :func:`compute_factor_matrix` —— 批量执行因子代码，产出对齐后的因子矩阵。
 * :func:`resolve_weights`    —— 五种权重方案（等权/质量/IC/ICIR/维度均衡/手动）。
-* :func:`analyze_system`     —— 一次性产出体系回测 + 相关性 + 主成分 + 衰减 + 分散化诊断。
+* :func:`analyze_system`     —— 一次性产出体系回测 + 相关性 + 主成分 + 衰减 + 分散化诊断
+  + **谱清洗**（论文 2607.23068v1 的落地，见 :mod:`engine.eigen_clean`）。
 
 所有函数均为纯计算，不依赖 Streamlit，便于脚本/测试复用。
 """
@@ -27,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from .backtest import FactorBacktester
+from .eigen_clean import analyze_factor_system_spectrum
 from .factor_builder import FactorSandbox
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -652,14 +654,20 @@ def analyze_system(
     standardize: bool = True,
     run_decay: bool = True,
     run_diversification: bool = True,
+    run_spectral: bool = True,
     progress: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """一次性完成因子体系的全景分析。
 
+    Args:
+        run_spectral: 是否执行谱清洗（论文 2607.23068v1 的落地）。它要解若干个小规模
+            二次规划（维度 = 因子数），因子数很多时是这里最贵的一段，但换来的是
+            「样本相关矩阵里有多少是估计噪声」这个问题的直接答案。
+
     Returns:
         含 ``composite_metrics`` / ``factor_stats`` / ``weights`` / ``dimensions``
-        / ``correlation`` / ``decay`` / ``diversification`` / ``errors`` 的字典。
-        失败时返回 ``{"error": ...}``。
+        / ``correlation`` / ``spectral`` / ``decay`` / ``diversification`` / ``errors``
+        的字典。失败时返回 ``{"error": ...}``。
     """
     members = [m if isinstance(m, SystemMember) else SystemMember.from_dict(m) for m in members]
     if not members:
@@ -697,6 +705,17 @@ def analyze_system(
 
     corr_info = correlation_analysis(matrix)
     dims = dimension_summary(ok_members, weights, factor_stats)
+    spectral = (
+        analyze_factor_system_spectrum(
+            matrix, weights=weights,
+            icir={k: _safe(v.get("icir"), 0.0) for k, v in factor_stats.items()},
+            corr=corr_info.get("corr"),
+        )
+        if run_spectral and len(matrix.columns) >= 2
+        else {"ok": False,
+              "reason": ("谱清洗已按参数关闭" if not run_spectral
+                         else "因子数不足 2，跳过谱清洗")}
+    )
 
     decay = ic_decay(kline, composite, n_quantiles=n_quantiles) if run_decay else []
     divers = (
@@ -713,6 +732,7 @@ def analyze_system(
         "members": [m.to_dict() for m in ok_members],
         "dimensions": dims,
         "correlation": corr_info,
+        "spectral": spectral,
         "decay": decay,
         "diversification": divers,
         "errors": errors,
@@ -777,6 +797,106 @@ def build_findings(result: Dict[str, Any]) -> List[Dict[str, str]]:
                 "text": f"因子分散度良好：平均绝对相关 {mac:.2f}，{n} 个因子折合 "
                         f"{eff:.1f} 个有效独立维度。",
             })
+    # 2b. 谱清洗（论文 2607.23068v1）：样本相关矩阵里有多少是估计噪声
+    spec = result.get("spectral") or {}
+    if spec.get("ok"):
+        sd = spec.get("spectrum_dict") or {}
+        n_fac = int(sd.get("n_factors", 0) or 0)
+        noise_ratio = _safe(sd.get("noise_ratio"), float("nan"))
+        inband_ratio = _safe(sd.get("inband_ratio"), float("nan"))
+        n_inband = int(sd.get("n_inband", 0) or 0)
+        n_signal = int(sd.get("n_signal", 0) or 0)
+        eff_before = _safe(sd.get("effective_factors_before"), float("nan"))
+        eff_after = _safe(sd.get("effective_factors_after"), float("nan"))
+        lam_minus = _safe(sd.get("lambda_minus"), float("nan"))
+        if np.isfinite(noise_ratio) and n_fac >= 2:
+            if noise_ratio >= 0.5:
+                findings.append({
+                    "tone": "warn",
+                    "text": f"谱清洗提示 <b>{noise_ratio * 100:.0f}%</b> 的特征方向明确低于随机"
+                            f"矩阵噪声带下界（λ₋={lam_minus:.2f}）。{n_fac} 个因子折合有效独立"
+                            f"方向 {eff_before:.1f} 个，其中相当一部分是估计噪声而非真实信号 —— "
+                            f"直接用样本相关矩阵做权重优化会高估分散化。",
+                })
+            else:
+                findings.append({
+                    "tone": "ok",
+                    "text": f"谱结构干净：{n_signal} 个方向超过噪声带（可判为信号），"
+                            f"仅 {noise_ratio * 100:.0f}% 明确落在下界以下，"
+                            f"有效独立方向 {eff_before:.1f}/{n_fac}。",
+                })
+            if n_inband >= 2:
+                findings.append({
+                    "tone": "info",
+                    "text": f"另有 <b>{n_inband}</b> 个方向（{inband_ratio * 100:.0f}%）落在噪声带"
+                            f"内部，统计上无法判定是信号还是噪声。清洗按「只动明确噪声」处理，"
+                            f"因此这些方向仍是估计误差的潜在来源 —— 增加截面数或拉长样本区间"
+                            f"才能把它们分开。",
+                })
+            if np.isfinite(eff_after) and eff_after > eff_before + 0.3:
+                findings.append({
+                    "tone": "info",
+                    "text": f"清洗后谱变平（有效方向 {eff_before:.1f} → {eff_after:.1f}）："
+                            f"噪声方向被抬平，权重不再被少数极端特征值主导。",
+                })
+
+        bias = spec.get("bias") or {}
+        gap = _safe(bias.get("vol_gap_pct"), float("nan"))
+        if np.isfinite(gap) and abs(gap) >= 1.0:
+            findings.append({
+                "tone": "warn" if gap > 0 else "info",
+                "text": f"同一组权重在原始矩阵下体系波动 {_safe(bias.get('vol_raw')):.4f}，"
+                        f"在清洗后矩阵下 {_safe(bias.get('vol_clean')):.4f}"
+                        f"（{gap:+.2f}%）—— "
+                        + ("原始矩阵<b>低估</b>了体系波动，样本内的分散化有一部分是估计误差"
+                           "白送的；下结论时以清洗后口径为准。"
+                           if gap > 0 else
+                           "本样本中原始矩阵反而高估了波动：清洗在此并未改善风险刻画，"
+                           "两个口径都在噪声量级内，不必据此调整权重。"),
+            })
+
+        risk = spec.get("risk")
+        if risk is not None:
+            top_pct = _safe(getattr(risk, "top_risk_pct", float("nan")), float("nan"))
+            top_name = getattr(risk, "top_risk", "")
+            eff_risk = _safe(getattr(risk, "effective_n_risk", float("nan")), float("nan"))
+            # 因子数从 result 取：build_findings 拿不到因子矩阵，早期版本误引用了
+            # 局部不存在的 ``matrix``，风险集中时才触发 NameError。
+            if np.isfinite(top_pct) and top_pct >= 0.4 and int(result.get("n_factors", 0) or 0) >= 3:
+                findings.append({
+                    "tone": "warn",
+                    "text": f"风险分布比权重更集中：<b>{top_name}</b> 占体系风险 "
+                            f"{top_pct * 100:.1f}%，有效风险来源 {eff_risk:.2f} 个。"
+                            f"降低该因子权重，或换成与它低相关的替代因子。",
+                })
+            elif np.isfinite(eff_risk):
+                findings.append({
+                    "tone": "info",
+                    "text": f"风险分解均衡：有效风险来源 {eff_risk:.2f} 个，"
+                            f"最大单项 <b>{top_name}</b> 占 {top_pct * 100:.1f}%。",
+                })
+
+        solutions = spec.get("solutions_dict") or []
+        ok_sol = [s for s in solutions if s.get("success")]
+        if ok_sol:
+            risk_clean = _safe(getattr(risk, "portfolio_var", float("nan")), float("nan"))
+            # 因子已截面标准化时"最小方差"与"最大分散化"同解，并列时统一报最小方差，
+            # 避免界面把同一个方案说成两个不同建议
+            best = min(ok_sol, key=lambda s: (_safe(s.get("variance"), 1e9),
+                                              0 if "最小方差" in str(s.get("label", "")) else 1))
+            bv = _safe(best.get("variance"), float("nan"))
+            if np.isfinite(bv) and np.isfinite(risk_clean) and risk_clean > 0:
+                cut = (risk_clean - bv) / risk_clean * 100.0
+                if cut >= 1.0:
+                    findings.append({
+                        "tone": "info",
+                        "text": f"权重方案有优化空间：当前权重（{result.get('weight_mode')}）清洗后"
+                                f"波动 {np.sqrt(max(risk_clean, 0.0)):.4f}，"
+                                f"「{best.get('label')}」为 "
+                                f"{_safe(best.get('vol'), 0.0):.4f}，方差低 {cut:.1f}%。"
+                                f"若因子 IC 质量接近，可切到后者。",
+                    })
+
     pairs = corr.get("redundant_pairs") or []
     if pairs:
         p = pairs[0]
