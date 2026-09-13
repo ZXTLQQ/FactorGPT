@@ -31,6 +31,7 @@ import numpy as np
 import pandas as pd
 
 from .factor_library import FactorLibrary
+from .ic_utils import panel_ic
 from .traditional_factors import (
     FactorDef,
     ALL_CATEGORIES,
@@ -184,11 +185,18 @@ def eval_expr(expr: Any, df: pd.DataFrame) -> pd.Series:
         a = eval_expr(expr[1], df)
         b = eval_expr(expr[2], df)
         w = _window_of(expr, 3)
-        panel = pd.DataFrame({"a": a, "b": b, "sym": df["symbol"]})
-        result = panel.groupby("sym").apply(
-            lambda g: g["a"].rolling(w, min_periods=_min_periods(w, 10)).corr(g["b"])
-        )
-        return result.droplevel(0).reindex(df.index).astype(float)
+        mp = _min_periods(w, 10)
+        # 逐标的算滚动相关后按**位置**写回：分组滚动按组输出，且 GroupBy.apply
+        # 会把分组键一并交给回调（pandas 2.2 起已弃用），故不走 apply。
+        av = np.asarray(a, dtype=float)
+        bv = np.asarray(b, dtype=float)
+        out = pd.Series(np.nan, index=df.index, dtype=float)
+        for _, idx in df.groupby("symbol").indices.items():
+            idx = np.sort(np.asarray(idx))
+            out.iloc[idx] = pd.Series(av[idx]).rolling(w, min_periods=mp).corr(
+                pd.Series(bv[idx])
+            ).to_numpy()
+        return out
     if kind == "ts_min":
         a = eval_expr(expr[1], df)
         w = _window_of(expr)
@@ -363,10 +371,13 @@ class EnhancedFactorEvolver:
             if len(panel) < 50:
                 return -1e9
 
-            ic = panel.groupby("date").apply(
-                lambda g: g["f"].corr(g["y"]) if g["f"].std() > 0 else np.nan
-            )
-            ic = ic.dropna()
+            # 逐日截面 IC 走 ic_utils 的向量化内核（一次 bincount 聚合）。
+            # 这里原本是 groupby("date").apply(...)：pandas ≥ 2.2 会把分组列一并交给
+            # 回调并抛 FutureWarning，而项目 filterwarnings = error，等于直接失败；
+            # min_count=2 与原实现（组内至少 2 个样本才有相关，单样本方差为 0）逐点一致。
+            ic = panel_ic(panel["f"].to_numpy(dtype=float),
+                          panel["y"].to_numpy(dtype=float),
+                          panel["date"].to_numpy(), min_count=2).dropna()
             if len(ic) == 0:
                 return -1e9
 

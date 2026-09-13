@@ -23,6 +23,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence
@@ -163,6 +164,12 @@ class ReportInput:
     pools: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
     incremental: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
     corr: Optional[pd.DataFrame] = None
+    # 验收三项（见 ``mining.triage``）：统计显著性 / 选股域对照 / 分层多尺度挖掘。
+    # 都做成可选，缺项时对应章节整段省略，而不是留一张空表。
+    significance: Mapping[str, Any] = field(default_factory=dict)
+    domains: Optional[pd.DataFrame] = None
+    universe: Mapping[str, Any] = field(default_factory=dict)
+    multiscale: Mapping[str, Any] = field(default_factory=dict)
     notes: Sequence[str] = ()
     generated_at: str = ""
 
@@ -464,6 +471,200 @@ def _sec_relation(ri: ReportInput) -> List[str]:
     return out
 
 
+def _money(v: Any) -> str:
+    """成交额按万元渲染（引擎门槛的量纲是元，直接写成 9300000 没法读）。"""
+    return DASH if not _is_real(v) else f"{float(v) / 1e4:.0f} 万"
+
+
+def _expr_brief(expr: Any) -> str:
+    """把表达式压成表格单元格里可读的一行：折叠空白 + 长小数截断到 3 位。
+
+    只影响**展示**——完整精度在 JSON 载荷里（``multiscale.candidates[].params``），
+    表格里那一长串 ``0.49964224371608046`` 对读报告的人没有任何信息量。
+    """
+    if expr is None:
+        return DASH
+    text = re.sub(r"\s+", " ", str(expr)).strip()
+    return re.sub(r"(\d+\.\d{3})\d+", r"\1", text)
+
+
+def _sec_significance(ri: ReportInput) -> List[str]:
+    """统计显著性：这批候选是不是"搜出来的"。"""
+    sig = dict(ri.significance or {})
+    table = _get(sig, "table")
+    if table is None or getattr(table, "empty", True):
+        return []
+    summary = dict(_get(sig, "summary", {}) or {})
+    sel = dict(summary.get("selection") or {})
+    n_trials = int(sig.get("n_trials") or summary.get("n_tested") or 0)
+    n_cand = int(sig.get("n_candidates") or len(table))
+    n_enough = int(summary.get("n_enough_samples")
+                   or (table["enough_samples"].sum() if "enough_samples" in table else 0))
+    out = ["## 统计显著性检验", ""]
+    warn = str(sig.get("warning") or "")
+    for pref in ("结论：", "结论:"):            # 引擎的结论句自带前缀，去掉避免重复
+        if warn.startswith(pref):
+            warn = warn[len(pref):]
+            break
+    if warn:
+        out += [f"**结论**：{warn}", ""]
+    facts = [["参与检验的候选", f"{n_cand} 个"],
+             ["评估过的表达式数（多重性校正用）", f"{n_trials}"],
+             ["样本量达标（≥ {min_dates} 期）".format(
+                 min_dates=int(sig.get("min_dates") or 20)), f"{n_enough} 个"],
+             ["通过四道门槛", f"{int(summary.get('passed') or 0)} 个"],
+             ["BH FDR 阈值（{:.0%}）".format(float(summary.get("alpha") or 0.05)),
+              _fmt(summary.get("threshold"), 4)],
+             ["该尝试次数下的 |IC| 门槛", _fmt(sel.get("ic_crit"), 4)],
+             ["同日截面有效样本量 n_eff", _fmt(sel.get("n_eff"), 1)]]
+    out += [_kv_table(facts), ""]
+
+    cols = [("factor", "候选", None), ("n", "期数", 0), ("ic", "IC", 4),
+            ("icir", "ICIR", 3), ("t_stat", "t 值", 3),
+            ("p_boot", "bootstrap p", 3), ("p_neff", "有效样本量 p", 3),
+            ("p_selection", "选择校正 p", 3), ("q_value", "BH q 值", 3),
+            ("ic_threshold", "|IC| 门槛", 4), ("passed", "是否通过", None)]
+    present = [c for c in cols if c[0] == "factor" or c[0] in table.columns]
+    rows = []
+    for _, r in table.iterrows():
+        cells = []
+        for key, _, nd in present:
+            v = r.get(key)
+            cells.append(_fmt(v, nd=3 if nd is None else nd))
+        rows.append(cells)
+    out += [_table([lbl for _, lbl, _ in present], rows,
+                   aligns=["l"] + ["r"] * (len(present) - 2) + ["c"]), ""]
+    out += [
+        "四道门槛是**合取**关系，缺一不可：样本量达标、平稳块 bootstrap 的 p、"
+        "有效样本量口径的 p、选择校正后的 p 与 BH 判定的 FDR。第 2、3 条看似重复，"
+        "但 IC 序列自相关很强时 bootstrap 零分布会偏窄（名义 5% 实际可达 10%+），"
+        "而 n_eff 口径直接把这个偏差算进自由度里，两道口径互相独立。",
+        "",
+        f"选择校正按**本次实际评估过的 {n_trials} 个表达式**计入多重性——"
+        "这正是最容易漏掉的一项：只报最优候选的 ICIR·√n，等于把"
+        "「我试了多少次」从自由度里删掉。|IC| 门槛由候选之间的离散度给出，"
+        "而不是每个因子自己的 σ，否则相当于用它自己判它自己。", ""]
+    return out
+
+
+def _sec_domain(ri: ReportInput) -> List[str]:
+    """选股域对照：同一个因子在宽/中/严三档域下的表现差多少。"""
+    dom = ri.domains
+    if dom is None or getattr(dom, "empty", True):
+        return []
+    out = ["## 选股域对照", ""]
+    uni = dict(ri.universe or {})
+    if uni.get("ok"):
+        spec = dict(uni.get("spec") or {})
+        reasons = "；".join(f"{k} {int(v)}" for k, v in (uni.get("reasons") or {}).items()
+                           if v) or DASH
+        out += [_kv_table([
+            ["体检档位", str(spec.get("label") or DASH)],
+            ["成交额下限 / 历史下限", f"{_money(spec.get('min_amount'))} / "
+                                     f"{_fmt(spec.get('min_history'), 0)} 日"],
+            ["可交易占比", _fmt(uni.get("coverage_pct"), 2) + "%"],
+            ["日均可选 / 最少 / 最多",
+             f"{_fmt(uni.get('avg_per_day'), 1)} / {_fmt(uni.get('min_per_day'), 0)} / "
+             f"{_fmt(uni.get('max_per_day'), 0)}"],
+            ["零可选交易日", f"{_fmt(uni.get('empty_days'), 0)} 天"],
+            ["剔除原因分布", reasons],
+        ]), ""]
+    rows = []
+    for _, r in dom.iterrows():
+        rows.append([str(r.get("domain", DASH)), _fmt(r.get("top_n"), 0),
+                     _money(r.get("min_amount")), _fmt(r.get("min_history"), 0),
+                     _fmt(r.get("coverage_pct"), 1), _fmt(r.get("avg_per_day"), 1),
+                     _fmt(r.get("n_ic"), 0), _fmt(r.get("ic"), 4),
+                     _fmt(r.get("icir"), 3), _fmt(r.get("t_stat"), 3),
+                     _fmt(r.get("avg_turnover"), 1, pct=True)])
+    out += [_table(["选股域", "建仓数", "成交额下限", "历史下限", "覆盖率", "日均可选",
+                    "期数", "IC", "ICIR", "t 值", "平均换手"], rows,
+                   aligns=["l"] + ["r"] * 10), ""]
+    out += [
+        "域不是越严越好：整体 IC 高但只覆盖 30 只，与 IC 略低但覆盖 800 只，"
+        "是两个完全不同的产品——前者只能做小容量产品，且超额里有一部分是"
+        "流动性/规模风格的补偿。",
+        "",
+        "换手要跟 IC 一起看：严域通常 IC 更高、同时换手也更高，"
+        "而换手成本不体现在 IC 里，只体现在净收益里。", ""]
+    return out
+
+
+def _sec_multiscale(ri: ReportInput) -> List[str]:
+    """分层多尺度挖掘：粗网格演化 → 失真区间诊断 → 局部加密 + 粗尺度终端代价。"""
+    ms = dict(ri.multiscale or {})
+    res = dict(ms.get("resource") or {})
+    cands = list(ms.get("candidates") or ())
+    intervals = list(ms.get("intervals") or ())
+    if not res and not cands:
+        return []
+    coarse, fine = int(res.get("coarse_evals") or 0), int(res.get("fine_evals") or 0)
+    out = ["## 分层多尺度挖掘", ""]
+    facts = [
+        ["评估粒度（粗 / 细）", f"{str(ms.get('coarse_freq') or DASH)} / "
+                               f"{str(ms.get('fine_freq') or DASH)}"],
+        ["区间数 / 被选中加密", f"{_fmt(res.get('total_intervals'), 0)} / "
+                               f"{_fmt(res.get('selected_intervals'), 0)}"],
+        ["粗尺度评估次数", f"{coarse}"],
+        ["细尺度评估次数", f"{fine}"],
+        ["暴力细网格基准", f"{_fmt(res.get('brute_force_evals'), 0)}"],
+        ["评估预算节省", _fmt(res.get("eval_saving"), 1, pct=True)],
+        ["相对暴力细网格的倍数", f"{_fmt(res.get('speedup'), 2)}x"],
+        ["真实去重求值次数", f"{_fmt(ms.get('total_evals'), 0)}"],
+        ["粗 / 细尺度截面数", f"{_fmt(res.get('coarse_dates'), 0)} / "
+                             f"{_fmt(res.get('fine_dates'), 0)}"],
+        ["训练 / 样本外截面数", f"{_fmt(ms.get('train_dates'), 0)} / "
+                               f"{_fmt(ms.get('test_dates'), 0)}"],
+        ["粗尺度终端代价权重", _fmt(ms.get("terminal_weight"), 2)],
+        ["目标函数", str(ms.get("objective") or DASH)],
+    ]
+    out += [_kv_table(facts), ""]
+
+    if intervals:
+        rows = []
+        for s in intervals:
+            rows.append([str(s.get("label") or DASH),
+                         _fmt(s.get("n_dates"), 0), _fmt(s.get("ic"), 4),
+                         _fmt(s.get("d_h"), 3), _fmt(s.get("msd"), 3),
+                         _fmt(s.get("score"), 3),
+                         "是" if s.get("selected") else "否",
+                         _fmt(s.get("ic_refined"), 4)])
+        out += ["### 区间诊断（Hausdorff 暴露漂移 / profile 均方差）", "",
+                _table(["区间", "期数", "粗尺度 IC", "d_H", "MSD", "得分",
+                        "选中加密", "加密后 IC"], rows,
+                       aligns=["l"] + ["r"] * 5 + ["c", "r"]), "",
+                "d_H 衡量相邻区间**因子暴露分布**的漂移，MSD 衡量**暴露→收益 profile** "
+                "的均方差；两者都小的区间说明粗尺度解在该段仍然可信，不需要加密。"
+                "只加密被判为失真的少数区间，是这套方法在预算上的全部意义。", ""]
+    if cands:
+        rows = []
+        for c in cands:
+            params = c.get("params")
+            if isinstance(params, Mapping):
+                params = ", ".join(f"{k}={_fmt(v, 3)}" for k, v in params.items())
+            rows.append([str(c.get("interval") or DASH), str(c.get("family") or DASH),
+                         _fmt(c.get("ic_interval"), 4), _fmt(c.get("ic_full"), 4),
+                         _fmt(c.get("ic_train"), 4), _fmt(c.get("ic_test"), 4),
+                         _fmt(c.get("fitness"), 4), _expr_brief(c.get("expr"))])
+        out += ["### 候选因子", "",
+                _table(["区间", "家族", "细尺度 IC", "全样本 IC", "训练 IC",
+                        "样本外 IC", "适应度", "表达式"], rows,
+                       aligns=["l", "l"] + ["r"] * 5 + ["l"]), ""]
+        if any(c.get("code") for c in cands):
+            out += ["可执行代码与完整精度的参数在 JSON 载荷的 "
+                    "``multiscale.candidates[].code`` / ``.params``；表里的表达式只"
+                    "展示结构（长小数截断到 3 位），括号嵌套顺序即求值顺序。", ""]
+    out += [
+        "预算口径要说清两件事：``评估次数`` 按资源抽象计数（个体数 × 评估位置数），"
+        "其中暴力细网格基准 = 每个区间各自独立做一次细尺度演化；而求值内部对整块面板"
+        "向量化（滚动窗口需要完整预热历史，按区间裁表会让区间开头的因子值出错），"
+        "**所以墙钟时间的节省小于评估次数的节省**，两个口径都摆出来，不把前者说成后者。",
+        "",
+        "区间划分、演化与代理模型全部只用训练段，样本外段仅在最后用于复核——"
+        "否则「选哪些区间加密」这一步就把测试信息吃进去了。", ""]
+    return out
+
+
 def _sec_repro(ri: ReportInput) -> List[str]:
     rows: List[List[str]] = [["生成时刻", ri.stamp()]]
     cfg = _get(ri.search, "config", None)
@@ -482,11 +683,12 @@ def _sec_repro(ri: ReportInput) -> List[str]:
 def render_markdown(ri: ReportInput) -> str:
     """把 ``ReportInput`` 渲染成一份自包含的 Markdown 报告。"""
     parts: List[str] = [f"# {ri.title}", "", f"_生成时刻：{ri.stamp()}_", ""]
-    for seg in (_sec_summary(ri), _sec_data(ri), _sec_search(ri)):
+    for seg in (_sec_summary(ri), _sec_data(ri), _sec_search(ri), _sec_significance(ri)):
         parts += seg
     for i, rep in enumerate(ri.reports, 1):
         parts += _sec_factor(rep, i)
-    for seg in (_sec_risk(ri), _sec_relation(ri), _sec_repro(ri)):
+    for seg in (_sec_domain(ri), _sec_multiscale(ri), _sec_risk(ri),
+                _sec_relation(ri), _sec_repro(ri)):
         parts += seg
     return "\n".join(parts).rstrip() + "\n"
 
@@ -566,9 +768,15 @@ def report_payload(ri: ReportInput) -> Dict[str, Any]:
     for key, val in (("history", ri.history), ("pit_checks", ri.pit_checks),
                      ("risk", ri.risk), ("pools", ri.pools),
                      ("incremental", ri.incremental), ("corr", ri.corr),
-                     ("notes", ri.notes)):
+                     ("significance", ri.significance), ("domains", ri.domains),
+                     ("multiscale", ri.multiscale), ("notes", ri.notes)):
         if val is not None and (not hasattr(val, "__len__") or len(val)):
             payload[key] = _jsonable(val)
+    if ri.universe:
+        # 逐行可交易标签是面板量级的（几百 MB 级别 JSON），载荷里只留汇总口径；
+        # 需要逐行标签请直接调用 ``triage.universe_check(..., keep_flags=True)``。
+        payload["universe"] = _jsonable(
+            {k: v for k, v in dict(ri.universe).items() if k != "flags"})
     return payload
 
 

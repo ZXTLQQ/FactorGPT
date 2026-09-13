@@ -473,12 +473,19 @@ def overfitting_warning(
     if bool(best["passed"]):
         return None
     sel = summary.get("selection") or {}
+    try:
+        crit = float(sel.get("ic_crit"))
+    except (TypeError, ValueError):
+        crit = float("nan")
+    # 候选只有一个时"候选之间的离散度"没有定义（ddof=1），门槛是 NaN——
+    # 这时要说明为什么没有门槛，而不是把 nan 打给用户看。
+    crit_txt = (f"（该尝试次数下的 |IC| 门槛约 {crit:.4f}）" if np.isfinite(crit)
+                else "（候选只有一个，无法估计候选间的 |IC| 离散度，门槛未定义）")
     return (
         f"本次共评估 {int(n_trials)} 个表达式，最好的候选（{best['factor']}）"
         f"IC={float(best['ic']):.4f}、bootstrap p={float(best['p_boot']):.3f}、"
         f"选择校正后 p={float(best['p_selection']):.3f}，"
-        f"未通过 {int((1 - alpha) * 100)}% 门槛"
-        f"（该尝试次数下的 |IC| 门槛约 {float(sel.get('ic_crit', float('nan'))):.4f}）。"
+        f"未通过 {int((1 - alpha) * 100)}% 门槛{crit_txt}。"
         "结论：当前证据不足以区分信号与搜索噪声，建议扩大样本区间或收紧搜索空间。"
     )
 

@@ -172,12 +172,17 @@ def _nanmean(values: Any) -> float:
 
 
 def _py(o: Any) -> Any:
-    """把 numpy 标量递归转成 Python 原生类型（供 JSON / UI 消费）。"""
+    """把 numpy 标量递归转成 Python 原生类型（供 JSON / UI 消费）。
+
+    原生 ``float`` 也要过一遍：数据类字段默认值就是 Python ``float('nan')``
+    （区间诊断的末段没有下一段可比），漏掉它们会让 ``json.dumps`` 吐出裸 ``NaN``
+    —— 那不是合法 JSON，界面侧反序列化会直接失败。
+    """
     if isinstance(o, dict):
         return {k: _py(v) for k, v in o.items()}
     if isinstance(o, (list, tuple)):
         return [_py(v) for v in o]
-    if isinstance(o, np.floating):
+    if isinstance(o, (float, np.floating)):
         v = float(o)
         return None if not np.isfinite(v) else round(v, 6)
     if isinstance(o, np.integer):

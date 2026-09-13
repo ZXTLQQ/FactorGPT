@@ -7,6 +7,8 @@
 对外主入口：
 
 * :func:`load_market_panel`  —— 准备回测用的行情面板（优先走本地缓存，可离线）。
+* :func:`resolve_market_panel` —— 按数据源（缓存 / 离线 parquet / 在线 / 合成）取数，
+  支持显式股票代码，供界面「批量演化」的数据源开关与挖掘脚本共用。
 * :func:`compute_factor_matrix` —— 批量执行因子代码，产出对齐后的因子矩阵。
 * :func:`resolve_weights`    —— 五种权重方案（等权/质量/IC/ICIR/维度均衡/手动）。
 * :func:`analyze_system`     —— 一次性产出体系回测 + 相关性 + 主成分 + 衰减 + 分散化诊断
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 import os
 import pickle
+import re
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -61,6 +64,51 @@ _FALLBACK_SYMBOLS = [
     "300750", "600900", "601288", "000063", "600009", "601012", "002304", "600585",
     "601601", "600048", "000725", "600104", "601668", "603288",
 ]
+
+#: 挖掘取数的数据源标识。界面下拉与 :func:`resolve_market_panel` 共用这一份，
+#: 避免「界面写一套字符串、后端认另一套」的静默失配。
+MINING_DATA_SOURCES: Tuple[str, ...] = ("cache", "offline", "online", "synthetic")
+
+#: 交易所前缀（用于把 SH600519 归一成 600519）
+_SYMBOL_PREFIXES = ("SH", "SZ", "BJ")
+
+
+def bare_symbol(code: Any) -> str:
+    """把常见写法的股票代码归一成 6 位裸代码。
+
+    ``600519`` / ``SH600519`` / ``600519.SH`` / `` 600519 `` → ``600519``。
+    数据源之间的代码写法并不统一（离线 parquet 是裸代码、legacy 抓取带前缀），
+    用户输入的写法更随意，所以比较前一律先归一。
+    """
+    text = str(code).strip().upper()
+    if "." in text:                                        # 600519.SH / 000001.SZ
+        text = text.split(".", 1)[0]
+    if len(text) == 8 and text.startswith(_SYMBOL_PREFIXES):  # SH600519
+        text = text[2:]
+    return text
+
+
+def parse_symbols(value: Any) -> List[str]:
+    """解析用户输入的代码串，去重保序。
+
+    ``"600519, 000001 600036.SH"`` → ``["600519", "000001", "600036"]``。
+    逗号 / 顿号 / 分号 / 空格 / 竖线 / 斜杠都算分隔符（中文输入法常带全角标点）；
+    已经是列表/元组的输入按原顺序归一。
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw = re.split(r"[,，;；、\s|/]+", value)
+    elif isinstance(value, (list, tuple, set)):
+        raw = [str(x) for x in value]
+    else:
+        raw = [str(value)]
+    out: List[str] = []
+    for item in raw:
+        sym = bare_symbol(item)
+        if sym and sym not in out:
+            out.append(sym)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -121,39 +169,121 @@ def load_market_panel(
     cache_dir: Optional[str] = None,
     prefer_cache: bool = True,
     force_refresh: bool = False,
+    symbols: Any = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """准备因子体系回测所需的行情长表。
 
     取数优先级：本地整矿缓存 ``real_ore.pkl`` → 在线拉取（AKShare/新浪/Tushare）
     → 合成数据兜底。始终返回一个可用的面板，保证离线环境下界面不会白屏。
 
+    ``symbols`` 给出时只取这些代码：缓存里按代码筛、在线**直接按代码取**
+    （不是"先取整池再截断"——那样指定的股票大概率在截断处被丢掉）。
+
     Returns:
         ``(kline, meta)``；kline 列含 date/symbol/open/high/low/close/volume/amount/pct_chg，
         meta 说明数据来源、股票数、日期范围。
     """
     cache_dir = cache_dir or _DEFAULT_CACHE
+    wanted = parse_symbols(symbols)
 
     if prefer_cache and not force_refresh:
-        kline = _load_from_ore_cache(cache_dir)
+        kline = _cached_panel(cache_dir, wanted, n_symbols, days)
         if kline is not None and not kline.empty:
-            kline = _limit_panel(kline, n_symbols, days)
             return kline, _panel_meta(kline, "本地整矿缓存 real_ore.pkl")
 
-    kline = _load_online(n_symbols, days, index_code)
+    kline = _load_online(n_symbols, days, index_code, symbols=wanted)
     if kline is not None and not kline.empty:
-        return kline, _panel_meta(kline, f"在线行情（{index_code} 成分）")
+        label = "在线行情（指定代码）" if wanted else f"在线行情（{index_code} 成分）"
+        return kline, _panel_meta(kline, label)
 
     if not prefer_cache:  # 在线失败后仍尝试一次缓存
-        kline = _load_from_ore_cache(cache_dir)
+        kline = _cached_panel(cache_dir, wanted, n_symbols, days)
         if kline is not None and not kline.empty:
-            kline = _limit_panel(kline, n_symbols, days)
             return kline, _panel_meta(kline, "本地整矿缓存 real_ore.pkl（在线回退）")
 
     kline = build_synthetic_panel(n_symbols=min(n_symbols, 40), days=min(days, 300))
     return kline, _panel_meta(kline, "合成数据（离线兜底，仅供流程演示）")
 
 
+def resolve_market_panel(
+    source: str = "cache",
+    symbols: Any = None,
+    n_symbols: int = 60,
+    days: int = 400,
+    index_code: str = "000906",
+    cache_dir: Optional[str] = None,
+    seed: int = 42,
+    offline_dir: Optional[str] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """按指定来源解析挖掘用的行情长表（界面「批量演化」的数据源开关）。
+
+    * ``cache``     —— 优先本地整矿缓存 ``real_ore.pkl``；缺失时按
+      :func:`load_market_panel` 的既有优先级退到在线、再退合成；
+    * ``offline``   —— 直接读仓库内置的 ``data/offline/`` parquet，**零联网**；
+    * ``online``    —— 跳过缓存走在线源（按 ``config.data.source``：akshare / neodata）；
+    * ``synthetic`` —— 纯合成面板，同参同种子可复现，只用于流程验证。
+
+    显式给出 ``symbols`` 时只在这些代码上取数（``600519`` / ``SH600519`` / ``600519.SH``
+    都认）。**一个都没取到就返回空表**并把缺失代码写进 ``meta['message']``——绝不拿
+    合成占位数据冒充用户要的股票；只取到一部分时保留取到的，把缺的代码列在 message 里。
+
+    Returns:
+        ``(kline, meta)``；``meta`` 至少含 source / n_symbols / n_dates / period，
+        取数有出入时额外带 ``missing``（缺失代码）与 ``message``（给界面直接展示的说明）。
+    """
+    key = str(source or "cache").strip().lower()
+    if key not in MINING_DATA_SOURCES:
+        raise ValueError(f"未知数据源 {source!r}，可选：{list(MINING_DATA_SOURCES)}")
+    wanted = parse_symbols(symbols)
+    cache_dir = cache_dir or _DEFAULT_CACHE
+
+    if key == "synthetic":
+        kline = build_synthetic_panel(n_symbols=max(int(n_symbols), 1), days=int(days),
+                                      seed=int(seed))
+        meta = _panel_meta(kline, "合成面板（离线，仅供流程验证）")
+        if wanted:
+            meta["message"] = (f"合成面板的标的是 S00000… 占位代码，已忽略指定的 "
+                               f"{len(wanted)} 个真实代码：{', '.join(wanted)}")
+        return kline, meta
+
+    if key == "offline":
+        label = "离线 Parquet（指定代码）" if wanted else f"离线 Parquet（{index_code} 成分）"
+        kline, note = _load_offline(wanted, n_symbols, days, index_code, offline_dir)
+        if kline.empty:
+            meta = dict(_panel_meta(kline, label), message=note)
+            if wanted:
+                meta.update(requested=wanted, missing=wanted)
+            return kline, meta
+        meta = _panel_meta(kline, label)
+    else:
+        kline, meta = load_market_panel(
+            n_symbols=int(n_symbols), days=int(days), index_code=index_code,
+            cache_dir=cache_dir, prefer_cache=(key == "cache"), symbols=wanted)
+        if not wanted:
+            return kline, meta
+        label = meta.get("source", key)
+
+    have = set(kline["symbol"].map(bare_symbol)) if not kline.empty else set()
+    missing = [s for s in wanted if s not in have]
+    if wanted and missing == wanted:
+        # 一个指定代码都没取到：此刻手上的面板只可能是兜底合成数据（占位代码），
+        # 拿它冒充用户点名的股票是最不能接受的失败方式 —— 直接空表 + 说明。
+        empty = kline.iloc[0:0]
+        return empty, dict(
+            _panel_meta(empty, label), requested=wanted, missing=missing,
+            message=(f"指定代码一个都没取到：{', '.join(missing)}。这次实际拿到的面板是"
+                     f"「{label}」，它里面没有这些标的——核对代码，或把数据源换成"
+                     f"「离线 Parquet」/「合成面板」"))
+    if missing:
+        meta["missing"] = missing
+        meta["message"] = f"{label} 里没取到以下代码，已忽略：{', '.join(missing)}"
+    return kline, meta
+
+
 def _panel_meta(kline: pd.DataFrame, source: str) -> Dict[str, Any]:
+    if kline is None or kline.empty:
+        return {"source": source, "n_symbols": 0, "n_dates": 0,
+                "start": "", "end": "", "period": ""}
     dates = sorted(kline["date"].astype(str).unique())
     return {
         "source": source,
@@ -163,6 +293,67 @@ def _panel_meta(kline: pd.DataFrame, source: str) -> Dict[str, Any]:
         "end": dates[-1] if dates else "",
         "period": f"{dates[0]} ~ {dates[-1]}" if dates else "",
     }
+
+
+def _cached_panel(cache_dir: str, wanted: List[str], n_symbols: int,
+                  days: int) -> Optional[pd.DataFrame]:
+    """整矿缓存 → （可选）代码筛选 → 规模裁剪；缓存缺失或指定代码全不在缓存里返回 None。
+
+    指定代码时不再按 ``n_symbols`` 截断：用户点名要的股票必须留下，
+    否则"取前 N 只"会把它们直接裁掉。
+    """
+    kline = _load_from_ore_cache(cache_dir)
+    if kline is None or kline.empty:
+        return None
+    if wanted:
+        kline = kline[kline["symbol"].map(bare_symbol).isin(set(wanted))]
+        if kline.empty:
+            return None
+    return _limit_panel(kline, 0 if wanted else n_symbols, days)
+
+
+def _load_offline(wanted: List[str], n_symbols: int, days: int, index_code: str,
+                  offline_dir: Optional[str] = None) -> Tuple[pd.DataFrame, str]:
+    """从仓库内置的离线 parquet 取数（不触网），返回 ``(kline, 失败说明)``。
+
+    离线数据集只导出 ``csi800`` 的日K分片（见 ``data/offline/meta.json``），
+    所以 bars 固定按 csi800 打开，``index_code`` 只用来挑成分股文件。
+    """
+    try:
+        from data.offline_adapter import OfflineDataSource
+    except Exception:
+        try:
+            from src.data.offline_adapter import OfflineDataSource  # type: ignore
+        except Exception:
+            return pd.DataFrame(), "离线数据适配器不可用（data.offline_adapter 导入失败）"
+    cfg: Dict[str, Any] = {"data": {"offline": {"index": "csi800"}}}
+    if offline_dir:
+        cfg["data"]["offline"]["dir"] = str(offline_dir)
+    try:
+        ds = OfflineDataSource(cfg)
+        if wanted:
+            codes = list(wanted)
+        else:
+            codes = [str(s).zfill(6) for s in (ds.get_index_constituents(index_code) or [])]
+            codes = codes[:n_symbols] if n_symbols else codes
+        if not codes:
+            return pd.DataFrame(), f"离线数据没有 {index_code} 的成分股清单"
+        end = datetime.now()
+        start = end - timedelta(days=int(days * 1.6) + 60)
+        kline = ds.get_daily_kline(codes, start=start.strftime("%Y-%m-%d"),
+                                   end=end.strftime("%Y-%m-%d"))
+        if kline is None or kline.empty:
+            info = (ds.last_fetch_info or {}).get("message", "")
+            return pd.DataFrame(), (f"离线数据在 {start:%Y-%m-%d} ~ {end:%Y-%m-%d} 区间没有"
+                                    f" {index_code} 成分股行情（{info}）")
+        kline = _ensure_columns(kline)
+        if wanted:
+            kline = kline[kline["symbol"].map(bare_symbol).isin(set(wanted))]
+            if kline.empty:
+                return pd.DataFrame(), f"离线数据里没有这些代码：{', '.join(wanted)}"
+        return _limit_panel(kline, 0 if wanted else n_symbols, days), ""
+    except Exception as exc:  # 离线数据损坏/缺文件：报出来，不要静默给空表
+        return pd.DataFrame(), f"离线数据读取失败：{type(exc).__name__}: {exc}"
 
 
 def _limit_panel(kline: pd.DataFrame, n_symbols: int, days: int) -> pd.DataFrame:
@@ -216,7 +407,10 @@ def _load_from_ore_cache(cache_dir: str) -> Optional[pd.DataFrame]:
         return None
 
 
-def _load_online(n_symbols: int, days: int, index_code: str) -> Optional[pd.DataFrame]:
+def _load_online(n_symbols: int, days: int, index_code: str,
+                 symbols: Any = None) -> Optional[pd.DataFrame]:
+    """在线取数；``symbols`` 给出时按代码直取，否则取指数成分前 ``n_symbols`` 只。"""
+    wanted = parse_symbols(symbols)
     try:
         from data.neo_adapter import get_data_source
     except Exception:
@@ -227,18 +421,27 @@ def _load_online(n_symbols: int, days: int, index_code: str) -> Optional[pd.Data
     try:
         # 数据源走工厂：默认 legacy（本地自爬方案保留），config.yaml 设 data.source=neodata 时切稳定源
         fetcher = get_data_source()
-        symbols = fetcher.get_index_constituents(index_code) or []
-        symbols = [str(s).zfill(6) for s in symbols][:n_symbols]
-        if not symbols:
-            symbols = _FALLBACK_SYMBOLS[:n_symbols]
+        if wanted:
+            codes = list(wanted)
+        else:
+            codes = [str(s).zfill(6)
+                     for s in (fetcher.get_index_constituents(index_code) or [])][:n_symbols]
+            if not codes:
+                codes = _FALLBACK_SYMBOLS[:n_symbols]
         end = datetime.now()
         start = end - timedelta(days=int(days * 1.6) + 60)
         kline = fetcher.get_daily_kline(
-            symbols, start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d")
+            codes, start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d")
         )
         if kline is None or kline.empty:
             return None
-        return _limit_panel(_ensure_columns(kline), n_symbols, days)
+        kline = _ensure_columns(kline)
+        if wanted:
+            # 各数据源返回的代码写法不一（600519 / SH600519），按归一后的代码筛
+            kline = kline[kline["symbol"].map(bare_symbol).isin(set(wanted))]
+            if kline.empty:
+                return None
+        return _limit_panel(kline, 0 if wanted else n_symbols, days)
     except Exception:
         return None
 

@@ -42,6 +42,8 @@ from agent.integration import (
     query_to_factor_suggestions, build_enriched_knowledge,
     mass_produce_from_library, analyze_unstructured_file,
 )
+from engine import factor_system as FS  # noqa: E402
+from engine.genetic_enhanced import EnhancedFactorEvolver  # noqa: E402
 from ui.methodologist import run_methodologist, get_factor_name_from_report  # noqa: E402
 from ui.market_hub import render_market_hub  # noqa: E402
 from ui import nav, theme  # noqa: E402
@@ -1629,39 +1631,462 @@ def render_traditional_factors():
 
 
 # ----------------------------------------------------------------------
-# 页面：遗传规划因子挖掘
+# 页面：遗传规划因子挖掘（演化 / 分层多尺度 / 显著性检验 / 选股域对照）
 # ----------------------------------------------------------------------
-def render_gp_mining():
-    st.caption("因子簇驱动演化 · 岛屿模型 · 事件窗口感知 · 批量海量生产")
+_SIG_COLS = {"factor": "候选", "n": "期数", "ic": "IC", "icir": "ICIR",
+             "t_stat": "t 值", "p_boot": "bootstrap p", "p_neff": "有效样本量 p",
+             "p_selection": "选择校正 p", "q_value": "BH q 值",
+             "ic_threshold": "|IC| 门槛", "passed": "是否通过",
+             "enough_samples": "样本量达标"}
 
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        generations = st.slider("演化代数", 3, 20, 8)
-        pop_size = st.slider("每簇种群大小", 10, 80, 30)
-    with col2:
-        top_k = st.slider("保留顶级因子数", 5, 50, 15)
-        auto_save = st.checkbox("自动入库", value=True)
 
-    run_btn = st.button("🧬 启动 GP 演化", type="primary")
+def _pct(v: Any, nd: int = 1) -> str:
+    """百分比渲染（NaN → —），界面上不出现 nan。"""
+    try:
+        return "—" if v is None or pd.isna(v) else f"{float(v) * 100:.{nd}f}%"
+    except (TypeError, ValueError):
+        return "—"
 
-    if run_btn:
-        library = get_library()
-        from src.engine.genetic_enhanced import EnhancedFactorEvolver
 
-        st.info("GP 挖掘需要行情数据。请在下方输入股票代码或选择缓存数据。")
-        st.caption("提示：若当前环境有 real_ore.pkl 缓存，将自动使用。")
+def _num(v: Any, nd: int = 2) -> str:
+    """数值渲染（NaN → —）。"""
+    try:
+        return "—" if v is None or pd.isna(v) else f"{float(v):.{nd}f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _panel_controls(prefix: str, default_symbols: int = 60, default_days: int = 400):
+    """三个验收标签页共用的面板规模控件（合成面板：纯本地、同参可复现）。"""
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        n_symbols = st.number_input("标的数", 20, 300, default_symbols, 10,
+                                    key=f"{prefix}_sym")
+    with c2:
+        n_days = st.number_input("交易日数", 200, 1500, default_days, 50,
+                                 key=f"{prefix}_days")
+    with c3:
+        seed = st.number_input("随机种子", 0, 9999, 42, 1, key=f"{prefix}_seed")
+    return int(n_symbols), int(n_days), int(seed)
+
+
+@st.cache_resource(show_spinner=False)
+def _mining_panel(n_symbols: int, n_days: int, seed: int):
+    """离线合成面板 + 风险基础字段。
+
+    用 ``cache_resource``（不做序列化）按参数复用面板：挖掘类面板动辄几十万行，
+    每次控件交互都重建会让页面明显发卡；同参同种子结果可复现。
+    """
+    from mining import panel as PN
+    from mining import risk as R
+
+    pn = PN.PanelData.synthetic(n_symbols=n_symbols, n_days=n_days, seed=seed)
+    R.install_risk_fields(pn)
+    return pn
+
+
+def _library_pool(panel: Any) -> Dict[str, Any]:
+    """风险基础因子池（增量 IC / 中性化的对照基准）。"""
+    return {k: panel.field(k) for k in
+            ("size", "momentum", "liquidity", "reversal", "resid_vol")
+            if k in panel.fields}
+
+
+#: 批量演化页的数据源选项（键与 engine.factor_system.resolve_market_panel 共用一份，
+#: 避免界面写一套字符串、后端认另一套）
+_GP_DATA_LABELS = {
+    "cache": "本地整矿缓存 real_ore.pkl（离线）",
+    "offline": "离线 Parquet data/offline（零联网）",
+    "online": "在线行情（联网，按 config 数据源）",
+    "synthetic": "合成面板（离线，仅流程验证）",
+}
+
+
+def _gp_evolve_data_controls() -> Dict[str, Any]:
+    """批量演化标签页的数据源控件（数据源 / 股票代码 / 规模 / 指数池）。"""
+    d1, d2, d3, d4 = st.columns([1.6, 1, 1, 1])
+    with d1:
+        source = st.selectbox("数据源", list(FS.MINING_DATA_SOURCES), key="gp_evo_src",
+                              format_func=lambda k: _GP_DATA_LABELS.get(k, k),
+                              help="缓存 / 离线 Parquet / 合成都不触网，可直接跑；在线源需要网络。")
+    with d2:
+        n_symbols = st.number_input("标的数上限", 20, 800, 60, 20, key="gp_evo_nsym",
+                                    help="留空代码时按数据完整度取前 N 只；指定了代码则只取这些代码。")
+    with d3:
+        n_days = st.number_input("交易日数上限", 200, 1500, 400, 50, key="gp_evo_ndays")
+    with d4:
+        index_code = st.text_input("指数池", "000906", key="gp_evo_pool",
+                                   help="000300 / 000905 / 000906 / 000852；缓存与合成忽略。")
+    codes_text = st.text_input(
+        "股票代码（可选）", key="gp_evo_codes",
+        placeholder="留空取整池；多个用逗号或空格分隔，例如 600519, 000001, 600036.SH",
+        help="填了就只在这些代码上挖掘：缓存按代码筛，离线 / 在线直接按代码取。"
+             "一个都取不到会直接报错，不会静默换成别的股票。")
+    return {"source": source, "codes": codes_text, "n_symbols": int(n_symbols),
+            "n_days": int(n_days), "index_code": index_code}
+
+
+def _gp_resolve_kline(params: Dict[str, Any], seed: int):
+    """按控件选择取行情，返回 ``(kline, meta)``；meta 里带数据出处与取数说明。"""
+    return FS.resolve_market_panel(
+        source=params["source"], symbols=params["codes"],
+        n_symbols=params["n_symbols"], days=params["n_days"],
+        index_code=params["index_code"], seed=int(seed))
+
+
+def _gp_evolve_tab():
+    st.markdown("**因子簇驱动演化**：以因子库五大类因子为种子分簇独立演化（岛屿模型 + 周期迁移），"
+                "每个候选同时给出训练段 IC、样本外 IC 与过拟合缺口——只有两段都成立的个体"
+                "才值得入库。")
+
+    st.markdown("**行情数据**")
+    params = _gp_evolve_data_controls()
+
+    g1, g2, g3, g4 = st.columns(4)
+    with g1:
+        generations = st.slider("演化代数", 3, 20, 8, key="gp_evo_gen")
+    with g2:
+        pop_size = st.slider("每簇种群大小", 10, 80, 30, key="gp_evo_pop")
+    with g3:
+        top_k = st.slider("保留顶级因子数", 5, 50, 15, key="gp_evo_topk")
+    with g4:
+        seed = st.number_input("随机种子", 0, 9999, 42, 1, key="gp_evo_seed")
+    auto_save = st.checkbox("自动入库（写入当前因子库，质量分按训练 IC 折算）",
+                            value=True, key="gp_evo_save")
+
+    if st.button("🧬 启动 GP 演化", type="primary", key="gp_evo_run"):
+        kline, meta = _gp_resolve_kline(params, seed)
+        note = meta.get("message") or ""
+        if kline is None or kline.empty:
+            st.session_state["gp_evo_out"] = {
+                "error": note or "所选数据源没有返回任何行情。", "meta": meta}
+        else:
+            with st.spinner(f"演化中：{meta.get('n_symbols')} 只 × {meta.get('n_dates')} 日"
+                            f"（{meta.get('period')}），{int(generations)} 代 × "
+                            f"每簇 {int(pop_size)} 个体，约需数十秒..."):
+                evolver = EnhancedFactorEvolver(kline, library=get_library(), seed=int(seed))
+                results = evolver.evolve_clusters(
+                    generations=int(generations), pop_per_cluster=int(pop_size),
+                    top_k=int(top_k), auto_save=bool(auto_save))
+            # 结果区只认这份载荷：入库开关、数据出处都记"当时"的值，不随控件回看而变
+            st.session_state["gp_evo_out"] = {
+                "results": results,
+                "history": list(evolver.history or []),
+                "migrations": len(evolver.migrations or []),
+                "auto_save": bool(auto_save),
+                "meta": meta,
+                "message": note,
+            }
+
+    _gp_evolve_results()
 
     st.divider()
+    _gp_mass_produce(params, seed)
 
-    # 批量生产一键盘
+
+def _gp_evolve_results():
+    """渲染演化结果（数据出处 / 候选人表 / 逐代收敛 / 代码）。
+
+    只读上一次运行的载荷（``gp_evo_out``），不再回读控件：控件改了、数据源换了，
+    上一轮结果仍然按"当时"的口径显示，不会被下一位访客的改动悄悄改写。
+    """
+    out = st.session_state.get("gp_evo_out")
+    if not out:
+        st.info("选好数据源后点「启动 GP 演化」。缓存与离线 Parquet 都不触网，可直接跑；"
+                "在线源需要网络。")
+        return
+    if out.get("error"):
+        st.error(out["error"])
+        return
+    if out.get("message"):
+        st.warning(out["message"])
+
+    meta = out.get("meta") or {}
+    results = out["results"]
+    st.caption(f"数据来源：{meta.get('source')}｜{meta.get('n_symbols')} 只 × "
+               f"{meta.get('n_dates')} 日（{meta.get('period')}）｜"
+               f"岛屿迁移 {out['migrations']} 次｜训练 / 样本外按时间 8:2 切分")
+    if not results:
+        stats = get_library().statistics()
+        st.warning(f"本轮没有产出候选（因子库 {stats['total']} 个因子）。"
+                   f"每个分类至少要有 2 个种子因子才会启动岛屿，"
+                   f"当前分布：{stats.get('by_category')}")
+        return
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("候选因子数", len(results))
+    m2.metric("最佳训练 IC", _num(max(r["train_ic"] for r in results), 4))
+    m3.metric("最佳样本外 IC", _num(max(r["test_ic"] for r in results), 4))
+    m4.metric("过拟合缺口中位数", _num(pd.Series([r["overfit_gap"] for r in results]).median(), 4))
+    if out.get("auto_save"):
+        st.caption("候选已写入当前因子库（「因子库」页可直接按 quality_score 排序查看）。")
+
+    st.dataframe(pd.DataFrame([{
+        "名称": r["name"], "簇": r["cluster"], "类别": r["category"],
+        "训练 IC": r["train_ic"], "样本外 IC": r["test_ic"],
+        "过拟合缺口": r["overfit_gap"], "适应度": r["fitness"],
+    } for r in results]), width="stretch", hide_index=True)
+
+    hist = pd.DataFrame(out["history"])
+    if not hist.empty and "gen" in hist.columns:
+        cur = hist.pivot_table(index="gen", columns="island", values="best_ic", aggfunc="max")
+        st.line_chart(cur, height=220)
+        st.caption("各岛屿逐代最优**训练** IC（训练段打分，样本外只用于事后核对，"
+                   "不参与选择——否则样本外就变成了训练集）。")
+
+    with st.expander(f"查看候选因子代码（{len(results)} 个）"):
+        for r in results:
+            st.markdown(f"**{r['name']}** · 簇 {r['cluster']} · 训练 IC {r['train_ic']} / "
+                        f"样本外 {r['test_ic']} / 缺口 {r['overfit_gap']}")
+            st.code(r["code"], language="python")
+
+
+def _gp_mass_produce(params: Dict[str, Any], seed: int):
+    """一键批量生产（参数扩增 → GP 演化 → 质量筛选 → 去重）。"""
     st.subheader("🏭 一键批量生产")
     st.caption("组合参数扩增 + GP演化 + 质量筛选 + 去重融合，全流程自动化")
-    mass_btn = st.button("🚀 开始批量生产", type="primary", use_container_width=True)
-    if mass_btn:
+    if st.button("🚀 开始批量生产", type="primary", width="stretch", key="gp_evo_mass"):
+        kline, meta = _gp_resolve_kline(params, seed)
+        if kline is None or kline.empty:
+            st.error(meta.get("message") or "所选数据源没有返回任何行情，批量生产已中止。")
+            return
         with st.spinner("正在批量生产因子（参数扩增 → GP 演化 → 质量筛选 → 去重入库）..."):
-            result = mass_produce_from_library(kline=None, generations=6, windows=[5, 10, 20, 30, 60])
-            st.success(f"生产完成：{result['total_in_library']} 个因子在库中")
+            try:
+                result = mass_produce_from_library(kline=kline, generations=6,
+                                                   windows=[5, 10, 20, 30, 60])
+            except Exception as exc:  # 单点失败不该把整个页面打崩
+                st.error(f"批量生产失败：{type(exc).__name__}: {exc}")
+                return
+            st.success(f"生产完成：{result['total_in_library']} 个因子在库中"
+                       f"（行情来源：{meta.get('source')}，"
+                       f"{meta.get('n_symbols')} 只 × {meta.get('n_dates')} 日）")
             st.json(result["stats"])
+
+
+def _gp_multiscale_tab():
+    st.markdown("**分层多尺度挖掘**：先在粗网格（月频）上演化，按 Hausdorff 暴露漂移"
+                "与 profile 均方差诊断出**失真区间**，再只对这些区间做细尺度（日频）"
+                "加密，粗尺度解作为细尺度的终端代价——预算花在被诊断出问题的区间上。")
+    n_symbols, n_days, seed = _panel_controls("gp_ms")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        horizon = st.number_input("前瞻期", 1, 20, 5, key="gp_ms_h")
+    with c2:
+        n_intervals = st.slider("区间数", 2, 12, 6, key="gp_ms_ni")
+    with c3:
+        n_select = st.slider("加密区间数", 1, 4, 2, key="gp_ms_ns")
+    with c4:
+        terminal = st.slider("粗尺度终端代价权重", 0.0, 1.0, 0.35, 0.05, key="gp_ms_tw")
+
+    if st.button("🪜 运行分层多尺度挖掘", type="primary", key="gp_ms_run"):
+        from mining import triage as TR
+
+        with st.spinner("粗尺度演化 → 区间诊断 → 局部加密 ..."):
+            st.session_state["gp_ms_out"] = TR.multiscale_mine(
+                _mining_panel(n_symbols, n_days, seed), horizon=int(horizon),
+                n_intervals=int(n_intervals), n_select=int(n_select),
+                seed=int(seed), terminal_weight=float(terminal))
+    out = st.session_state.get("gp_ms_out")
+    if not out:
+        st.info("设置参数后点击运行。区间数与加密数是预算的两个手轮，越小越快。")
+        return
+
+    res = out.get("resource") or {}
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("评估预算节省", _pct(res.get("eval_saving")))
+    m2.metric("相对暴力细网格", f"{_num(res.get('speedup'))}x")
+    m3.metric("真实去重求值次数", _num(out.get("total_evals"), 0))
+    m4.metric("候选因子数", len(out.get("candidates") or []))
+    st.caption(f"粗 {out.get('coarse_freq')} / 细 {out.get('fine_freq')} · "
+               f"{_num(res.get('selected_intervals'), 0)}/{_num(res.get('total_intervals'), 0)} "
+               f"个区间被选中加密 · 暴力细网格基准 "
+               f"{_num(res.get('brute_force_evals'), 0)} 次评估 · 训练/样本外 "
+               f"{_num(out.get('train_dates'), 0)}/{_num(out.get('test_dates'), 0)} 个截面")
+
+    rows = [{"区间": s.get("label"), "期数": s.get("n_dates"), "粗尺度 IC": s.get("ic"),
+             "d_H": s.get("d_h"), "MSD": s.get("msd"), "得分": s.get("score"),
+             "选中加密": "是" if s.get("selected") else "否",
+             "加密后 IC": s.get("ic_refined")}
+            for s in (out.get("intervals") or ())]
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    st.caption("d_H = 相邻区间**因子暴露分布**的漂移；MSD = **暴露→收益 profile** 的"
+               "均方差。两者都小说明粗尺度解在该段仍然可信，不需要加密——只加密被判为"
+               "失真的少数区间，是这套方法在预算上的全部意义。")
+
+    cands = out.get("candidates") or []
+    if cands:
+        st.markdown("**候选因子**")
+        st.dataframe(pd.DataFrame([{
+            "区间": c.get("interval"), "家族": c.get("family"),
+            "细尺度 IC": c.get("ic_interval"), "全样本 IC": c.get("ic_full"),
+            "训练 IC": c.get("ic_train"), "样本外 IC": c.get("ic_test"),
+            "适应度": c.get("fitness")} for c in cands]),
+            hide_index=True, width="stretch")
+        for i, c in enumerate(cands, 1):
+            with st.expander(f"候选 {i} 代码 · {c.get('interval')} · {c.get('family')}"):
+                st.code(c.get("code") or "", language="python")
+    st.caption("两个预算口径分开放：**评估次数**按资源抽象计数（个体数 × 评估位置数），"
+               "而求值对整块面板向量化（滚动窗口需要完整预热历史），所以"
+               "**墙钟时间的节省小于评估次数的节省**。样本外段只在最后复核，"
+               "区间选择与演化全部只用训练段。")
+
+
+def _gp_significance_tab():
+    st.markdown("**统计显著性检验**：搜索出来的候选要同时过四道门槛——样本量、平稳块 "
+                "bootstrap 的 p、有效样本量口径的 p、选择校正 + BH FDR；多重性的分母是"
+                "**本次搜索实际评估过的表达式数**，不是候选个数。")
+    n_symbols, n_days, seed = _panel_controls("gp_sig", 60, 400)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        max_expr = st.number_input("搜索评估上限", 20, 4000, 300, 20, key="gp_sig_me")
+    with c2:
+        max_seconds = st.number_input("搜索时间上限(s)", 2.0, 180.0, 15.0, 1.0,
+                                      key="gp_sig_ms")
+    with c3:
+        top_k = st.number_input("参与检验的候选数", 3, 30, 8, 1, key="gp_sig_k")
+    with c4:
+        n_boot = st.number_input("bootstrap 重采样次数", 100, 5000, 500, 100,
+                                 key="gp_sig_boot")
+    alpha = st.slider("显著性水平 α", 0.01, 0.20, 0.05, 0.01, key="gp_sig_alpha")
+
+    b1, b2 = st.columns(2)
+    run = b1.button("🔍 搜索 + 检验", type="primary", key="gp_sig_run")
+    recheck = b2.button("🎯 沿用上次搜索，只重跑检验", key="gp_sig_recheck")
+    if run:
+        from mining import gridminer as GM
+        from mining import triage as TR
+
+        panel = _mining_panel(n_symbols, n_days, seed)
+        cfg = GM.SearchConfig(horizon=5, max_layers=2, width=10,
+                              max_expr=int(max_expr), max_seconds=float(max_seconds),
+                              min_ic=0.02, top_k=int(top_k),
+                              neutral_controls=("size",))
+        with st.spinner("算子网格搜索 ..."):
+            search = GM.mine(panel, config=cfg, pool=_library_pool(panel))
+        with st.spinner("平稳块 bootstrap + 选择校正 + BH FDR ..."):
+            sig = TR.significance_for_search(search, top_k=int(top_k),
+                                             alpha=float(alpha), n_boot=int(n_boot),
+                                             seed=int(seed))
+        st.session_state["gp_sig_search"] = search
+        st.session_state["gp_sig_out"] = sig
+    elif recheck:
+        from mining import triage as TR
+
+        search = st.session_state.get("gp_sig_search")
+        if search is None:
+            st.warning("还没有搜索结果，先点「搜索 + 检验」。")
+        else:
+            with st.spinner("沿用上次搜索，重跑检验 ..."):
+                st.session_state["gp_sig_out"] = TR.significance_for_search(
+                    search, top_k=int(top_k), alpha=float(alpha),
+                    n_boot=int(n_boot), seed=int(seed))
+
+    sig = st.session_state.get("gp_sig_out")
+    if not sig:
+        st.info("点击「搜索 + 检验」：先跑一次受预算约束的算子网格搜索，"
+                "再对搜索自己选出来的候选做显著性判定。")
+        return
+    summ = sig.get("summary") or {}
+    sel = summ.get("selection") or {}
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("参与检验候选", _num(sig.get("n_candidates"), 0))
+    m2.metric("搜索评估次数（多重性分母）", _num(sig.get("n_trials"), 0))
+    m3.metric("通过四道门槛", _num(summ.get("passed"), 0))
+    m4.metric("选择校正 |IC| 门槛", _num(sel.get("ic_crit"), 4))
+    if sig.get("warning"):
+        st.warning(sig["warning"])
+    else:
+        st.success("至少一个候选通过四道门槛。")
+    table = sig.get("table")
+    if table is not None and len(table):
+        st.dataframe(table.rename(columns=_SIG_COLS), hide_index=True,
+                     width="stretch")
+    st.caption("第 2、3 道门槛看着重复，其实独立：IC 序列自相关强时 bootstrap 零分布"
+               "偏窄（名义 5% 实际可达 10%+），而有效样本量口径把这个偏差直接算进"
+               "自由度里。选择校正的门槛由**候选之间的离散度**给出，不用因子自身的 σ，"
+               "否则等于用它自己判它自己。")
+
+
+def _gp_domain_tab():
+    st.markdown("**选股域对照**：同一个因子在宽 / 中 / 严三档域下的 IC、ICIR、覆盖率与"
+                "换手。三档按**面板自身成交额分位**切（20% / 50% / 80%），"
+                "历史长度门槛随档位递增（20 / 60 / 120 日）。")
+    n_symbols, n_days, seed = _panel_controls("gp_dom", 80, 500)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        factor_name = st.selectbox("因子（面板字段）",
+                                   ["momentum", "reversal", "liquidity", "size",
+                                    "resid_vol"], key="gp_dom_f")
+    with c2:
+        horizon = st.number_input("前瞻期", 1, 20, 5, key="gp_dom_h")
+    with c3:
+        top_n = st.number_input("每域建仓数", 5, 200, 50, 5, key="gp_dom_n")
+
+    if st.button("🌐 运行选股域对照", type="primary", key="gp_dom_run"):
+        from mining import triage as TR
+
+        panel = _mining_panel(n_symbols, n_days, seed)
+        if factor_name not in panel.fields:
+            st.error(f"面板没有字段 {factor_name}。")
+            return
+        specs = TR.quantile_domains(panel, top_n=int(top_n))
+        with st.spinner("逐日打可交易标签，逐域评估 ..."):
+            st.session_state["gp_dom_out"] = {
+                "factor": factor_name,
+                "specs": [s.as_dict() for s in specs],
+                "domains": TR.domain_check(panel, panel.field(factor_name),
+                                           specs=specs, horizon=int(horizon),
+                                           top_n=int(top_n)),
+                "universe": TR.universe_check(panel, spec=specs[1],
+                                              horizon=int(horizon),
+                                              keep_flags=False),
+            }
+    out = st.session_state.get("gp_dom_out")
+    if not out:
+        st.info("选择因子后点击运行。域不是越严越好：覆盖 30 只与覆盖 800 只是两个产品。")
+        return
+
+    uni = out.get("universe") or {}
+    if uni.get("ok"):
+        u1, u2, u3, u4 = st.columns(4)
+        u1.metric("中域可交易占比", _pct((uni.get("coverage_pct") or 0) / 100))
+        u2.metric("中域日均可选", _num(uni.get("avg_per_day")))
+        u3.metric("最少 / 最多可选",
+                  f"{_num(uni.get('min_per_day'), 0)} / {_num(uni.get('max_per_day'), 0)}")
+        u4.metric("零可选交易日", f"{_num(uni.get('empty_days'), 0)} 天")
+        reasons = "；".join(f"{k} {int(v)}" for k, v in (uni.get("reasons") or {}).items()
+                           if v)
+        st.caption(f"中域门槛：成交额 ≥ {_num((uni.get('spec') or {}).get('min_amount'), 0)} 元、"
+                   f"历史 ≥ {_num((uni.get('spec') or {}).get('min_history'), 0)} 日；"
+                   f"剔除原因分布：{reasons or '—'}")
+
+    st.dataframe(pd.DataFrame([{
+        "选股域": s.get("label"), "成交额下限": s.get("min_amount"),
+        "历史下限(日)": s.get("min_history"), "建仓数": s.get("top_n")}
+        for s in (out.get("specs") or ())]), hide_index=True, width="stretch")
+
+    dom = out.get("domains")
+    if dom is not None and len(dom):
+        st.dataframe(dom, hide_index=True, width="stretch")
+    st.caption(f"因子：{out.get('factor')} · 前瞻期 {int(horizon)} 日。"
+               "严域通常 IC 更高、同时换手也更高，而换手成本不体现在 IC 里，"
+               "只体现在净收益里；覆盖率决定了这个因子的容量上限。"
+               "这里只改选股域、不改因子，是为了看清「超额里有多少是域给的」。")
+
+
+def render_gp_mining():
+    st.caption("因子簇驱动演化 · 岛屿模型 · 事件窗口感知 · 批量海量生产 · 分层多尺度")
+    tab_evo, tab_ms, tab_sig, tab_dom = st.tabs(
+        ["🧬 批量演化", "🪜 分层多尺度挖掘", "🎯 统计显著性检验", "🌐 选股域对照"])
+    with tab_evo:
+        _gp_evolve_tab()
+    with tab_ms:
+        _gp_multiscale_tab()
+    with tab_sig:
+        _gp_significance_tab()
+    with tab_dom:
+        _gp_domain_tab()
 
 
 # ----------------------------------------------------------------------

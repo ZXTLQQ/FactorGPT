@@ -35,6 +35,10 @@ six-stage factor refinery pipeline, and a 62-factor built-in knowledge base.
   a point-in-time safe panel, a four-dimension evaluator (data quality / predictive power /
   stability / correlation) with turnover and expression-complexity penalties, factor risk &
   crowding gates, and a Markdown report that pins every number to its evidence.
+- **Acceptance gate over mined candidates** — stationary-block bootstrap significance with the
+  multiplicity correction charged against the *actual* number of expressions the search evaluated,
+  per-day tradability labels across three liquidity tiers, and hierarchical multi-scale mining;
+  each renders as its own report section and its own tab of the mining page.
 - **AI factor-system advisor** — one backtest is compressed into a single fact table that a
   local rule engine and an LLM both answer from; the model may not cite a number that is not
   in the table, and degrades to the rule answer when it fails instead of going blank.
