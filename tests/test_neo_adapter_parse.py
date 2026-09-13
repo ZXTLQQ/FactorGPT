@@ -12,6 +12,7 @@ import pandas as pd
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
+import data.neo_adapter as neo_adapter  # noqa: E402
 from data.neo_adapter import (  # noqa: E402
     NeoDataSource,
     _num,
@@ -207,10 +208,46 @@ def test_chunk_windows_budget_and_coverage() -> None:
     print("test_chunk_windows_budget_and_coverage OK")
 
 
+def test_map_kline_without_legacy_normalizer() -> None:
+    """legacy 归一化器不可用（CI 无 akshare -> DataFetcher 为 None）时仍须给出标准列。
+
+    列契约不能依赖 ``DataFetcher._normalize_kline`` 是否存在，否则本机（装了 akshare）与
+    CI 会走出两条不同代码路径，契约只在其中一条被验证。
+    """
+    saved = neo_adapter.DataFetcher
+    neo_adapter.DataFetcher = None
+    try:
+        df = _ds()._map_kline(_resp(("统一行情查询", KLINE_5D)), "600519")
+    finally:
+        neo_adapter.DataFetcher = saved
+    assert df is not None and len(df) == 5, "无归一化器时仍应解析出 5 行"
+    for col in ("date", "open", "high", "low", "close", "volume", "amount",
+                "pct_chg", "symbol"):
+        assert col in df.columns, f"缺少标准列 {col}"
+    assert df["symbol"].eq("600519").all() and df["close"].iloc[-1] == 1470.57
+    print("test_map_kline_without_legacy_normalizer OK")
+
+
 def test_skip_reason_reported_in_fallback() -> None:
-    """超预算时应给出「超预算」原因，而非笼统的「解析为空」（关闭回退以免触网）。"""
-    ds = _ds(max_chunk_requests=8, fallback_to_legacy=False)
-    out = ds.get_daily_kline(["600519"], "2020-01-01", "2024-12-31")
+    """超预算时应给出「超预算」原因，而非笼统的「解析为空」（关闭回退以免触网）。
+
+    令牌必须经专用环境变量注入：本机可能存在 ``~/.workbuddy/.neodata_token`` 而 CI 没有，
+    不注入则客户端判定「未配置」，根本走不到分块预算判定——用例结果会随机器状态漂移
+    （这正是 CI 上本用例失败的原因）。预算判定发生在任何 HTTP 请求之前
+    （``_chunk_windows`` 为纯计算），故注入令牌不会触网。
+    """
+    env_name = "FACTORGPT_NEO_TEST_TOKEN"
+    prev = os.environ.get(env_name)
+    os.environ[env_name] = "token-injected-for-offline-test"
+    try:
+        ds = _ds(max_chunk_requests=8, fallback_to_legacy=False, token_env=env_name)
+        assert ds.client.configured, "测试前提：注入令牌后客户端应判定为已配置"
+        out = ds.get_daily_kline(["600519"], "2020-01-01", "2024-12-31")
+    finally:
+        if prev is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = prev
     info = ds.last_fetch_info
     assert info["source"] == "none", f"关闭回退时应返回空并标记 none，实际 {info}"
     assert "预算" in info["message"], f"未报告超预算原因：{info}"
