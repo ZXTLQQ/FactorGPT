@@ -475,17 +475,50 @@ def _render_metrics_table(metrics: dict):
     st.table(pd.DataFrame(rows, columns=["指标", "值"]))
 
 
+def _embed_local_images(md: str) -> str:
+    """把 Markdown 里的本地图片引用转成 base64 data URI，供浏览器渲染。
+
+    报告里的 ``![标题](路径)`` 引用的是**落盘 PNG 的本地绝对路径**——保存到 .md
+    文件没问题，但 ``st.markdown`` 最终由浏览器渲染，浏览器拿不到
+    ``file:///e:/...``（也不会去读本地盘），于是整节"回测图表"全是裂图。这里在
+    **渲染前**把存在的本地文件就地转成 data URI；不存在的引用原样保留，
+    不掩盖"图没生成"这一事实。
+    """
+    import base64
+    import os
+    import re
+
+    def _to_uri(m: re.Match) -> str:
+        path = m.group(2).strip()
+        if path.startswith(("http://", "https://", "data:")) or not os.path.isfile(path):
+            return m.group(0)
+        try:
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            return m.group(0)
+        ext = os.path.splitext(path)[1].lstrip(".").lower() or "png"
+        if ext == "jpg":
+            ext = "jpeg"
+        return f"![{m.group(1)}](data:image/{ext};base64,{b64})"
+
+    return re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", _to_uri, md or "")
+
+
 def _render_agent_dict(d: dict, with_method: bool = False):
-    st.markdown(d.get("report", ""))
+    st.markdown(_embed_local_images(d.get("report", "")))
     if d.get("metrics"):
         with st.expander("📊 关键指标", expanded=False):
             _render_metrics_table(d["metrics"])
     if d.get("code"):
         with st.expander("🧮 因子公式代码", expanded=False):
             st.code(d["code"], language="python")
-    for fig in d.get("charts") or []:
+    for ch in d.get("charts") or []:
         try:
-            st.pyplot(fig)
+            if isinstance(ch, str) and os.path.isfile(ch):
+                st.image(ch)               # 落盘 PNG 路径
+            else:
+                st.pyplot(ch)              # matplotlib Figure
         except Exception:
             pass
     if with_method and d.get("method"):
@@ -499,7 +532,7 @@ def _build_agent_dict(result: dict, with_method: bool = False) -> dict:
         "report": result.get("report", ""),
         "code": state.get("code"),
         "metrics": result.get("metrics", state.get("metrics", {})),
-        "charts": state.get("charts") or [],
+        "charts": state.get("chart_paths") or state.get("charts") or [],
         "method": None,
     }
     if with_method:

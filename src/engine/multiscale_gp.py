@@ -19,6 +19,8 @@ Hausdorff 距离 d_H^i                            相邻区间暴露分布漂移
 价值函数均方差 MSD_i                          相邻区间**暴露→收益 profile** 的均方差
 经验选子集 I ⊂ [N₁]                           得分最高的 ``n_select`` 个区间
 终端项 χ(T_{i+1},x;ρ₁)                         细尺度适应度里的**粗尺度延续价值**（含代理模型）
+多折细化（§4.1.2 two-fold 实验）               ``n_folds >= 2``：在已选父区间内部重跑 Step 2，
+                                               得分最差的子区间才拿第三尺度预算
 资源分配 (M, δ, 复杂度)                        种群规模 / 评估粒度 / 表达式深度
 Theorem 3.1 的效率增益                         可核对的评估预算报告 ``ResourceReport.speedup``
 ======================================  ==================================================
@@ -169,6 +171,18 @@ def _nanmean(values: Any) -> float:
     a = np.asarray(values, dtype=float).reshape(-1)
     a = a[np.isfinite(a)]
     return float(a.mean()) if a.size else float("nan")
+
+
+def _norm01(x: np.ndarray) -> np.ndarray:
+    """有限值上做 min-max 归一；全空 / 无差异时返回全 0（有限值以外记 0）。"""
+    x = np.asarray(x, dtype=float)
+    ok = np.isfinite(x)
+    if not ok.any():
+        return np.zeros_like(x)
+    lo, hi = float(np.min(x[ok])), float(np.max(x[ok]))
+    if not np.isfinite(hi - lo) or hi - lo <= 1e-12:
+        return np.zeros_like(x)
+    return np.where(ok, (x - lo) / (hi - lo), 0.0)
 
 
 def _py(o: Any) -> Any:
@@ -324,6 +338,7 @@ class ResourceReport:
 
     coarse_evals: int = 0
     fine_evals: int = 0
+    fold2_evals: int = 0
     brute_force_evals: int = 0
     selected_intervals: int = 0
     total_intervals: int = 0
@@ -333,7 +348,7 @@ class ResourceReport:
     @property
     def speedup(self) -> float:
         """相对"每个区间都独立做细尺度演化"的评估次数倍数。"""
-        used = self.coarse_evals + self.fine_evals
+        used = self.coarse_evals + self.fine_evals + self.fold2_evals
         if used <= 0 or self.brute_force_evals <= 0:
             return float("nan")
         return float(self.brute_force_evals) / float(used)
@@ -347,6 +362,7 @@ class ResourceReport:
         return _py({
             "coarse_evals": self.coarse_evals,
             "fine_evals": self.fine_evals,
+            "fold2_evals": self.fold2_evals,
             "brute_force_evals": self.brute_force_evals,
             "selected_intervals": self.selected_intervals,
             "total_intervals": self.total_intervals,
@@ -569,6 +585,7 @@ class HierarchicalFactorMiner:
         levels: Optional[Sequence[ScaleSpec]] = None,
         n_intervals: int = 8,
         n_select: int = 2,
+        n_folds: int = 1,
         terminal_weight: float = 0.35,
         seed: int = 42,
         param_op_prob: float = 0.25,
@@ -589,6 +606,9 @@ class HierarchicalFactorMiner:
         self.levels = tuple(levels) if levels else DEFAULT_LEVELS
         self.n_intervals = max(2, int(n_intervals))
         self.n_select = max(1, min(int(n_select), self.n_intervals))
+        # 折数（论文 §4.1.2 的 two-fold 实验）：>=2 时在已选父区间内部再做一轮
+        # Step 2 诊断 + 局部加密；诊断得分最差的子区间才消耗第三尺度预算。
+        self.n_folds = max(1, min(int(n_folds), 2))
         self.terminal_weight = float(np.clip(terminal_weight, 0.0, 1.0))
         self.seed = int(seed)
         self.param_op_prob = float(np.clip(param_op_prob, 0.0, 1.0))
@@ -791,23 +811,63 @@ class HierarchicalFactorMiner:
         末段没有"下一段"，其 d_H/MSD 为 NaN → 标记为不可选，而不是让 0 分去和
         真实最低分竞争（那会让末段被误选）。
         """
-        def _norm(x: np.ndarray) -> np.ndarray:
-            ok = np.isfinite(x)
-            if not ok.any():
-                return np.zeros_like(x)
-            lo, hi = float(np.min(x[ok])), float(np.max(x[ok]))
-            if not np.isfinite(hi - lo) or hi - lo <= 1e-12:
-                return np.zeros_like(x)
-            return np.where(ok, (x - lo) / (hi - lo), 0.0)
-
-        nd = _norm(np.array([s.d_h for s in stats], dtype=float))
-        nm = _norm(np.array([s.msd for s in stats], dtype=float))
+        nd = _norm01(np.array([s.d_h for s in stats], dtype=float))
+        nm = _norm01(np.array([s.msd for s in stats], dtype=float))
         for i, s in enumerate(stats):
             s.score = float(0.5 * nd[i] + 0.5 * nm[i]) if s.eligible else float("nan")
 
         order = sorted((s for s in stats if s.eligible), key=lambda s: (-s.score, s.index))
         for s in order[:self.n_select]:
             s.selected = True
+
+    def _diagnose_sub_intervals(self, exprs: Sequence[Any],
+                                sub_masks: Sequence[np.ndarray]) -> List[IntervalStat]:
+        """在**父区间内部**对子区间重跑论文 Step 2（多折细化的诊断层）。
+
+        与 :meth:`diagnose_intervals` 的差别只在时间轴的来源：这里切的是某个
+        已选父区间，而不是整条训练段；判据不变（暴露域漂移 d_H + 价值函数
+        变化 MSD）。返回的 ``IntervalStat`` 的 ``index`` 是子区间序号。
+        """
+        stats: List[IntervalStat] = []
+        per_expr = [{"f": self._robust_scale(self._factor_values(e)),
+                     "ic": self._ic_vector(e)} for e in exprs]
+        for i, m in enumerate(sub_masks):
+            rows = np.where(m)[0]
+            start = pd.Timestamp(self.dates[rows[0]]) if rows.size else None
+            end = pd.Timestamp(self.dates[rows[-1]]) if rows.size else None
+            st = IntervalStat(
+                index=i,
+                label=(f"{start:%Y-%m-%d} ~ {end:%Y-%m-%d}"
+                       if start is not None and end is not None else f"sub{i + 1}"),
+                start=start.strftime("%Y-%m-%d") if start is not None else "",
+                end=end.strftime("%Y-%m-%d") if end is not None else "",
+                n_dates=int(np.unique(self.dates[rows]).size) if rows.size else 0,
+            )
+            if rows.size == 0:
+                stats.append(st)
+                continue
+            d_h: List[float] = []
+            msd: List[float] = []
+            nxt = sub_masks[i + 1] if i + 1 < len(sub_masks) else None
+            for pe in per_expr:
+                f_all = pe["f"]
+                if nxt is not None and nxt.any():
+                    d_h.append(hausdorff_1d(f_all[m], f_all[nxt]))
+                    edges = exposure_edges(f_all[m], f_all[nxt], self.n_buckets)
+                    if edges.size:
+                        pa, ca = value_profile(f_all[m], self.y[m], edges, self.min_ic_samples)
+                        pb, cb = value_profile(f_all[nxt], self.y[nxt], edges, self.min_ic_samples)
+                        msd.append(profile_msd(pa, pb, ca, cb, self.min_ic_samples))
+            st.d_h = _nanmean(d_h)
+            st.msd = _nanmean(msd)
+            st.eligible = bool(np.isfinite(st.d_h) or np.isfinite(st.msd))
+            stats.append(st)
+
+        nd = _norm01(np.array([s.d_h for s in stats], dtype=float))
+        nm = _norm01(np.array([s.msd for s in stats], dtype=float))
+        for i, s in enumerate(stats):
+            s.score = float(0.5 * nd[i] + 0.5 * nm[i]) if s.eligible else float("nan")
+        return stats
 
     # ---------------- 论文 Step 1 / 3：两尺度演化 ----------------
     def _evolve(self, spec: ScaleSpec, initial: Sequence[Any], score_fn,
@@ -939,6 +999,7 @@ class HierarchicalFactorMiner:
         report.brute_force_evals = (fine_spec.pop_size * max(1, fine_spec.generations)
                                     * self.n_intervals)
         candidates: List[Dict[str, Any]] = []
+        elites_by_interval: Dict[int, List[Any]] = {}
         for st in selected:
             row_mask = masks[st.index]
             if not row_mask.any():
@@ -955,6 +1016,7 @@ class HierarchicalFactorMiner:
             seeds = [mutate(e, self._rng, fine_spec.max_depth, self.param_op_prob)
                      for e in seeds]
             elites = self._evolve(fine_spec, seeds, _fine_score, fine_stage=True)
+            elites_by_interval[st.index] = list(elites)
             report.fine_dates += int(np.unique(self.dates[row_mask]).size)
             report.fine_evals += fine_spec.pop_size * max(1, fine_spec.generations)
 
@@ -987,6 +1049,79 @@ class HierarchicalFactorMiner:
                 "family": _family_of(best),
             })
 
+        # ---- 第二折（论文 §4.1.2）：在已选父区间内部再诊断、再加密 ----
+        # 只有"折叠 1 之后诊断得分仍然最差"的子区间才拿第三尺度预算；产出若
+        # 在该子区间上没有超过折叠 1 的候选，则保留原候选——细化不是义务，
+        # 没有收益就不替换，避免"为细化而细化"引入的退化。
+        if self.n_folds >= 2 and candidates:
+            fine2 = (self.levels[2] if len(self.levels) > 2 else ScaleSpec(
+                name="fine2", freq="D", generations=fine_spec.generations,
+                pop_size=max(4, fine_spec.pop_size // 2),
+                elite=max(2, fine_spec.elite // 2)))
+            n_sub = 2
+            brute2 = fine2.pop_size * max(1, fine2.generations) * n_sub * len(candidates)
+            report.brute_force_evals += brute2
+            for c in candidates:
+                parent = stats[c["interval_index"]]
+                elites = elites_by_interval.get(parent.index)
+                if not elites:
+                    continue
+                rows = np.where(masks[parent.index])[0]
+                if rows.size < 4 * n_sub:
+                    continue
+                chunks = np.array_split(rows, n_sub)
+                sub_masks = [np.zeros(self.dates.size, dtype=bool) for _ in chunks]
+                for sm, ch in zip(sub_masks, chunks):
+                    sm[ch] = True
+                sub_stats = self._diagnose_sub_intervals(elites, sub_masks)
+                worst = max((s for s in sub_stats if s.eligible),
+                            key=lambda s: (s.score if np.isfinite(s.score) else -1.0, -s.index),
+                            default=None)
+                if worst is None:
+                    continue
+                sub_rows = np.where(sub_masks[worst.index])[0]
+                fine2_idx = self._date_mask_rows(sub_masks[worst.index])
+
+                def _fine2_score(expr: Any, idx: np.ndarray = fine2_idx) -> float:
+                    ic = self._ic_vector(expr)
+                    local = self._score(ic, idx)
+                    cont = self._continuation(expr, ic, coarse_idx)
+                    return (1.0 - self.terminal_weight) * local + self.terminal_weight * cont
+
+                seeds2 = [mutate(e, self._rng, fine2.max_depth, self.param_op_prob)
+                          for e in elites]
+                elites2 = self._evolve(fine2, seeds2, _fine2_score, fine_stage=True)
+                report.fold2_evals += fine2.pop_size * max(1, fine2.generations)
+                best2 = elites2[0] if elites2 else None
+                if best2 is None:
+                    continue
+                ic2 = self._score(self._ic_vector(best2), fine2_idx)
+                prev_ic = c.get("ic_interval", float("nan"))
+                if not np.isfinite(ic2) or ic2 <= prev_ic:
+                    continue
+                try:
+                    code2 = tree_to_code(best2, "ms_gp_factor")
+                except (RuntimeError, ValueError):
+                    code2 = ""
+                c["_expr"] = best2
+                c["code"] = code2
+                c["expr"] = repr(best2)
+                c["ic_interval"] = ic2
+                c["fitness"] = _fine2_score(best2)
+                c["params"] = param_ops.describe(best2) if contains_param_op(best2) else None
+                c["features"] = tree_features(best2)
+                c["family"] = _family_of(best2)
+                c["refined2"] = {
+                    "sub_interval": worst.label,
+                    "sub_index": worst.index,
+                    "d_h": worst.d_h,
+                    "msd": worst.msd,
+                    "ic_before": prev_ic,
+                }
+                st_ref = next((s for s in stats if s.index == parent.index), None)
+                if st_ref is not None:
+                    st_ref.ic_refined = ic2
+
         # ---- 全样本 / 训练 / 样本外复核 ----
         for c in candidates:
             ic = self._ic_vector(c.pop("_expr"))
@@ -1006,6 +1141,7 @@ class HierarchicalFactorMiner:
             "terminal_weight": self.terminal_weight,
             "n_intervals": self.n_intervals,
             "n_select": self.n_select,
+            "n_folds": self.n_folds,
             "test_ratio": self.test_ratio,
             "coarse_freq": coarse_spec.freq,
             "fine_freq": fine_spec.freq,

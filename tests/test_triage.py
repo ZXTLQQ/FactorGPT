@@ -486,6 +486,36 @@ def test_multiscale_mine_is_reproducible(pn: PanelData, multiscale):
     assert again["resource"]["fine_evals"] == multiscale["resource"]["fine_evals"]
 
 
+def test_multiscale_fold2_refines_within_selected_intervals(pn: PanelData):
+    """多折细化（文献 §4.1.2）：第二折只在已选父区间内部挑最差子区间加密。
+
+    预算口径要如实入账（fold2_evals 单列，暴力基准同步上抬）；替换只发生在
+    子区间 IC 确有提升时（ic_before 记录被替换前的折叠 1 水平）；载荷仍可
+    严格 JSON 化（无裸 NaN）。
+    """
+    from engine.multiscale_gp import ScaleSpec
+
+    levels = (ScaleSpec(name="coarse", freq="M", generations=2, pop_size=10, elite=3),
+              ScaleSpec(name="fine", freq="D", generations=2, pop_size=8, elite=3),
+              ScaleSpec(name="fine2", freq="D", generations=2, pop_size=4, elite=2))
+    res = TR.multiscale_mine(pn, horizon=HORIZON, n_intervals=4, n_select=2,
+                             n_folds=2, seed=7, terminal_weight=0.35, levels=levels)
+    assert res["n_folds"] == 2
+
+    r = res["resource"]
+    assert r["fold2_evals"] == 4 * 2 * len(res["candidates"])
+    assert r["brute_force_evals"] == 8 * 2 * 4 + 4 * 2 * 2 * len(res["candidates"])
+    used = r["coarse_evals"] + r["fine_evals"] + r["fold2_evals"]
+    assert r["speedup"] == pytest.approx(r["brute_force_evals"] / used)
+
+    for c in res["candidates"]:
+        if "refined2" in c:
+            assert c["ic_interval"] > c["refined2"]["ic_before"], \
+                "只有子区间 IC 真的提升了才允许替换"
+            assert c["refined2"]["sub_index"] in (0, 1)
+    assert json.dumps(res, ensure_ascii=False, allow_nan=False), "载荷不能含裸 NaN"
+
+
 # --------------------------------------------------------------------------
 # 5. 一次跑齐：三类缺项各自跳过
 # --------------------------------------------------------------------------

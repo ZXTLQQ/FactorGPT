@@ -231,20 +231,22 @@ def domain_check(panel: Any, factor: Any, specs: Optional[Sequence[Any]] = None,
 # 4. 分层多尺度挖掘
 # --------------------------------------------------------------------------
 def multiscale_mine(panel: Any, horizon: int = 5, *, n_intervals: int = 8,
-                    n_select: int = 2, seed: int = 42,
+                    n_select: int = 2, n_folds: int = 1, seed: int = 42,
                     levels: Optional[Sequence[Any]] = None,
                     terminal_weight: float = 0.35,
                     **kwargs: Any) -> Dict[str, Any]:
     """在同一份挖掘面板上跑分层多尺度挖掘（粗演化 → 区间诊断 → 局部加密）。
 
-    返回 ``mine()`` 的结果并补三个面板口径字段；额外 kwargs 转交
+    ``n_folds >= 2`` 时启用文献的多折细化：在已选父区间内部再做一轮
+    Step 2 诊断，只有得分最差的子区间才消耗第三尺度预算。返回 ``mine()``
+    的结果并补三个面板口径字段；额外 kwargs 转交
     :class:`engine.multiscale_gp.HierarchicalFactorMiner`。
     """
     ms = _engine("multiscale_gp")
     long = kline_long(panel, horizon=horizon)
     miner = ms.HierarchicalFactorMiner(
         long, y_col="fwd_ret", levels=levels, n_intervals=int(n_intervals),
-        n_select=int(n_select), seed=int(seed),
+        n_select=int(n_select), n_folds=int(n_folds), seed=int(seed),
         terminal_weight=float(terminal_weight), **kwargs)
     out = miner.mine()
     out["horizon"] = int(horizon)

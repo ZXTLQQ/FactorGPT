@@ -136,6 +136,79 @@ def test_alphalens_crosscheck():
         raise unittest.SkipTest("alphalens-reformed 未安装，跳过交叉校验")
 
 
+# ---------------------------------------------------------------------------
+# 5) 向量化逐日 IC / 分位数分组：与逐日参考实现等价
+# ---------------------------------------------------------------------------
+def _synthetic_ic_panel(seed=11):
+    rng = np.random.default_rng(seed)
+    dates = pd.bdate_range("2024-01-02", periods=40).strftime("%Y-%m-%d")
+    syms = [f"S{i}" for i in range(8)]
+    idx = pd.MultiIndex.from_product([dates, syms], names=["date", "symbol"])
+    f = pd.Series(rng.normal(size=len(idx)), index=idx)
+    y = pd.Series(0.4 * f.to_numpy() + rng.normal(size=len(idx)), index=idx)
+    panel = pd.DataFrame({"date": idx.get_level_values("date").to_numpy(),
+                          "symbol": idx.get_level_values("symbol").to_numpy(),
+                          "factor": f.to_numpy(), "fwd_ret": y.to_numpy()})
+    # 边界日：第 0 天常数截面；第 2 天混入 inf；第 3 天只留一只股票
+    panel.loc[panel["date"] == dates[0], "factor"] = 1.0
+    panel.loc[16, "factor"] = np.inf
+    keep = ~((panel["date"] == dates[3]) & (panel["symbol"] != "S0"))
+    return panel[keep].reset_index(drop=True), dates
+
+
+def _ic_reference(panel, method):
+    """逐日 np.corrcoef 参考实现（与向量化前的旧实现同语义）。"""
+    out = {}
+    for d, g in panel.groupby("date"):
+        xv, yv = g["factor"].to_numpy(float), g["fwd_ret"].to_numpy(float)
+        if len(xv) < 2 or not (np.isfinite(xv).all() and np.isfinite(yv).all()):
+            continue
+        if np.ptp(xv) == 0 or np.ptp(yv) == 0:
+            continue
+        if method == "spearman":
+            xv = pd.Series(xv).rank().to_numpy()
+            yv = pd.Series(yv).rank().to_numpy()
+        c = np.corrcoef(xv, yv)[0, 1]
+        if np.isfinite(c):
+            out[d] = c
+    return pd.Series(out, name="ic")
+
+
+def test_ic_series_matches_daily_reference_pearson_and_spearman():
+    from engine.backtest import _ic_series
+
+    panel, _ = _synthetic_ic_panel()
+    for method in ("pearson", "spearman"):
+        got = _ic_series(panel, method)
+        ref = _ic_reference(panel, method)
+        assert list(got.index) == list(ref.index), f"{method}: 日期集合要一致"
+        np.testing.assert_allclose(got.to_numpy(), ref.to_numpy(),
+                                   rtol=1e-12, atol=1e-12)
+    # 常数截面 / 含 inf / 单只股票的日子必须被丢掉，而不是给出伪 IC
+    assert len(_ic_series(panel, "pearson")) == 37
+
+
+def test_quantile_grouping_matches_daily_qcut_reference():
+    rng = np.random.default_rng(23)
+    n_q = 5
+    dates = pd.bdate_range("2024-02-01", periods=30).strftime("%Y-%m-%d")
+    syms = [f"S{i}" for i in range(20)]
+    panel = pd.DataFrame({
+        "date": np.repeat(dates, len(syms)),
+        "factor": rng.normal(size=30 * len(syms)),
+        "fwd_ret": rng.normal(size=30 * len(syms)),
+    })
+    # 新实现：逐日百分位秩 → 等分桶
+    pct = panel.groupby("date")["factor"].rank(pct=True)
+    new = np.ceil(pct.to_numpy() * n_q).clip(1, n_q) - 1
+    # 旧实现：逐日 qcut（连续无并列时两者应逐一相等）
+    old = np.empty_like(new)
+    for d, g in panel.groupby("date"):
+        m = panel["date"].to_numpy() == d
+        old[m] = pd.qcut(g["factor"], n_q, labels=False, duplicates="drop").to_numpy()
+    np.testing.assert_array_equal(new, old)
+
+
 if __name__ == "__main__":
     # 无 pytest 时也能直接运行：python tests/test_backtest.py
     import traceback
