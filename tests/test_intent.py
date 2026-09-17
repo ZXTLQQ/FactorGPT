@@ -46,6 +46,11 @@ class _FakeLLM:
         return self.reply
 
 
+def _msg_content(msg):
+    """消息可能是 LangChain 对象，也可能是缺依赖时降级的 dict——两种都要能读。"""
+    return msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+
+
 def _json_reply(intent_name, confidence=0.9, reason="测试", rewritten=""):
     """模拟模型常见输出：带代码围栏的 JSON。"""
     payload = {"intent": intent_name, "confidence": confidence,
@@ -203,8 +208,33 @@ def test_chat_answer_clarify_intent_gets_extra_instruction():
     llm = _FakeLLM("请补充一下你想做什么")
     res = IT.IntentResult(IT.INTENT_CLARIFY, 0.3, "信息不足", source="llm")
     IT.chat_answer("嗯", llm=llm, intent=res)
-    system_msg = llm.chat_calls[0][0][0].content
+    system_msg = _msg_content(llm.chat_calls[0][0][0])
     assert "澄清" in system_msg
+
+
+def test_chat_answer_works_without_langchain(monkeypatch):
+    # 精简部署/CI 没装 langchain_core：消息退化成 dict，对话本身照常进行。
+    monkeypatch.setitem(sys.modules, "langchain_core", None)
+    monkeypatch.setitem(sys.modules, "langchain_core.messages", None)
+    llm = _FakeLLM("你好，我可以帮你挖因子")
+    assert "可以" in IT.chat_answer("你好", llm=llm)
+    # 装了 langchain 时是消息对象；没装时必须是 dict，且 role 语义不变。
+    roles = [m.get("role") if isinstance(m, dict) else {"SystemMessage": "system",
+                                                       "HumanMessage": "user",
+                                                       "AIMessage": "assistant"}[type(m).__name__]
+             for m in llm.chat_calls[0][0]]
+    assert roles == ["system", "user"]
+
+
+def test_chat_answer_packs_history_in_order():
+    llm = _FakeLLM("接着说")
+    history = [{"role": "user", "content": "什么是 ICIR"},
+               {"role": "assistant", "answer": "ICIR 是 IC 的信息比率"}]
+    IT.chat_answer("那 IR 呢", llm=llm, history=history)
+    msgs = llm.chat_calls[0][0]
+    assert len(msgs) == 4
+    assert "ICIR" in _msg_content(msgs[1]) and "信息比率" in _msg_content(msgs[2])
+    assert "IR" in _msg_content(msgs[3])
 
 
 def test_chat_answer_empty_input():

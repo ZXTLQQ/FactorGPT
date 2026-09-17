@@ -357,6 +357,23 @@ def classify(
     return result
 
 
+def _message(role: str, content: str) -> Any:
+    """构造一条对话消息。
+
+    优先 LangChain 消息对象（与 :meth:`llm.client.LLMClient.chat` 的既有契约一致）；
+    若环境没装 ``langchain_core``（离线测试、精简部署），退回 ``{"role", "content"}``
+    纯字典——ChatOpenAI 同样接受这种形式。意图分流不该把 langchain 变成硬依赖：
+    它是**调用模型的通道**，而不是判定意图的前提。
+    """
+    try:
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+        return {"system": SystemMessage, "user": HumanMessage,
+                "assistant": AIMessage}[role](content=content)
+    except Exception:  # noqa: BLE001 —— 缺依赖时降级为 dict，不阻断对话
+        return {"role": role, "content": content}
+
+
 def chat_answer(
     text: str,
     config: Optional[Dict[str, Any]] = None,
@@ -379,15 +396,13 @@ def chat_answer(
 
     messages: List[Any] = []
     try:
-        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-
         head = _CHAT_SYSTEM
         if intent is not None and intent.intent == INTENT_CLARIFY:
             head += ("\n5. 本轮判定为「需要澄清」：先用一两句话说明你还缺什么信息，"
                      "再给出你认为用户最可能想要的那个方向。")
         elif intent is not None and intent.intent == INTENT_CHITCHAT:
             head += "\n5. 本轮是闲聊：简短自然地回应，并顺带一句你能帮上什么忙。"
-        messages.append(SystemMessage(content=head))
+        messages.append(_message("system", head))
         for m in list(history or [])[-turns * 2:]:
             role = str(m.get("role", ""))
             body = str(m.get("content") or "")
@@ -395,9 +410,8 @@ def chat_answer(
                 body = str(m.get("answer") or "") or str((m.get("agent") or {}).get("report", ""))
             if not body:
                 continue
-            messages.append(HumanMessage(content=body[:500]) if role == "user"
-                            else AIMessage(content=body[:500]))
-        messages.append(HumanMessage(content=text))
+            messages.append(_message("user" if role == "user" else "assistant", body[:500]))
+        messages.append(_message("user", text))
 
         client, _ = _resolve_llm(config, llm)
         reply = client.chat(messages, temperature=float(ic.get("temperature", 0.0)) or 0.3)
