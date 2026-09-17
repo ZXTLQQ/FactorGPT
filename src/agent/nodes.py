@@ -16,11 +16,14 @@ FactorAgentNodes 持有 LLM、检索器、回测器等依赖，并以「节点�
 from __future__ import annotations
 
 import json
+import logging
 import warnings
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 # 抑制因子后处理过程中的 pandas FutureWarning 噪声（不影响计算结果）
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -29,6 +32,19 @@ from engine.factor_builder import FactorSandbox, build_pipeline, generate_from_k
 from engine.tracking import ExperimentTracker
 from llm.client import extract_code_block, extract_json
 from llm.router import LLMRouter
+
+
+def _append_llm_error(prev: Any, new: str) -> str:
+    """合并历次 LLM 失败原因（生成 + 多轮反思），去重并保留可读顺序。"""
+    prev_s = str(prev or "").strip()
+    new_s = str(new or "").strip()
+    if not new_s:
+        return prev_s
+    if not prev_s:
+        return new_s
+    if new_s in prev_s:
+        return prev_s
+    return f"{prev_s}\n{new_s}"
 
 
 class FactorAgentNodes:
@@ -140,6 +156,7 @@ class FactorAgentNodes:
 
         name, desc, code = None, description, None
         rationale, references = "", []
+        llm_error = ""
         # 优先调用 LLM
         try:
             raw = self.llm.complete(
@@ -156,9 +173,14 @@ class FactorAgentNodes:
                 refs = parsed.get("references", []) or []
                 references = refs if isinstance(refs, list) else [str(refs)]
         except Exception as e:
-            print(f"[generate_factor] LLM 调用失败，启用关键词模板兜底: {e}")
+            # 失败原因必须进状态：此前它只被 print 到启动 streamlit 的终端，
+            # 界面上却照常渲染出一份完整的因子报告，用户无法判断本轮是否真的
+            # 调用了模型（"连上了却像离线"正来源于此）。
+            llm_error = f"生成阶段：{type(e).__name__}: {e}"
+            logger.warning("[generate_factor] LLM 调用失败，启用关键词模板兜底: %s", llm_error)
 
         # 兜底：关键词模板
+        source = "llm" if code else "template"
         if not code:
             tpl = generate_from_keywords(description)
             if tpl:
@@ -170,6 +192,8 @@ class FactorAgentNodes:
             return {
                 "iteration": iteration,
                 "factor_code": "",
+                "factor_source": source,
+                "llm_error": llm_error,
                 "validation_ok": False,
                 "validation_error": "无法生成因子代码（LLM 与模板均失败）",
                 "error": "因子生成失败",
@@ -180,6 +204,8 @@ class FactorAgentNodes:
             "factor_name": name or "custom_factor",
             "factor_description": desc,
             "factor_code": code,
+            "factor_source": source,
+            "llm_error": llm_error,
             "factor_rationale": rationale,
             "factor_references": references,
             "validation_ok": False,  # 待校验节点确认
@@ -290,7 +316,7 @@ class FactorAgentNodes:
                     "train_n_dates": int(self.train_kline["date"].nunique()) if self.train_kline is not None else None,
                     "has_oos": self.test_kline is not None,
                 },
-                tags={"stage": "evaluate", "source": state.get("factor_source", "llm")},
+                tags={"stage": "evaluate", "source": state.get("factor_source") or "unknown"},
             )
         except Exception as e:  # noqa: BLE001
             print(f"[tracking] 记录失败: {e}")
@@ -351,6 +377,7 @@ class FactorAgentNodes:
         show_metrics = {k: v for k, v in metrics.items() if not k.startswith("_")}
 
         new_code = None
+        llm_error = ""
         try:
             raw = self.llm.complete(
                 system=(
@@ -383,16 +410,22 @@ class FactorAgentNodes:
                 new_code = extract_code_block(raw)
                 reflection = ""
         except Exception as e:
-            print(f"[reflect_and_refine] LLM 反思失败，沿用原代码: {e}")
+            logger.warning("[reflect_and_refine] LLM 反思失败，沿用原代码: %s", e)
             reflection = f"LLM 反思不可用: {e}"
+            llm_error = f"第{iteration}轮反思阶段：{type(e).__name__}: {e}"
 
         reflections = list(history) + [f"第{iteration}轮反思: {reflection or '（无）'}"]
+        if llm_error:
+            # 反思记录里也要留下痕迹，否则报告正文看不出本轮是模型在改还是空转
+            reflections.append(f"> ⚠️ LLM 未参与本轮改进：{llm_error}")
+        merged_error = _append_llm_error(state.get("llm_error"), llm_error)
 
         if not new_code:
             # 无法改进，直接终局
             return {
                 "iteration": iteration,
                 "reflections": reflections,
+                "llm_error": merged_error,
                 "error": "反思阶段无法生成改进代码",
             }
 
@@ -400,6 +433,7 @@ class FactorAgentNodes:
             "iteration": iteration,
             "factor_code": new_code,
             "reflections": reflections,
+            "llm_error": merged_error,
             "validation_ok": False,
         }
 
@@ -477,6 +511,9 @@ class FactorAgentNodes:
             error=state.get("error"),
             chart_paths=state.get("chart_paths"),
             oos_metrics=state.get("metrics_oos"),
+            factor_source=state.get("factor_source", ""),
+            llm_error=state.get("llm_error", ""),
+            llm_model=getattr(self.llm, "model", ""),
         )
         saved = state.get("learned_saved")
         if saved:
@@ -509,13 +546,45 @@ def _fmt_val(v):
     return str(v)
 
 
+def _one_line(s: Any, limit: int = 300) -> str:
+    """把多行异常文本压成单行，避免撑破 Markdown 引用块。"""
+    txt = " ".join(str(s or "").split())
+    return txt if len(txt) <= limit else txt[:limit] + " …"
+
+
+def _provenance_note(source: str, llm_error: str, llm_model: str = "") -> str:
+    """报告头部的「来源说明」。
+
+    LLM 失败被模板兜底时，报告的结构与指标看起来完全正常——这一行是唯一能
+    在现场区分二者的证据，所以兜底必须写得比成功时更响。
+    """
+    if source == "template":
+        note = ["> ⚠️ **本轮因子并非由大模型生成**：LLM 调用失败，已回退到内置关键词模板。"]
+        if llm_error:
+            note.append(">")
+            note.append(f"> 失败原因：`{_one_line(llm_error)}`")
+        return "\n".join(note) + "\n"
+    if source == "llm":
+        model = f"（模型 `{llm_model}`）" if llm_model else ""
+        extra = ""
+        if llm_error:
+            # 部分环节（如反思）失败但代码仍是模型产出的情况，也要说清楚。
+            extra = f"，另有环节调用失败：`{_one_line(llm_error)}`"
+        return f"> 因子来源：大模型生成{model}{extra}。\n"
+    return ""
+
+
 def _build_report(
     name, desc, code, metrics, knowledge, reflections,
     validation_ok, validation_error, error, chart_paths=None,
     oos_metrics: Optional[dict] = None,
+    factor_source: str = "", llm_error: str = "", llm_model: str = "",
 ) -> str:
     lines = []
     lines.append(f"# 因子挖掘报告：{name}\n")
+    note = _provenance_note(factor_source, llm_error, llm_model)
+    if note:
+        lines.append(note)
     lines.append(f"**需求描述**：{desc}\n")
 
     if error:

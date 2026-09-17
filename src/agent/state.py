@@ -27,6 +27,11 @@ class AgentState(TypedDict, total=False):
     factor_code: str                     # 当前因子代码
     validation_ok: bool                  # 代码是否通过沙箱校验
     validation_error: str                # 校验失败原因
+    # 当前代码的真实来源：'llm' = 大模型生成，'template' = LLM 失败后的关键词
+    # 模板兜底。用于让"这次到底有没有真的调模型"可见、可审计，而不是靠猜。
+    factor_source: str
+    # 历次 LLM 调用失败的原因（生成 / 反思节点追加）。空字符串表示未失败过。
+    llm_error: str
 
     # —— 计算与评价 ——
     factor_long: Optional[pd.DataFrame]  # 计算得到的因子长表（date,symbol,factor）

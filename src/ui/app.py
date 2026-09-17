@@ -83,16 +83,42 @@ PROVIDER_NAME_MAP = {
 }
 
 
+def _default_base_url(provider: str) -> str:
+    """按 provider 给出 OpenAI 兼容默认端点。
+
+    这里不能返回空串：``set_model(base_url="")`` 会让 ChatOpenAI 回落到它自己的
+    默认地址，于是 provider=deepseek 的请求被发去了 api.openai.com，症状同样是
+    「连不上但界面一切正常」。
+    """
+    for preset in PROVIDER_PRESETS.values():
+        if preset["provider"] == provider and preset["base_url"]:
+            return preset["base_url"]
+    return PROVIDER_PRESETS["DeepSeek"]["base_url"]
+
+
 # ----------------------------------------------------------------------
 # 配置加载 & 资源缓存
 # ----------------------------------------------------------------------
 @st.cache_resource
 def load_config():
+    """读取项目根 ``config.yaml``。
+
+    必须走 ``llm.client.load_config``：它先注入 .env，再把 YAML 里的
+    ``${VAR}`` 占位符替换成环境变量取值。此前这里直接 ``yaml.safe_load``，
+    于是 UI 拿到的 ``llm.api_key`` 是字面量 ``"${DEEPSEEK_API_KEY}"``——一串
+    永远鉴权失败的假密钥，而 ``FactorAgent`` 那一侧用的却是插值后的真值。
+    两侧不一致会让「侧边栏测试连接通过、挖掘却一直离线」无法解释。
+    """
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+        from llm.client import load_config as _load_interpolated
+
+        return _load_interpolated(str(CONFIG_PATH)) or {}
     except Exception:
-        return {}
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except Exception:
+            return {}
 
 
 @st.cache_resource
@@ -110,11 +136,12 @@ def get_agent():
 def _init_llm_session():
     if "llm_cfg" not in st.session_state:
         llm = load_config().get("llm", {})
+        provider = llm.get("provider", "deepseek")
         st.session_state.llm_cfg = {
-            "provider": llm.get("provider", "deepseek"),
+            "provider": provider,
             "model": llm.get("model", "deepseek-chat"),
             "api_key": llm.get("api_key", ""),
-            "base_url": llm.get("base_url", "https://api.deepseek.com/v1"),
+            "base_url": llm.get("base_url") or _default_base_url(provider),
             "temperature": float(llm.get("temperature", 0.3)),
         }
     s = st.session_state.llm_cfg
@@ -143,6 +170,27 @@ def _on_provider_change():
         st.session_state.ui_provider_value = preset["provider"]
         st.session_state.ui_base_url = preset["base_url"]
         st.session_state.ui_model = preset["model"]
+
+
+def _ui_llm_snapshot() -> Dict[str, Any]:
+    """输入框里当前的取值（可能尚未生效）。"""
+    return {
+        "provider": st.session_state.get("ui_provider_value"),
+        "model": st.session_state.get("ui_model"),
+        "api_key": st.session_state.get("ui_api_key"),
+        "base_url": st.session_state.get("ui_base_url"),
+        "temperature": st.session_state.get("ui_temp"),
+    }
+
+
+def _ui_llm_pending() -> bool:
+    """输入框的值是否已写入生效配置。
+
+    「测试连接」用输入框的值试一次真实请求，但**不写回** ``llm_cfg``；而对话与
+    挖掘读的是 ``llm_cfg``。脱节时就会出现「明明测通了，跑起来还是旧配置」。
+    """
+    cfg = st.session_state.get("llm_cfg") or {}
+    return any(cfg.get(k) != v for k, v in _ui_llm_snapshot().items())
 
 
 def _render_model_panel():
@@ -182,6 +230,9 @@ def _render_model_panel():
         if save:
             _save_llm_to_config()
 
+        if _ui_llm_pending():
+            st.caption("⚠️ 输入框的值与当前生效配置不一致：对话 / 挖掘仍用旧配置，点击「应用配置」后生效。")
+
     # 当前生效模型提示
     st.sidebar.caption(
         f"当前模型：**{active.get('model')}**  ({PROVIDER_NAME_MAP.get(active.get('provider'), active.get('provider'))})"
@@ -205,6 +256,11 @@ def _test_connection():
         )
         resp = c.chat([{"role": "user", "content": "ping，只回复 ok"}])
         st.success(f"连接成功 ✅ 模型回复：{str(resp)[:80]}")
+        if _ui_llm_pending():
+            st.warning(
+                "⚠️ 这次连通只证明输入框这组值可用，它**尚未生效**：刚才的请求是临时客户端"
+                "发出的，对话 / 挖掘读的是另一份「已应用」的会话配置。请点击「应用配置」再运行。"
+            )
     except Exception as e:
         msg = str(e)
         if "404" in msg:
@@ -451,6 +507,21 @@ def _save_data_source_to_config():
 def _apply_model(agent):
     """运行前将 session 中的模型配置同步到 Agent 的 LLM 客户端。"""
     cfg = st.session_state.llm_cfg
+    try:
+        from llm.client import unresolved_env_placeholder
+
+        unresolved = unresolved_env_placeholder(cfg.get("api_key"))
+    except Exception:
+        unresolved = None
+    if unresolved:
+        # 把「没密钥」说在事前，而不是让用户对着一份模板兜底出来的报告猜。
+        placeholder = "${" + unresolved + "}"
+        st.error(
+            f"API Key 仍是未解析的占位符 `{placeholder}`（环境变量缺失，或 .env 未按当前"
+            f"工作目录加载）。本轮将以**无模型**方式运行：因子会退化为内置关键词模板生成，"
+            f"报告首部会明确标注来源。请在系统环境变量或项目根 .env 中设置 {unresolved}，"
+            f"或在左侧「⚙️ 模型 / API 设置」直接填写密钥并点击「应用配置」。"
+        )
     agent.update_llm(
         provider=cfg.get("provider"),
         model=cfg.get("model"),
@@ -505,7 +576,30 @@ def _embed_local_images(md: str) -> str:
     return re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", _to_uri, md or "")
 
 
+def _render_llm_provenance(d: dict):
+    """把「本轮因子到底是不是模型生成的」摆在结果最前面。
+
+    修复前节点会把 LLM 异常静默吞掉并回退关键词模板，界面上依旧是一份结构完整
+    的报告；没有这一条，用户在现场无从区分「模型真的写了因子」与「系统在离线跑」。
+    """
+    source = d.get("source") or ""
+    err = str(d.get("llm_error") or "").strip()
+    if source == "template":
+        st.error("⚠️ 本轮因子**并非由大模型生成**：LLM 调用失败，已回退到内置关键词模板。")
+        if err:
+            with st.expander("查看 LLM 失败原因", expanded=True):
+                st.code(err, language="text")
+        st.caption(
+            "排查：左侧「⚙️ 模型 / API 设置」核对 API Key / Base URL / 模型名，"
+            "填写后务必点击「应用配置」再运行。"
+        )
+    elif source == "llm":
+        extra = "（部分环节调用失败，详见报告首部）" if err else ""
+        st.success(f"✅ 本轮因子由大模型生成{extra}")
+
+
 def _render_agent_dict(d: dict, with_method: bool = False):
+    _render_llm_provenance(d)
     st.markdown(_embed_local_images(d.get("report", "")))
     if d.get("metrics"):
         with st.expander("📊 关键指标", expanded=False):
@@ -534,6 +628,9 @@ def _build_agent_dict(result: dict, with_method: bool = False) -> dict:
         "metrics": result.get("metrics", state.get("metrics", {})),
         "charts": state.get("chart_paths") or state.get("charts") or [],
         "method": None,
+        # 代码来源与 LLM 失败原因，供界面明确标注「是不是模型生成的」。
+        "source": state.get("factor_source", ""),
+        "llm_error": state.get("llm_error", ""),
     }
     if with_method:
         try:

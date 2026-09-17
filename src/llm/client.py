@@ -26,6 +26,35 @@ import yaml
 from netutil import apply_proxy_settings, get_trust_env
 
 
+# config.yaml 里允许写 api_key: "${DEEPSEEK_API_KEY}" 把密钥外置到 .env。
+# 但当环境变量缺失、且 .env 也没加载到时，替换不会发生，取值会原样保留成
+# 一串带花括号的占位符——把它当作密钥发出去只会得到一次必然的 401，而上层
+# 又把这 401 静默兔底成模板产物，用户看到的是一份"看起来正常"的报告。
+# 因此在**调用时**（而非构造时）拦截：构造失败会让整个 UI 起不来，而调用失败
+# 可以被节点捕获并显示给用户。
+_UNRESOLVED_KEY_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
+
+
+def unresolved_env_placeholder(value: Optional[str]) -> Optional[str]:
+    """若 ``value`` 是未解析的 ``${VAR}`` 占位符，返回变量名；否则返回 None。"""
+    if not value:
+        return None
+    m = _UNRESOLVED_KEY_RE.match(str(value).strip())
+    return m.group(1) if m else None
+
+
+def _reject_unresolved_key(api_key: Optional[str]) -> None:
+    var = unresolved_env_placeholder(api_key)
+    if var is None:
+        return
+    raise ValueError(
+        f"API Key 仍是未解析的占位符 ${{{var}}}：环境变量 {var} 未设置，"
+        f"且未能从当前工作目录（{os.getcwd()}）下的 .env 中加载到它。"
+        f"请在 .env 或环境变量中配置 {var}，或在侧边栏「⚙️ 模型 / API 设置」"
+        f"中直接填写密钥并点击「应用配置」。"
+    )
+
+
 class LLMClient:
     """统一的 LLM 调用客户端。
 
@@ -82,6 +111,7 @@ class LLMClient:
     def _build(self):
         if self._llm is not None:
             return self._llm
+        _reject_unresolved_key(self.api_key)
         # 所有 provider 均走 OpenAI 兼容接口（DeepSeek / OpenAI / Qwen / 本地
         # Ollama / vLLM / Groq / OpenRouter 等任意 OpenAI-compatible 端点皆可）。
         try:
