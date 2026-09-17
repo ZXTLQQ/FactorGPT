@@ -114,9 +114,26 @@ def run_refinery(config, user_input: str, offline: bool) -> None:
     print("=" * 60)
 
 
+def run_ask(config, user_input: str) -> None:
+    from agent.intent import chat_answer, classify
+
+    res = classify(user_input, config=config)
+    print("=" * 60)
+    print(f"意图：{res.label}（{'模型判定' if res.source == 'llm' else '规则兜底'}，"
+          f"置信度 {res.confidence:.2f}）" + (f" · {res.reason}" if res.reason else ""))
+    if res.error:
+        print(f"分类未走模型：{res.error}")
+    print("=" * 60)
+    print(chat_answer(user_input, config=config, intent=res))
+    if res.intent == "mining":
+        print("\n[提示] 这像是一条因子挖掘需求，去掉 --ask 即可真正跑一遍回测。")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="FactorGPT 因子挖掘 / 精炼厂")
     parser.add_argument("requirement", nargs="*", help="因子挖掘需求描述")
+    parser.add_argument("--ask", action="store_true",
+                        help="直接问答：先做意图分类，非挖掘类不启动回测流水线")
     parser.add_argument("--refinery", action="store_true", help="运行六阶段因子精炼厂流水线")
     parser.add_argument("--vibe", action="store_true", help="Vibe-Trading 自然语言策略模式")
     parser.add_argument("--vibe-native", action="store_true", dest="vibe_native",
@@ -132,7 +149,9 @@ def main() -> None:
 
     config = load_config()
 
-    if args.vibe:
+    if args.ask:
+        run_ask(config, user_input)
+    elif args.vibe:
         run_vibe(config, " ".join(args.requirement), use_native=args.vibe_native)
     elif args.refinery:
         offline = True if args.offline is None else args.offline

@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from agent.graph import FactorAgent   # noqa: E402
+from agent.intent import classify, chat_answer  # noqa: E402
 from agent.vibe_trading import VibeTradingSession  # noqa: E402
 from agent.integration import (
     get_library, get_coupling, get_unstructured_manager, get_text_analyzer,
@@ -924,6 +925,56 @@ def render_memory():
 # ----------------------------------------------------------------------
 # 页面：单次因子挖掘（Agent）
 # ----------------------------------------------------------------------
+def _intent_config() -> Dict[str, Any]:
+    """意图分类 / 直接作答用的配置：``llm`` 段换成界面上已生效的模型设置。
+
+    分类与对话必须和挖掘用同一套模型配置，否则会出现「侧边栏切了模型，
+    挖掘是新模型、分类还是旧模型」的错位。
+    """
+    cfg = dict(load_config() or {})
+    llm_cfg = dict(cfg.get("llm") or {})
+    llm_cfg.update({k: v for k, v in (st.session_state.get("llm_cfg") or {}).items()
+                    if v not in (None, "")})
+    cfg["llm"] = llm_cfg
+    return cfg
+
+
+def _render_intent_note(res) -> None:
+    """把「这次判定是谁做的、把握多大」如实摆在结果前面。
+
+    分类失败退化成规则兜底时，模型根本没参与——这一行是用户唯一能据以判断
+    「本轮是不是模型在说话」的证据。
+    """
+    src = "模型判定" if res.source == "llm" else "规则兜底"
+    line = f"意图：**{res.label}** · {src} · 置信度 {res.confidence:.2f}"
+    if res.reason:
+        line += f" · {res.reason}"
+    st.caption(line)
+    if res.error:
+        st.warning(f"意图分类未走模型：{res.error}（本轮按规则兜底处理）")
+    if not res.confident:
+        st.info("这条输入意图不太明确，已按上述方式处理。若不符预期，"
+                "把需求写成「要构建什么样的因子、用什么数据、怎么算」即可触发挖掘。")
+
+
+def _render_chat_message(msg: Dict[str, Any], with_method: bool) -> None:
+    """渲染一条历史消息（挖掘结果 / 直接作答两种形态）。"""
+    if msg.get("role") == "user":
+        with st.chat_message("user"):
+            st.markdown(msg.get("content", ""))
+        return
+    with st.chat_message("assistant"):
+        agent_dict = msg.get("agent") or {}
+        it = msg.get("intent") or agent_dict.get("intent")
+        if it:
+            src = "模型判定" if it.get("source") == "llm" else "规则兜底"
+            st.caption(f"意图：{it.get('label')} · {src} · 置信度 {it.get('confidence')}")
+        if msg.get("answer") is not None:
+            st.markdown(msg["answer"])
+        else:
+            _render_agent_dict(agent_dict, with_method=with_method)
+
+
 def render_factor_agent():
     active = st.session_state.llm_cfg
     st.caption(
@@ -934,11 +985,28 @@ def render_factor_agent():
         "因子需求描述",
         value="混合日频与月频，结合短期反转与流动性，构建低估值质量因子",
         height=90,
+        key="fa_requirement",
     )
     auto_method = st.checkbox("自动生成方法学解读", value=True)
+    auto_route = st.checkbox(
+        "🧭 意图自动分流", value=True, key="fa_intent_route",
+        help="开启后先做一次 LLM 语义分类：只有「因子挖掘」类才启动回测流水线，"
+             "问答/闲聊直接对话作答，避免「你好」也跑一遍挖掘。",
+    )
     run_btn = st.button("🚀 运行因子挖掘", type="primary")
 
     if run_btn and user_input.strip():
+        cfg = _intent_config()
+        res = classify(user_input, config=cfg) if auto_route else None
+        if res is not None:
+            _render_intent_note(res)
+            if res.intent != "mining":
+                with st.spinner("思考中..."):
+                    st.markdown(chat_answer(user_input, config=cfg, intent=res))
+                st.stop()
+            if res.rewritten and res.rewritten.strip() != user_input.strip():
+                st.caption(f"已按上下文补全需求：**{res.rewritten}**")
+                user_input = res.rewritten
         agent = get_agent()
         _apply_model(agent)
         with st.spinner("Agent 正在挖掘因子（可能多轮反思）..."):
@@ -951,7 +1019,7 @@ def render_factor_agent():
 # 页面：Agent 对话（多轮）
 # ----------------------------------------------------------------------
 def render_agent_chat():
-    st.caption("多轮对话式因子挖掘：输入需求，Agent 自动检索知识、生成/回测因子并反思迭代。")
+    st.caption("多轮对话式因子挖掘：描述因子需求会真的跑一遍回测；问问题则直接作答。")
     active = st.session_state.llm_cfg
     st.caption(f"当前模型：**{active.get('model')}**")
 
@@ -960,23 +1028,39 @@ def render_agent_chat():
         st.rerun()
 
     auto_method = st.checkbox("每条回复自动附方法学解读", value=True, key="chat_method")
+    auto_route = st.checkbox(
+        "🧭 意图自动分流", value=True, key="chat_intent_route",
+        help="开启后每句话先做一次 LLM 语义分类：只有「因子挖掘」才启动回测流水线，"
+             "问答 / 闲聊 / 需要澄清直接对话作答。关闭则回到「任何输入都跑挖掘」的旧行为。",
+    )
 
-    # 渲染历史
     for msg in st.session_state.chat_history:
-        if msg["role"] == "user":
-            with st.chat_message("user"):
-                st.markdown(msg["content"])
-        else:
-            with st.chat_message("assistant"):
-                _render_agent_dict(msg.get("agent", {}), with_method=bool(msg.get("agent", {}).get("method")))
+        _render_chat_message(msg, with_method=auto_method)
 
-    if prompt := st.chat_input("描述你想要的因子，例如：低估值且现金流稳健的反转因子"):
+    if prompt := st.chat_input("描述你想要的因子，或直接问我任何问题"):
         st.session_state.chat_history.append({"role": "user", "content": prompt})
+        cfg = _intent_config()
+        res = classify(prompt, config=cfg, history=st.session_state.chat_history[:-1]) \
+            if auto_route else None
+
+        if res is not None and res.intent != "mining":
+            with st.spinner("思考中..."):
+                reply = chat_answer(prompt, config=cfg,
+                                    history=st.session_state.chat_history[:-1], intent=res)
+            st.session_state.chat_history.append(
+                {"role": "assistant", "answer": reply, "intent": res.as_dict()}
+            )
+            st.rerun()
+
+        if res is not None and res.rewritten and res.rewritten.strip() != prompt.strip():
+            prompt = res.rewritten
         agent = get_agent()
         _apply_model(agent)
         with st.spinner("Agent 正在挖掘因子..."):
             result = agent.run(prompt, max_iterations=None)
         d = _build_agent_dict(result, with_method=auto_method)
+        if res is not None:
+            d["intent"] = res.as_dict()
         st.session_state.chat_history.append({"role": "assistant", "agent": d})
         st.rerun()
 
