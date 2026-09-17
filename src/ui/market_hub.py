@@ -329,13 +329,20 @@ def _stock_dialog(code: str, name: str):
 def _factor_agent():
     """构建并缓存因子挖掘 Agent（与主页共享同一 FactorAgent 类）。"""
     from agent.graph import FactorAgent
-    import yaml
     cfg_path = Path(__file__).resolve().parent.parent.parent / "config.yaml"
+    # 与主页同一套 load_config：带 .env 注入与 ${VAR} 插值，避免拿到假密钥。
     try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+        from llm.client import load_config
+
+        cfg = load_config(str(cfg_path)) or {}
     except Exception:
-        cfg = {}
+        try:
+            import yaml
+
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+        except Exception:
+            cfg = {}
     return FactorAgent(cfg)
 
 

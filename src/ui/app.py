@@ -63,6 +63,8 @@ from store import state as state_repo  # noqa: E402
 from store import systems as systems_repo  # noqa: E402
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
+# 密钥存放位置：config.yaml 受版本控制，真值只写这里（已被 .gitignore 忽略）。
+ENV_PATH = CONFIG_PATH.parent / ".env"
 
 
 # ----------------------------------------------------------------------
@@ -274,21 +276,27 @@ def _test_connection():
 
 
 def _save_llm_to_config():
+    """把侧边栏的模型设置落盘。
+
+    不能像以前那样把 API Key 明文 ``safe_dump`` 进 ``config.yaml``：那个文件
+    受版本控制，一次 ``git add -A`` 就把密钥带进提交。真值改写到 ``.env``
+    （已 gitignore），``config.yaml`` 只留 ``${VAR}``；同时原地打补丁而不是
+    重写整个 YAML，避免把文件里几百行注释一次性抹掉。
+    """
+    from ui.config_persistence import save_llm_settings
+
     try:
-        data = yaml.safe_load(open(CONFIG_PATH, "r", encoding="utf-8")) or {}
-        data.setdefault("llm", {})
-        data["llm"].update({
-            "provider": st.session_state.ui_provider_value,
-            "model": st.session_state.ui_model,
-            "api_key": st.session_state.ui_api_key,
-            "base_url": st.session_state.ui_base_url,
-            "temperature": st.session_state.ui_temp,
-        })
-        yaml.safe_dump(data, open(CONFIG_PATH, "w", encoding="utf-8"),
-                       allow_unicode=True, sort_keys=False)
-        st.success("已写入 config.yaml（含 API Key，请注意本地保密）。")
+        res = save_llm_settings(CONFIG_PATH, ENV_PATH, _ui_llm_snapshot())
     except Exception as e:
         st.error(f"保存失败：{e}")
+        return
+    # 落盘形态是占位符，但内存里仍持有真值：本轮无需重启即可继续调用。
+    st.session_state.llm_cfg["api_key"] = st.session_state.ui_api_key
+    for msg in res.saved:
+        st.success(msg)
+    for msg in res.warned:
+        st.warning(msg)
+    load_config.clear()
 
 
 def _init_data_source_session():
@@ -493,15 +501,23 @@ def _apply_data_source_to_session():
 
 
 def _save_data_source_to_config():
-    """把会话状态中的数据源设置写入 config.yaml 的 data 段（保留其他段与未改字段）。"""
+    """把会话状态中的数据源设置写入 config.yaml 的 data 段。
+
+    与模型设置同一套落盘策略：token 写 .env、config.yaml 只留占位符、原地
+    打补丁保留注释（``safe_dump`` 会把整个文件的注释与段落顺序抹掉）。
+    """
+    from ui.config_persistence import save_data_settings
+
     try:
-        data = yaml.safe_load(open(CONFIG_PATH, "r", encoding="utf-8")) or {}
-        merged = {**(data.get("data") or {}), **_collect_data_source_cfg()}
-        data["data"] = merged
-        yaml.safe_dump(data, open(CONFIG_PATH, "w", encoding="utf-8"),
-                       allow_unicode=True, sort_keys=False)
+        res = save_data_settings(CONFIG_PATH, ENV_PATH, _collect_data_source_cfg())
     except Exception as e:
         st.error(f"数据源配置保存失败：{e}")
+        return
+    for msg in res.saved:
+        st.success(msg)
+    for msg in res.warned:
+        st.warning(msg)
+    load_config.clear()
 
 
 def _apply_model(agent):

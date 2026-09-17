@@ -18,11 +18,18 @@ CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
 
 
 def _load_llm_cfg() -> dict:
+    # 必须走 llm.client.load_config：它先注入 .env 再把 ${VAR} 插值成真值。
+    # 裸 safe_load 拿到的是字面量 "${DEEPSEEK_API_KEY}"——一串必然 401 的假密钥。
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+        from llm.client import load_config
+
+        data = load_config(str(CONFIG_PATH)) or {}
     except Exception:
-        data = {}
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        except Exception:
+            data = {}
     cfg = dict(data.get("llm", {}))
     # 若 Streamlit 会话已切换模型，则优先使用（支持通过 API Key 切换模型）
     try:

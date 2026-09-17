@@ -111,6 +111,33 @@ streamlit run src/ui/app.py
 
 Open your browser at `http://localhost:8501` to access the 21-page integrated web dashboard.
 
+### Credentials: `.env`, never `config.yaml`
+
+`config.yaml` is commit-tracked, so secrets never go into it. Every secret field accepts a `${VAR}` reference that is resolved from the environment at load time — `.env` in the repository root (itself git-ignored) is loaded first, which is what `config.yaml` already ships with:
+
+```yaml
+llm:
+  api_key: "${DEEPSEEK_API_KEY}"     # resolved from .env / the environment
+data:
+  tushare_token: "${TUSHARE_TOKEN}"
+```
+
+For a local run, copy the keys you actually need from [`.env.example`](.env.example) into `.env`:
+
+```bash
+DEEPSEEK_API_KEY=sk-...
+TUSHARE_TOKEN=...
+```
+
+The sidebar's **保存配置 (Save)** button follows the same rule and tells you so when it runs: the model key and the data-source tokens are written to `.env` (permission-tightened to `0600` on POSIX), `config.yaml` only ever receives the `${VAR}` placeholder, and the value you typed is injected into the running process immediately, so no restart is needed. Saving patches `config.yaml` line by line instead of re-serialising it, so comments, quoting and section order survive — a save that changes nothing leaves the file byte-identical, and switching provider writes to that provider's variable (`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `DASHSCOPE_API_KEY` / `FACTORGPT_LLM_API_KEY`; Ollama's `ollama` placeholder is not a secret and stays inline).
+
+Two failure modes are deliberately loud rather than silent:
+
+- **Unresolved placeholder.** If `${VAR}` cannot be resolved, the LLM call fails with a message naming the variable instead of sending a fake key for a guaranteed 401. It fails at call time, not at construction time — raising in `__init__` would take the whole Streamlit app down.
+- **Offline fallback.** When the model is unreachable the factor pipeline still returns a keyword-template factor, so the run does not die — but the report header is stamped with `因子来源：模板兜底（并非由大模型生成）` plus the reason, and the result badge in the UI says `template`, not `llm`. A template product cannot pass as model output.
+
+Related: **测试连接 (Test connection)** proves that the values *in the input boxes* work; it is not the same as "applied". The panel warns when the boxes and the effective session config diverge, because "it connected but the run used the old settings" is otherwise unexplainable.
+
 ### Quick Test (No Network Required)
 
 ```bash
@@ -370,7 +397,7 @@ It is wired in where it can change an outcome, not only a number: `triage.specif
 
 All settings are centralized in `config.yaml`:
 
-- **llm**: Model provider (deepseek/openai/qwen/ollama), API key, endpoint, temperature, multi-LLM routing
+- **llm**: Model provider (deepseek/openai/qwen/ollama), API key, endpoint, temperature, multi-LLM routing. The key may be written as `${VAR}` and resolved from `.env` — see [Credentials](#credentials-env-never-configyaml); the sidebar's save button always writes it that way.
 - **data**: Primary data source, date range, caching, synthetic fallback. `data.source` accepts three values:
   - `offline` (**default**) — built-in bundled local dataset, no network required
   - `legacy` — self-crawled akshare/sina/tushare sources
@@ -382,6 +409,8 @@ All settings are centralized in `config.yaml`:
 - **proxy**: HTTP/HTTPS proxy for mainland China network environments
 - **experiment_tracking**: Experiment logging (local JSONL or MLflow)
 - **headline_arena**: Forward-testing of factor-layer macro views via Headline Arena (enabled toggles the LangGraph shadow node; `dry_run: true` keeps predictions local by default)
+
+Secret fields (`llm.api_key`, `data.tushare_token`, `data.ths_api_token`) are never stored literally: `config.yaml` keeps the `${VAR}` placeholder and the value lives in `.env`. Saving from the UI is a line-level patch, not a re-serialisation, so the comments and section order in `config.yaml` — and the diff you have to review — stay readable.
 
 ### NeoData Stable Data Source (Experimental)
 
@@ -466,8 +495,12 @@ The included `docker-compose.yml` provides:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DEEPSEEK_API_KEY` | DeepSeek API key | - |
-| `TUSHARE_TOKEN` | Tushare Pro token | - |
+| `DEEPSEEK_API_KEY` | DeepSeek API key (`llm.provider: deepseek`) | - |
+| `OPENAI_API_KEY` | OpenAI API key (`llm.provider: openai`) | - |
+| `DASHSCOPE_API_KEY` | Qwen / DashScope API key (`llm.provider: qwen`) | - |
+| `FACTORGPT_LLM_API_KEY` | API key for any other OpenAI-compatible endpoint (`custom`, `vllm`, OpenRouter, …) | - |
+| `TUSHARE_TOKEN` | Tushare Pro token (`data.tushare_token`) | - |
+| `THS_API_TOKEN` | Tonghuashun iFinD MCP gateway token (`data.ths_api_token`) | - |
 | `FACTORGPT_LLM_PROVIDER` | Override LLM provider | ollama |
 | `FACTORGPT_LLM_MODEL` | Override LLM model | qwen2.5-coder:7b |
 | `HF_ENDPOINT` | HuggingFace mirror endpoint | https://hf-mirror.com |
@@ -476,6 +509,8 @@ The included `docker-compose.yml` provides:
 | `IMA_API_KEY` | Tencent ima API key (renew monthly at ima.qq.com/agent-interface) | - |
 | `HA_AGENT_ID` | Headline Arena agent id (forward-testing bridge; also saved to ~/.headlinearena/credentials.json) | - |
 | `HA_CLIENT_SECRET` | Headline Arena client secret (shown once at registration) | - |
+
+These are exactly the names the sidebar's **保存配置** button writes into `.env`; the first six are the ones `config.yaml` refers to as `${VAR}`. See [Credentials](#credentials-env-never-configyaml) for what happens when one of them is missing.
 
 ---
 
@@ -571,7 +606,7 @@ FactorGPT/
 
 ## Testing & Quality Assurance
 
-FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge — 146 test functions across 10 files (167 cases after parametrisation), none of which require network access:
+FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge — 232 test functions across 14 files (253 cases after parametrisation), none of which require network access:
 
 - **CI**: `.github/workflows/ci.yml` runs the full test suite on every push/PR (Python 3.11 + 3.12), then compile-checks all source modules. Status: [![CI](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml)
 - **Core tests**: sandbox security & lookahead-bias rejection (`test_sandbox.py`, 15 test functions / 24 cases including parametrized future-column names), the six-stage refinery pipeline end-to-end (`test_refinery.py`, 6), and documentation-contract drift guards (`test_docs_contract.py`, 6 — keeps README page/factor counts, the `instrument→symbol` data contract, and `kronos.fallback_to_stub` from silently drifting).
@@ -581,6 +616,7 @@ FactorGPT's "production-grade" claim is backed by automated tests and reproducib
 - **Factor research layer**: `tests/test_mining.py` (32 tests) pins the operator library against pandas / hand-computed references, the type-gate rejections, PIT alignment vs the independent reference implementation, warm-up-aware coverage, the risk-gate identities, grid-miner budget & reproducibility, the expected direction of every fundamental / concept factor, and the report renderer (every section present, `—` instead of `nan`, escaped table pipes, byte-identical output on write).
 - **AI advisor & system diagnostics** (`test_system_advisor.py`, 24 functions / 36 cases): builds a real factor system on a synthetic panel with spectral cleaning switched on, then pins the advisor contract — no `nan` can enter the fact table, every listed intent produces an answer, suggested questions must route to a *specific* intent (a suggestion that falls through to the generic one wastes a turn), actions stay ordered and capped, the prompt carries the fact table and forbids numbers outside it, and a model that raises **or** returns blank degrades to the rule answer with the reason attached. The same file covers the concentrated-risk branch of `factor_system.build_findings`, whose input is the risk decomposition above. Uncovered surface is stated rather than implied: three of the six modules in Highlight 10 (significance / universe / multi-scale GP) are covered by `tests/test_triage.py`, `specification_rl` has its own file (below), `param_ops` runs only inside the multi-scale miner (exercised by implication), and the spectral identities (`mp_bounds`, shrinkage) still have no dedicated numeric test — the chain is exercised end-to-end through this fixture instead.
 - **Multitask specification RL** (`test_specification_rl.py`, 14 tests): the three action masks, that a compiled specification is a valid GP expression tree (compiled with the same tuple grammar and evaluated by `eval_tree`), that the panel environment scores `|IC|` and fails a specification whose columns are missing, that the reward is bounded and returns `−1` on an unestimable specification, and — the falsifiable one — that the shared policy beats single-task training **and** an untrained policy on held-out tasks whose features were never seen in training (0.75 / 0.19 / 0.32, 8/8 seeds). Coverage is also pinned end-to-end: the report renders the specification section, and `multiscale_mine(spec_rl=True)` actually injects the RL seeds into the genetic initial population rather than carrying them alongside.
+- **LLM provenance & config persistence** (`test_llm_provenance.py`, 11 / `test_config_persistence.py`, 22 tests): the two failure modes that made "the model is connected but it keeps running offline" unexplainable. An unresolved `${VAR}` key must be rejected **at call time** (construction must survive it, or the whole Streamlit app dies on a missing env var) and `_build()`'s refusal must be visible in `available()`; the offline fallback must record `factor_source` / `llm_error` in state, merge the reflect-stage failure with the generate-stage one instead of overwriting it, and stamp the report header so a template product cannot pass as model output. On the persistence side: a plaintext key must never reach the git-tracked `config.yaml` (it goes to `.env`, and the placeholder must still interpolate back to the real value), saving must be a line-level patch that touches only the target section — including the same-named key one level deeper in `llm.router.critic` and the top-level `proxy` vs `data.proxy` pair — and a save that changes nothing must leave the file byte-identical.
 - **Warnings are errors** (`pytest.ini`): the failure mode this repo cares about is not a raised exception but an *exception silently swallowed into a plausible number* — `np.corrcoef` returning 0 for a degenerate cross-section, or `np.nanmean` warning on an empty slice and quietly yielding NaN. Every `RuntimeWarning` / `FutureWarning` / `DeprecationWarning` now fails the suite, so those substitutions cannot creep back in.
 
 ---
