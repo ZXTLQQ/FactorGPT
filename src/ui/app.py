@@ -1965,6 +1965,90 @@ def _gp_multiscale_tab():
                "区间选择与演化全部只用训练段。")
 
 
+def _gp_specification_tab():
+    """多任务 RL 规范搜索（论文 2609.18441v1 的 Delphos 落地）。"""
+    st.markdown("**多任务规范搜索**：把「选哪些建模项」当成一串序贯决策——加项 / 改项 /"
+                " 交卷，由估计环境（求值 + IC）给反馈。规范被表示成**与变量名无关的"
+                "建模项集合**，因此在一个共享策略上跨任务（这里按时间切段）训练后，"
+                "学到的建模概念可以零样本用到新任务上。")
+    n_symbols, n_days, seed = _panel_controls("gp_spec", 40, 250)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        horizon = st.number_input("前瞻期", 1, 20, 5, key="gp_spec_h")
+    with c2:
+        n_tasks = st.slider("任务数（时间切段）", 1, 6, 3, key="gp_spec_nt")
+    with c3:
+        n_episodes = st.slider("训练 episode 数", 6, 120, 30, 6, key="gp_spec_ep")
+    with c4:
+        n_candidates = st.slider("每任务候选数", 2, 12, 5, key="gp_spec_nc")
+
+    if st.button("🧠 运行规范搜索", type="primary", key="gp_spec_run"):
+        import json
+
+        from mining import triage as TR
+
+        with st.spinner("跨任务联合训练 → 零样本提规范 ..."):
+            st.session_state["gp_spec_out"] = TR.specification_search(
+                _mining_panel(n_symbols, n_days, seed), horizon=int(horizon),
+                n_tasks=int(n_tasks), n_episodes=int(n_episodes),
+                n_candidates=int(n_candidates), seed=int(seed))
+    out = st.session_state.get("gp_spec_out")
+    if not out:
+        st.info("设置参数后点击运行。任务越多、episode 越多越慢，"
+                "但跨任务聚合的经验也越多。")
+        return
+
+    tr = out.get("train") or {}
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("估计环境调用", _num(out.get("n_estimations"), 0))
+    m2.metric("平均奖励", _num(tr.get("mean_reward"), 3))
+    m3.metric("最优 |IC|", _num(tr.get("best_fit"), 4))
+    m4.metric("收敛率", _pct(tr.get("convergence_rate")))
+    st.caption(f"{_num(out.get('n_tasks'), 0)} 个任务 · 训练 "
+               f"{_num(tr.get('n_episodes'), 0)} 个 episode · 学习曲线 AUC "
+               f"{_num(tr.get('auc'), 3)} · 新颖规范占比 {_pct(tr.get('novelty'))}")
+
+    for t in (out.get("tasks") or ()):
+        cands = t.get("candidates") or []
+        if not cands:
+            continue
+        front = {json.dumps(c, sort_keys=True, ensure_ascii=False)
+                 for c in (t.get("pareto") or ())}
+        rows = []
+        for c in cands:
+            rows.append({
+                "规范": " + ".join(_spec_term_text(x) for x in (c.get("terms") or ())),
+                "|IC|": c.get("fit"), "复杂度": c.get("complexity"),
+                "估计成功": "是" if c.get("ok") else "否",
+                "Pareto": "是" if json.dumps(c, sort_keys=True,
+                                             ensure_ascii=False) in front else "否",
+            })
+        with st.expander(f"任务 {t.get('task')} · 可用特征 "
+                         f"{_num(t.get('n_features'), 0)} 个 · 最优 |IC| "
+                         f"{_num(t.get('best_fit'), 4)}", expanded=True):
+            st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    st.caption("拟合值取 |IC|（因子方向可自由取反，奖励的是区分度）。Pareto 列标出"
+               "拟合与简约之间的非支配解：同等拟合下更简约的规范更值得信。")
+
+
+def _spec_term_text(term: Any) -> str:
+    """把一个建模项渲染成人话（与报告表的口径保持一致）。"""
+    if not isinstance(term, dict):
+        return str(term)
+    feat, trans = term.get("feature"), term.get("transform") or "none"
+    struct, cov = term.get("structure") or "none", term.get("covariate")
+    win = term.get("window") or 0
+    head = f"{feat}" if trans == "none" else f"{trans}({feat})"
+    if trans in ("ts_zscore", "ts_rank", "rol", "ts_min", "ts_max") and win:
+        head = f"{trans}({feat}, {win})"
+    if struct != "none" and cov:
+        head = (f"ts_corr({feat}, {cov}, {win})" if struct == "ts_corr"
+                else f"{struct}({head}, {cov})")
+    if term.get("param"):
+        head = f"hwma({head})"
+    return head
+
+
 def _gp_significance_tab():
     st.markdown("**统计显著性检验**：搜索出来的候选要同时过四道门槛——样本量、平稳块 "
                 "bootstrap 的 p、有效样本量口径的 p、选择校正 + BH FDR；多重性的分母是"
@@ -2110,12 +2194,15 @@ def _gp_domain_tab():
 
 def render_gp_mining():
     st.caption("因子簇驱动演化 · 岛屿模型 · 事件窗口感知 · 批量海量生产 · 分层多尺度")
-    tab_evo, tab_ms, tab_sig, tab_dom = st.tabs(
-        ["🧬 批量演化", "🪜 分层多尺度挖掘", "🎯 统计显著性检验", "🌐 选股域对照"])
+    tab_evo, tab_ms, tab_spec, tab_sig, tab_dom = st.tabs(
+        ["🧬 批量演化", "🪜 分层多尺度挖掘", "🧠 规范搜索", "🎯 统计显著性检验",
+         "🌐 选股域对照"])
     with tab_evo:
         _gp_evolve_tab()
     with tab_ms:
         _gp_multiscale_tab()
+    with tab_spec:
+        _gp_specification_tab()
     with tab_sig:
         _gp_significance_tab()
     with tab_dom:

@@ -170,6 +170,8 @@ class ReportInput:
     domains: Optional[pd.DataFrame] = None
     universe: Mapping[str, Any] = field(default_factory=dict)
     multiscale: Mapping[str, Any] = field(default_factory=dict)
+    # 多任务 RL 辅助的规范搜索（见 ``engine.specification_rl``）。
+    specification: Mapping[str, Any] = field(default_factory=dict)
     notes: Sequence[str] = ()
     generated_at: str = ""
 
@@ -665,6 +667,83 @@ def _sec_multiscale(ri: ReportInput) -> List[str]:
     return out
 
 
+def _sec_specification(ri: ReportInput) -> List[str]:
+    """多任务 RL 辅助的规范搜索：跨任务共享策略 → 零样本给新任务提规范。
+
+    对应 ``2609.18441v1``：把"选哪些建模项"写成 MDP，用与变量名无关的建模项
+    集合做状态（置换不变聚合），在多份数据上共享一个策略，学到的**建模概念**
+    （该用哪种变换 / 组合结构 / 时间尺度）可以直接用在没见过的新数据上。
+    """
+    spec = dict(ri.specification or {})
+    tasks = list(spec.get("tasks") or ())
+    if not tasks:
+        return []
+    train = dict(spec.get("train") or {})
+    out = ["## 多任务规范搜索（强化学习）", ""]
+    facts = [
+        ["任务数", _fmt(spec.get("n_tasks"), 0)],
+        ["训练 episode 数", _fmt(train.get("n_episodes"), 0)],
+        ["估计环境调用次数", _fmt(spec.get("n_estimations"), 0)],
+        ["平均奖励", _fmt(train.get("mean_reward"), 4)],
+        ["最优拟合值", _fmt(train.get("best_fit"), 4)],
+        ["学习曲线下面积（AUC）", _fmt(train.get("auc"), 4)],
+        ["收敛率", _fmt(train.get("convergence_rate"), 1, pct=True)],
+        ["新颖规范占比", _fmt(train.get("novelty"), 1, pct=True)],
+    ]
+    out += [_kv_table(facts), ""]
+
+    for t in tasks:
+        cands = list(t.get("candidates") or ())
+        if not cands:
+            continue
+        pareto = {json.dumps(c, sort_keys=True, ensure_ascii=False)
+                  for c in (t.get("pareto") or ())}
+        rows = []
+        for c in cands:
+            terms = "; ".join(_term_brief(x) for x in (c.get("terms") or ()))
+            in_front = "是" if json.dumps(c, sort_keys=True,
+                                          ensure_ascii=False) in pareto else "否"
+            rows.append([terms, _fmt(c.get("fit"), 4), _fmt(c.get("complexity"), 0),
+                         "是" if c.get("ok") else "否", in_front])
+        out += [f"### 任务 {t.get('task')}（可用特征 {_fmt(t.get('n_features'), 0)} 个）", "",
+                _table(["规范（建模项）", "拟合值 |IC|", "复杂度", "估计成功",
+                        "Pareto"], rows,
+                       aligns=["l", "r", "r", "c", "c"]), ""]
+
+    out += [
+        "读这张表要记住两点。其一，**拟合值取 |IC|**：因子方向可以自由取反，"
+        "要奖励的是区分度而不是「恰好为正」。其二，**Pareto 列**标出的是拟合与简约"
+        "之间的非支配解——同一个拟合水平下更简约的规范更值得信，因为它更不容易是"
+        "对这段样本的过拟合。",
+        "",
+        "跨任务共享策略的意义在于：建模概念（该用哪种变换、哪种组合结构、哪个"
+        "时间尺度）与「用哪个特征承载它」是两件事。受控实验里，多任务策略零样本"
+        "用到训练时从未出现过的特征上仍能拿到 0.75 的平均拟合，单任务策略只有 "
+        "0.19（甚至低于随机搜索的 0.32——它学到的是任务特定的特征偏好）。",
+        ""]
+    return out
+
+
+def _term_brief(term: Any) -> str:
+    """把一个建模项压成一行人话（用于表格展示）。"""
+    if not isinstance(term, Mapping):
+        return str(term)
+    feat = str(term.get("feature") or DASH)
+    trans = str(term.get("transform") or "none")
+    struct = str(term.get("structure") or "none")
+    cov = term.get("covariate")
+    win = term.get("window") or 0
+    head = feat if trans == "none" else f"{trans}({feat})"
+    if trans in ("ts_zscore", "ts_rank", "rol", "ts_min", "ts_max") and win:
+        head = f"{trans}({feat}, {win})"
+    if struct != "none" and cov:
+        head = f"{struct}({head}, {cov})" if struct != "ts_corr" \
+            else f"ts_corr({head}, {cov}, {win})"
+    if term.get("param"):
+        head = f"hwma({head})"
+    return head
+
+
 def _sec_repro(ri: ReportInput) -> List[str]:
     rows: List[List[str]] = [["生成时刻", ri.stamp()]]
     cfg = _get(ri.search, "config", None)
@@ -687,8 +766,8 @@ def render_markdown(ri: ReportInput) -> str:
         parts += seg
     for i, rep in enumerate(ri.reports, 1):
         parts += _sec_factor(rep, i)
-    for seg in (_sec_domain(ri), _sec_multiscale(ri), _sec_risk(ri),
-                _sec_relation(ri), _sec_repro(ri)):
+    for seg in (_sec_domain(ri), _sec_multiscale(ri), _sec_specification(ri),
+                _sec_risk(ri), _sec_relation(ri), _sec_repro(ri)):
         parts += seg
     return "\n".join(parts).rstrip() + "\n"
 

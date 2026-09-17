@@ -586,6 +586,7 @@ class HierarchicalFactorMiner:
         n_intervals: int = 8,
         n_select: int = 2,
         n_folds: int = 1,
+        seed_exprs: Optional[Sequence[Any]] = None,
         terminal_weight: float = 0.35,
         seed: int = 42,
         param_op_prob: float = 0.25,
@@ -609,6 +610,9 @@ class HierarchicalFactorMiner:
         # 折数（论文 §4.1.2 的 two-fold 实验）：>=2 时在已选父区间内部再做一轮
         # Step 2 诊断 + 局部加密；诊断得分最差的子区间才消耗第三尺度预算。
         self.n_folds = max(1, min(int(n_folds), 2))
+        # 外部注入的初始种群（如多任务规范搜索提的建议）。会在粗尺度演化前
+        # 逐个试算，求不出值的直接丢掉——外部给的表达式可能引用本面板没有的列。
+        self.seed_exprs = list(seed_exprs or ())
         self.terminal_weight = float(np.clip(terminal_weight, 0.0, 1.0))
         self.seed = int(seed)
         self.param_op_prob = float(np.clip(param_op_prob, 0.0, 1.0))
@@ -869,6 +873,15 @@ class HierarchicalFactorMiner:
             s.score = float(0.5 * nd[i] + 0.5 * nm[i]) if s.eligible else float("nan")
         return stats
 
+    def _evaluable(self, expr: Any) -> bool:
+        """该表达式能否在本面板上求出一串有限值（外部种子的准入检查）。"""
+        try:
+            with np.errstate(all="ignore"):
+                vals = np.asarray(eval_tree(expr, self.panel), dtype=float)
+        except (ValueError, TypeError, KeyError, IndexError, FloatingPointError):
+            return False
+        return bool(np.isfinite(vals).any())
+
     # ---------------- 论文 Step 1 / 3：两尺度演化 ----------------
     def _evolve(self, spec: ScaleSpec, initial: Sequence[Any], score_fn,
                 fine_stage: bool = False) -> List[Any]:
@@ -985,7 +998,10 @@ class HierarchicalFactorMiner:
             return self._score(self._ic_vector(expr), coarse_idx)
 
         # ---- 粗尺度演化（论文 Step 1）----
-        coarse_elites = self._evolve(coarse_spec, [], _coarse_score)
+        # 注入的种子先过一遍"能否在本面板上求值"：外部建议的表达式可能引用
+        # 面板里没有的列（或参数节点越界），直接进种群会让演化整段崩掉。
+        usable_seeds = [e for e in self.seed_exprs if self._evaluable(e)]
+        coarse_elites = self._evolve(coarse_spec, usable_seeds, _coarse_score)
         report.coarse_evals = coarse_spec.pop_size * max(1, coarse_spec.generations)
 
         # ---- 区间诊断与子集选择（论文 Step 2）----

@@ -32,7 +32,8 @@ import numpy as np
 import pandas as pd
 
 __all__ = [
-    "KLINE_FIELDS", "panel_long", "kline_long", "ic_series_of",
+    "KLINE_FIELDS", "panel_long", "kline_long", "ic_series_of", "split_panels_by_time",
+    "specification_search",
     "significance_check", "significance_for_search", "quantile_domains",
     "universe_check", "domain_check", "multiscale_mine", "acceptance",
 ]
@@ -230,26 +231,87 @@ def domain_check(panel: Any, factor: Any, specs: Optional[Sequence[Any]] = None,
 # --------------------------------------------------------------------------
 # 4. 分层多尺度挖掘
 # --------------------------------------------------------------------------
+def split_panels_by_time(long: pd.DataFrame, n_tasks: int = 3) -> Dict[str, pd.DataFrame]:
+    """把长表按时间等分成 ``n_tasks`` 份：**每一份就是一个规范搜索任务**。
+
+    论文里"任务 = 一个数据集"。这里的切法是"同一批股票的不同时间段"——建模概念
+    （该用哪种变换、哪种组合结构）应当跨时间共享，而承载它的特征名是同一套，
+    因此跨段聚合经验正好对应论文的多任务设定。
+    """
+    n_tasks = max(1, int(n_tasks))
+    if "date" not in long.columns or long.empty:
+        return {"seg1": long}
+    codes = pd.factorize(pd.Series(long["date"].to_numpy()).sort_values(), sort=True)[0]
+    edges = np.linspace(0, len(codes), n_tasks + 1).astype(int)
+    dates = np.sort(pd.unique(long["date"].to_numpy()))
+    out: Dict[str, pd.DataFrame] = {}
+    for i in range(n_tasks):
+        lo, hi = int(edges[i]), int(edges[i + 1])
+        if hi <= lo:
+            continue
+        keep = dates[lo:hi]
+        part = long[long["date"].isin(keep)]
+        if not part.empty:
+            out[f"seg{i + 1}"] = part
+    return out or {"seg1": long}
+
+
+def specification_search(panel: Any, horizon: int = 5, *, n_tasks: int = 3,
+                         n_episodes: int = 40, n_candidates: int = 6,
+                         seed: int = 42) -> Dict[str, Any]:
+    """多任务强化学习辅助的**因子规范搜索**（``engine.specification_rl``）。
+
+    把面板的时间轴切成若干任务 → 共享一个策略联合训练 → 在每个任务上给出候选
+    规范与 Pareto 前沿（拟合 × 简约）。返回的字典严格可 JSON 化，并带
+    ``n_estimations``（估计环境的调用次数）这一成本口径。
+    """
+    srl = _engine("specification_rl")
+    long = kline_long(panel, horizon=horizon)
+    panels = split_panels_by_time(long, n_tasks=int(n_tasks))
+    out = srl.specification_search(panels, n_episodes=int(n_episodes),
+                                   n_candidates=int(n_candidates), seed=int(seed))
+    out["horizon"] = int(horizon)
+    out["n_tasks_requested"] = int(n_tasks)
+    return out
+
+
 def multiscale_mine(panel: Any, horizon: int = 5, *, n_intervals: int = 8,
                     n_select: int = 2, n_folds: int = 1, seed: int = 42,
                     levels: Optional[Sequence[Any]] = None,
                     terminal_weight: float = 0.35,
+                    spec_rl: bool = False, spec_rl_tasks: int = 3,
+                    spec_rl_episodes: int = 40,
                     **kwargs: Any) -> Dict[str, Any]:
     """在同一份挖掘面板上跑分层多尺度挖掘（粗演化 → 区间诊断 → 局部加密）。
 
     ``n_folds >= 2`` 时启用文献的多折细化：在已选父区间内部再做一轮
-    Step 2 诊断，只有得分最差的子区间才消耗第三尺度预算。返回 ``mine()``
-    的结果并补三个面板口径字段；额外 kwargs 转交
+    Step 2 诊断，只有得分最差的子区间才消耗第三尺度预算。
+
+    ``spec_rl=True`` 时先用多任务规范搜索（见 :func:`specification_search`）提出
+    建模建议，把它们编译成表达式**注入粗尺度演化的初始种群**：RL 负责"往哪搜"，
+    GP 负责"搜多细"。默认关闭——开启会改变搜索轨迹（因此也改变可复现基线）。
+    返回 ``mine()`` 的结果并补几个面板口径字段；额外 kwargs 转交
     :class:`engine.multiscale_gp.HierarchicalFactorMiner`。
     """
     ms = _engine("multiscale_gp")
     long = kline_long(panel, horizon=horizon)
+    seed_exprs: Optional[List[Any]] = None
+    n_spec = 0
+    if spec_rl:
+        srl = _engine("specification_rl")
+        panels = split_panels_by_time(long, n_tasks=int(spec_rl_tasks))
+        seed_exprs = srl.spec_seeds(panels, n_episodes=int(spec_rl_episodes),
+                                    seed=int(seed))
+        n_spec = len(seed_exprs)
     miner = ms.HierarchicalFactorMiner(
         long, y_col="fwd_ret", levels=levels, n_intervals=int(n_intervals),
         n_select=int(n_select), n_folds=int(n_folds), seed=int(seed),
+        seed_exprs=seed_exprs,
         terminal_weight=float(terminal_weight), **kwargs)
     out = miner.mine()
     out["horizon"] = int(horizon)
+    out["spec_rl"] = bool(spec_rl)
+    out["n_spec_seeds"] = int(n_spec)
     symbols, dates = getattr(panel, "symbols", None), getattr(panel, "dates", None)
     out["n_symbols"] = int(len(symbols)) if symbols is not None else 0
     out["n_dates_panel"] = int(len(dates)) if dates is not None else 0
@@ -264,11 +326,14 @@ def acceptance(panel: Any, reports: Sequence[Any] = (), search: Any = None, *,
                n_boot: int = 1000, seed: int = 42, top_k: int = 10,
                top_n: int = 50, min_count: int = 5, n_intervals: int = 8,
                n_select: int = 2, do_domain: bool = True,
-               do_multiscale: bool = True) -> Dict[str, Any]:
+               do_multiscale: bool = True,
+               do_specification: bool = False) -> Dict[str, Any]:
     """三项验收一次跑齐：统计显著性 / 选股域 / 分层多尺度挖掘。
 
     任一项的输入缺失（没有候选、没给因子、主动关闭）就跳过该项并把原因写进
     ``skipped``，而不是给一个"看起来跑过了"的空结果。
+    ``do_specification=True`` 会额外跑一节规范搜索（默认关闭：它是独立的
+    搜索建议，不属于"验收"，且会多花一次估计预算）。
     """
     out: Dict[str, Any] = {"skipped": {}}
 
@@ -304,4 +369,10 @@ def acceptance(panel: Any, reports: Sequence[Any] = (), search: Any = None, *,
             seed=seed)
     else:
         out["skipped"]["multiscale"] = "已关闭分层多尺度挖掘"
+
+    if do_specification:
+        out["specification"] = specification_search(
+            panel, horizon=horizon, n_episodes=24, n_candidates=4, seed=seed)
+    else:
+        out["skipped"]["specification"] = "已关闭多任务规范搜索"
     return out

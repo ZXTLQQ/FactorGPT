@@ -521,7 +521,8 @@ def test_multiscale_fold2_refines_within_selected_intervals(pn: PanelData):
 # --------------------------------------------------------------------------
 def test_acceptance_runs_all_three_sections(acceptance, stub_search):
     acc = acceptance
-    assert acc["skipped"] == {"multiscale": "已关闭分层多尺度挖掘"}
+    assert acc["skipped"] == {"multiscale": "已关闭分层多尺度挖掘",
+                              "specification": "已关闭多任务规范搜索"}
     assert acc["significance"]["n_trials"] == stub_search.n_evaluated
     assert len(acc["domains"]) == 3
     assert acc["universe"]["ok"] and "flags" not in acc["universe"], \
@@ -531,7 +532,8 @@ def test_acceptance_runs_all_three_sections(acceptance, stub_search):
 def test_acceptance_skips_what_it_cannot_do(pn: PanelData, reports, stub_search):
     """缺什么少写什么，而不是给一个"看起来跑过了"的空结果。"""
     bare = TR.acceptance(pn, do_multiscale=False)
-    assert set(bare["skipped"]) == {"significance", "domains", "multiscale"}
+    assert set(bare["skipped"]) == {"significance", "domains", "multiscale",
+                                    "specification"}
     assert "significance" not in bare and "domains" not in bare
     assert bare["skipped"]["significance"] == "没有带 IC 序列的候选因子"
     assert bare["skipped"]["domains"] == "未提供因子值"
@@ -671,7 +673,7 @@ def _ui_funcs():
 
 
 def test_ui_mining_page_is_wired_to_triage():
-    """挖掘页必须真的把四个标签接上去，而且引用的 triage 接口都得存在。
+    """挖掘页必须真的把五个标签接上去，而且引用的 triage 接口都得存在。
 
     这条是**静态**契约（不导入 streamlit、不开页面）：模块里改个名、删个函数，
     界面要等用户点开标签那一刻才炸，静态检查能把这次爆炸提前到 `pytest`。
@@ -686,12 +688,14 @@ def test_ui_mining_page_is_wired_to_triage():
             labels = [e.value for e in node.args[0].elts]
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             calls.add(node.func.id)
-    assert labels is not None and len(labels) == 4, "挖掘页是四标签结构"
+    assert labels is not None and len(labels) == 5, "挖掘页是五标签结构"
     assert any("多尺度" in s for s in labels) and any("显著性" in s for s in labels) \
-        and any("选股域" in s for s in labels), labels
+        and any("选股域" in s for s in labels) and any("规范搜索" in s for s in labels), \
+        labels
     assert {"_gp_evolve_tab", "_gp_multiscale_tab", "_gp_significance_tab",
-            "_gp_domain_tab"} <= calls, calls
-    for name in ("_gp_multiscale_tab", "_gp_significance_tab", "_gp_domain_tab"):
+            "_gp_domain_tab", "_gp_specification_tab"} <= calls, calls
+    for name in ("_gp_multiscale_tab", "_gp_significance_tab", "_gp_domain_tab",
+                 "_gp_specification_tab"):
         assert name in funcs, f"{name} 必须真的存在（不是只有个名字）"
 
     used = {n.attr for g in funcs.values() for n in ast.walk(g)
