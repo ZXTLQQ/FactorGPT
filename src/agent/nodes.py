@@ -103,7 +103,8 @@ class FactorAgentNodes:
     # ------------------------------------------------------------------
     # 2) 因子代码生成
     # ------------------------------------------------------------------
-    def _build_generate_prompt(self, description: str, knowledge: str) -> str:
+    def _build_generate_prompt(self, description: str, knowledge: str,
+                               dialogue_context: str = "") -> str:
         return (
             "你是一名资深的量化金融因子工程师。请根据用户需求与检索到的因子知识，"
             "编写一个用于计算选股因子的 Python 函数。\n\n"
@@ -135,11 +136,17 @@ class FactorAgentNodes:
             "务必结合上述因子知识与金融学常识给出，避免空话。\n\n"
             f"【用户需求】\n{description}\n\n"
             f"【相关因子知识】\n{knowledge}\n"
+            # 多轮上下文放最后：它是「本轮该怎么改」的约束，优先级高于通用知识。
+            + (f"\n【与本轮需求相关的上文对话】\n{dialogue_context}\n"
+               "若上文已挖出过因子且本轮是改进意见（换窗口/改参数/换标的池等），"
+               "请在上文那版因子的基础上改，而不是另起炉灶写一个无关的因子。\n"
+               if dialogue_context else "")
         )
 
     def generate_factor(self, state: dict) -> dict:
         description = state.get("factor_description") or state.get("user_input", "")
         knowledge = state.get("knowledge_context", "")
+        dialogue_context = state.get("dialogue_context", "") or ""
         iteration = int(state.get("iteration", 0)) + 1
 
         # 复用命中学习库中的因子模板（直接「调用」已验证代码，加速收敛、保证可运行）
@@ -161,7 +168,7 @@ class FactorAgentNodes:
         try:
             raw = self.llm.complete(
                 system="你是量化因子工程专家，输出严格符合约定的 JSON。",
-                user=self._build_generate_prompt(description, knowledge),
+                user=self._build_generate_prompt(description, knowledge, dialogue_context),
                 temperature=0.4,
             )
             parsed = extract_json(raw)

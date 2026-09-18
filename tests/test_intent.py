@@ -51,6 +51,17 @@ def _msg_content(msg):
     return msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
 
 
+@pytest.fixture(autouse=True)
+def _rag_off_by_default(monkeypatch):
+    """默认关闭真实知识库检索。
+
+    不这么做的话，每条用例都会去读一遍语料（慢），且在开了向量库的环境里还可能
+    触发向量模型下载。需要真实检索行为的用例自己在函数里再 monkeypatch。
+    """
+    monkeypatch.setattr(IT, "_rag_retriever",
+                        lambda: type("R", (), {"retrieve": lambda self, q, top_k=3: []})())
+
+
 def _json_reply(intent_name, confidence=0.9, reason="测试", rewritten=""):
     """模拟模型常见输出：带代码围栏的 JSON。"""
     payload = {"intent": intent_name, "confidence": confidence,
@@ -239,6 +250,61 @@ def test_chat_answer_packs_history_in_order():
 
 def test_chat_answer_empty_input():
     assert "没有" in IT.chat_answer("", llm=_FakeLLM())
+
+
+# --------------------------------------------------------------------------
+# 问答接本地知识库（RAG）
+# --------------------------------------------------------------------------
+def test_retrieve_context_formats_hits(monkeypatch):
+    monkeypatch.setattr(IT, "_rag_retriever",
+                        lambda: type("R", (), {"retrieve": lambda self, q, top_k=3: ["知识一", "知识二"]})())
+    out = IT.retrieve_context("什么是 ICIR", top_k=2)
+    assert "【参考 1】" in out and "知识一" in out and "知识二" in out
+
+
+def test_retrieve_context_truncates_long_hits(monkeypatch):
+    monkeypatch.setattr(IT, "_rag_retriever",
+                        lambda: type("R", (), {"retrieve": lambda self, q, top_k=3: ["x" * 5000]})())
+    out = IT.retrieve_context("因子", max_chars=100)
+    assert len(out) < 200 and "截断" in out
+
+
+def test_retrieve_context_survives_retriever_failure(monkeypatch):
+    def boom():
+        raise RuntimeError("chroma unavailable")
+
+    monkeypatch.setattr(IT, "_rag_retriever", boom)
+    assert IT.retrieve_context("因子") == ""  # 检索是增强，不是前提
+
+
+def test_retrieve_context_empty_query():
+    assert IT.retrieve_context("") == ""
+
+
+def test_chat_answer_injects_rag_into_system(monkeypatch):
+    monkeypatch.setattr(IT, "_rag_retriever",
+                        lambda: type("R", (), {"retrieve": lambda self, q, top_k=3: ["ICIR 定义文本"]})())
+    llm = _FakeLLM("ICIR 是 IC 的信息比率")
+    IT.chat_answer("什么是 ICIR", llm=llm)
+    assert "ICIR 定义文本" in _msg_content(llm.chat_calls[0][0][0])
+
+
+def test_chat_answer_rag_can_be_disabled(monkeypatch):
+    def boom(*a, **k):  # 若真的去检索就会炸，说明配置生效
+        raise AssertionError("不应触发检索")
+
+    monkeypatch.setattr(IT, "retrieve_context", boom)
+    llm = _FakeLLM("好的")
+    IT.chat_answer("你好", llm=llm, rag_context="")  # 显式不检索
+
+
+def test_chat_answer_rag_disabled_by_config(monkeypatch):
+    monkeypatch.setattr(IT, "retrieve_context",
+                        lambda *a, **k: pytest.fail("配置关闭时不应检索"))
+    llm = _FakeLLM("好的")
+    cfg = {"intent": {"rag_enabled": False}}
+    IT.chat_answer("什么是 ICIR", config=cfg, llm=llm)
+    assert llm.chat_calls
 
 
 # --------------------------------------------------------------------------

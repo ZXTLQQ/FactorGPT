@@ -76,12 +76,16 @@ PROVIDER_PRESETS = {
     "DeepSeek": {"provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"},
     "OpenAI": {"provider": "openai", "base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
     "通义千问 (Qwen)": {"provider": "qwen", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen-plus"},
+    # 本机 Ollama：不需要任何密钥，随时可跑。模型名不能直接写死——每台机器
+    # ollama pull 过什么不一样，由「探测本机模型」列出真实存在的那些。
+    "本地 Ollama": {"provider": "ollama", "base_url": "http://localhost:11434/v1", "model": ""},
     "OpenAI 兼容 (自定义)": {"provider": "custom", "base_url": "", "model": ""},
 }
 PROVIDER_NAME_MAP = {
     "deepseek": "DeepSeek",
     "openai": "OpenAI",
     "qwen": "通义千问 (Qwen)",
+    "ollama": "本地 Ollama",
     "custom": "OpenAI 兼容 (自定义)",
 }
 
@@ -173,6 +177,20 @@ def _on_provider_change():
         st.session_state.ui_provider_value = preset["provider"]
         st.session_state.ui_base_url = preset["base_url"]
         st.session_state.ui_model = preset["model"]
+        # Ollama 不校验密钥，但 ChatOpenAI 要求非空，填占位值省得用户卡在这一步。
+        if preset["provider"] == "ollama" and not (st.session_state.get("ui_api_key") or "").strip():
+            st.session_state.ui_api_key = "ollama"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _probe_local_models(base_url: str) -> Dict[str, Any]:
+    """探测本机 Ollama（结果缓存 60s，避免每帧 rerun 都打一次端口）。"""
+    from llm.local_models import probe_ollama
+
+    try:
+        return probe_ollama(base_url, timeout=3.0, use_cache=False)
+    except Exception as e:  # noqa: BLE001 —— 探测失败只影响这项可选功能
+        return {"available": False, "models": [], "base_url": base_url, "error": str(e)}
 
 
 def _ui_llm_snapshot() -> Dict[str, Any]:
@@ -196,11 +214,65 @@ def _ui_llm_pending() -> bool:
     return any(cfg.get(k) != v for k, v in _ui_llm_snapshot().items())
 
 
+def _sync_ollama_model():
+    st.session_state.ui_model = st.session_state.get("ui_model_ollama", "")
+
+
+def _render_local_model_picker():
+    """选「本地 Ollama」时列出本机真实存在的模型。
+
+    模型名不该靠用户手敲：写错一个字符就是 404，而用户往往不知道自己机器上
+    到底 pull 过哪些。探测不到时明确给出原因与启动命令，别只留一个空列表。
+    """
+    if (st.session_state.get("ui_provider_value") or "") != "ollama":
+        return
+    probe = _probe_local_models(st.session_state.get("ui_base_url") or "")
+    if not probe.get("available"):
+        st.error(f"未探测到本机 Ollama：{probe.get('error') or '服务未响应'}")
+        st.caption("启动方式：终端执行 `ollama serve`（默认端口 11434），然后 `ollama pull <模型>`。")
+        return
+    models = list(probe.get("models") or [])
+    if not models:
+        st.warning("Ollama 已启动但尚未拉取任何模型：先执行 `ollama pull qwen2.5-coder:7b`。")
+        return
+    cur = (st.session_state.get("ui_model") or "").strip()
+    if st.session_state.get("ui_model_ollama") not in models:
+        st.session_state.ui_model_ollama = cur if cur in models else models[0]
+    st.selectbox("本机已装模型（探测自 Ollama）", models, key="ui_model_ollama",
+                 on_change=_sync_ollama_model)
+    st.caption(f"已探测到 {len(models)} 个本地模型，选中后点「应用配置」即可离线对话 / 挖掘。")
+
+
+def _render_ollama_shortcut():
+    """本机跑着 Ollama 时给一个「一键切过去」的入口。
+
+    云端密钥会过期、会 401；而本地模型永远可用。与其让用户发现「怎么又是离线」
+    之后再翻文档，不如在探测到本机模型的当下就把这条路摆出来。
+    """
+    if (st.session_state.get("ui_provider_value") or "") == "ollama":
+        return
+    probe = _probe_local_models("")
+    models = list(probe.get("models") or [])
+    if not models:
+        return
+    if st.button(f"🖥️ 使用本机 Ollama（{len(models)} 个模型）", width='stretch'):
+        from llm.local_models import preferred_model
+
+        st.session_state.ui_provider = "本地 Ollama"
+        st.session_state.ui_provider_value = "ollama"
+        st.session_state.ui_base_url = probe.get("base_url") or ""
+        st.session_state.ui_model = preferred_model(models)
+        st.session_state.ui_api_key = "ollama"
+        st.session_state.llm_cfg = _ui_llm_snapshot()
+        st.rerun()
+
+
 def _render_model_panel():
     """侧边栏「模型 / API 设置」面板：用户通过 API Key 切换模型 / 供应商。"""
     active = st.session_state.llm_cfg
     with st.sidebar.expander("⚙️ 模型 / API 设置", expanded=not bool(active.get("api_key"))):
         st.caption("切换到其他模型或 OpenAI 兼容端点（如本地 Ollama、vLLM、OpenRouter）。")
+        _render_ollama_shortcut()
         names = list(PROVIDER_PRESETS.keys())
         idx = names.index(st.session_state.get("ui_provider", "DeepSeek")) if st.session_state.get("ui_provider") in names else 0
         st.selectbox("供应商", names, index=idx, key="ui_provider", on_change=_on_provider_change)
@@ -209,6 +281,7 @@ def _render_model_panel():
         st.text_input("Base URL", key="ui_base_url",
                       help="OpenAI 兼容接口地址；自定义端点留空使用默认。")
         st.text_input("模型名称", key="ui_model", help="如 deepseek-chat / gpt-4o / qwen-plus。")
+        _render_local_model_picker()
         st.slider("温度", 0.0, 1.0, step=0.05, key="ui_temp")
 
         c1, c2, c3 = st.columns(3)
@@ -1057,7 +1130,9 @@ def render_agent_chat():
         agent = get_agent()
         _apply_model(agent)
         with st.spinner("Agent 正在挖掘因子..."):
-            result = agent.run(prompt, max_iterations=None)
+            # 带上最近对话：第二轮「换个窗口再跑」这类跟进才有上一版因子可改。
+            result = agent.run(prompt, max_iterations=None,
+                               history=st.session_state.chat_history[:-1])
         d = _build_agent_dict(result, with_method=auto_method)
         if res is not None:
             d["intent"] = res.as_dict()

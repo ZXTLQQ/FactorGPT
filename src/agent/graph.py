@@ -23,13 +23,14 @@ import logging
 import os
 import random
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 import numpy as np
 import pandas as pd
 
+from agent.context import DEFAULT_TURNS as DEFAULT_CONTEXT_TURNS, render_dialogue_context
 from agent.nodes import FactorAgentNodes
 from agent.state import AgentState
 from engine.backtest import FactorBacktester
@@ -421,16 +422,35 @@ class FactorAgent:
     # ------------------------------------------------------------------
     # 运行接口
     # ------------------------------------------------------------------
-    def run(self, user_input: str, max_iterations: Optional[int] = None) -> Dict[str, Any]:
+    def run(
+        self,
+        user_input: str,
+        max_iterations: Optional[int] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
+        dialogue_context: str = "",
+    ) -> Dict[str, Any]:
         """运行因子挖掘工作流。
 
         Args:
             user_input: 用户的因子需求描述（自然语言）。
             max_iterations: 覆盖最大生成-反思轮数。
+            history: 最近对话（UI 会话状态里的消息列表）。多轮工作里第二句常是
+                「换个窗口再跑」这类指代，带进来才能在上文那版因子上改，而不是
+                每轮从零重挖。传了它就不必再手动拼 ``dialogue_context``。
+            dialogue_context: 已渲染好的上下文文本；给定时优先于 ``history``。
 
         Returns:
             {"report": str, "state": dict, "metrics": dict}
         """
+        if not dialogue_context:
+            ccfg = self.config.get("context") or {}
+            ctx = render_dialogue_context(
+                history,
+                turns=int(ccfg.get("turns", DEFAULT_CONTEXT_TURNS) or 0),
+                max_chars=int(ccfg.get("max_chars_per_msg", 400) or 0),
+            )
+        else:
+            ctx = dialogue_context
         if self._graph is None:
             self._graph = self._build_graph()
         if max_iterations is not None:
@@ -439,6 +459,7 @@ class FactorAgent:
         init_state: AgentState = {
             "user_input": user_input,
             "factor_description": user_input,
+            "dialogue_context": ctx,
             "max_iterations": self.max_iterations,
             "iteration": 0,
             "reflections": [],

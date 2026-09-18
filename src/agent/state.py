@@ -17,6 +17,9 @@ class AgentState(TypedDict, total=False):
     user_input: str                      # 用户原始需求
     factor_description: str              # 经澄清/标准化的因子描述
     max_iterations: int                  # 最大生成-反思轮数
+    # 最近若干轮对话压成的上下文（src/agent/context.py）。多轮工作里第二句往往
+    # 是「换个窗口」「再激进一点」这类指代，没有它每轮都只能从零重挖。
+    dialogue_context: str
 
     # —— RAG ——
     knowledge_context: str               # 检索到的因子知识上下文

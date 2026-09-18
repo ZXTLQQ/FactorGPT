@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "INTENT_MINING", "INTENT_QA", "INTENT_CHITCHAT", "INTENT_CLARIFY",
     "INTENTS", "IntentResult", "DEFAULT_INTENT_CONFIG",
-    "rule_classify", "classify", "chat_answer", "is_mining",
+    "rule_classify", "classify", "chat_answer", "retrieve_context", "is_mining",
 ]
 
 INTENT_MINING = "mining"
@@ -62,6 +62,11 @@ DEFAULT_INTENT_CONFIG: Dict[str, Any] = {
     "temperature": 0.0,         # 分类要稳定，不要采样
     "fast_path_greeting": True,  # 极短问候直接规则判定，省一次 LLM 往返
     "timeout": 30.0,
+    # 问答时先检索本地因子知识库（rag）再让模型作答：让「平台怎么用、指标怎么算」
+    # 这类问题答的是仓库里的资料，而不是模型泛泛而谈。检索失败不影响作答。
+    "rag_enabled": True,
+    "rag_top_k": 3,
+    "rag_max_chars": 1200,
 }
 
 #: 模型常见别名 → 标准意图（模型爱用 factor/chat/smalltalk 这类词）。
@@ -222,13 +227,17 @@ _CLASSIFY_SYSTEM = """\
 """
 
 _CHAT_SYSTEM = """\
-你是 FactorGPT 的对话助手，服务于量化因子研究。
+你是 FactorGPT 的对话助手，服务于量化因子研究。你在一个**多轮会话**里：用户上一句
+说过什么、上一轮挖出过什么，都可能在「上文对话」里给出——先读懂它再回答，
+不要让用户把已经说过的话重讲一遍。
 
 1. 中文回答，简洁：默认 300 字以内，用户要求展开时再展开。
 2. 只讲确定的事。涉及收益、IC、夏普这类数字时，明确说明它们需要回测验证，绝不编造具体数值。
-3. 如果用户其实想要一个能回测的因子，结尾补一句：把需求写成"要构建什么样的因子、用什么数据、怎么算"，
+3. 若给出「本地知识库参考」，优先据此作答并自然带出来源；参考里没有的内容按通用知识回答，
+   不要假称出自资料库。
+4. 用户其实想要一个能回测的因子时，结尾补一句：把需求写成"要构建什么样的因子、用什么数据、怎么算"，
    我就可以真正跑一遍回测并给出指标。
-4. 不输出代码围栏包裹的大段实现，除非用户明确要代码。
+5. 不输出代码围栏包裹的大段实现，除非用户明确要代码。
 """
 
 
@@ -357,6 +366,46 @@ def classify(
     return result
 
 
+_RETRIEVER = None
+
+
+def _rag_retriever():
+    """惰性构造并复用检索器（首次构造要读语料/学习库，不能每条消息重建一次）。
+
+    这里**强制走轻量检索**（jieba + TF-IDF），不启用向量库：问答只是想给模型
+    几段参考资料，而向量库首次使用要下载几百 MB 的 BGE 模型——为一句「你好」
+    触发一次模型下载，既不必要也会让对话卡住。检索是增强，不是前提。
+    """
+    global _RETRIEVER
+    if _RETRIEVER is None:
+        from rag.retriever import FactorRetriever
+
+        _RETRIEVER = FactorRetriever(use_vector_store=False)
+    return _RETRIEVER
+
+
+def retrieve_context(text: str, top_k: int = 3, max_chars: int = 1200) -> str:
+    """检索本地因子知识库，返回可直接塞进 prompt 的参考文本。
+
+    检索是**增强**而非前提：任何异常（缺依赖、语料缺失、超时）都返回空串，
+    由调用方决定不加这一段。宁可少一点参考，也不能让问答整个不可用。
+    """
+    text = str(text or "").strip()
+    if not text or top_k <= 0:
+        return ""
+    try:
+        docs = _rag_retriever().retrieve(text, top_k=top_k)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[intent] 知识库检索不可用，跳过：%s", e)
+        return ""
+    body = "\n\n".join(f"【参考 {i+1}】\n{d}" for i, d in enumerate(docs or []) if d)
+    if not body:
+        return ""
+    if max_chars > 0 and len(body) > max_chars:
+        body = body[:max_chars] + "\n…（参考已截断）"
+    return body
+
+
 def _message(role: str, content: str) -> Any:
     """构造一条对话消息。
 
@@ -381,8 +430,13 @@ def chat_answer(
     history: Optional[Sequence[Dict[str, str]]] = None,
     intent: Optional[IntentResult] = None,
     turns: int = 4,
+    rag_context: Optional[str] = None,
 ) -> str:
     """非挖掘意图的直接作答（不跑回测、不生成因子代码）。
+
+    Args:
+        rag_context: 知识库参考文本。``None`` 表示「按配置自动检索」；传 ``""``
+            表示本轮明确不检索（调用方已经检索过 / 不希望等待检索）。
 
     LLM 不可用时返回一段解释性文本（含失败原因），**不**回退到因子报告——
     「连不上模型却输出一份完整回测报告」正是本模块要消灭的错觉。
@@ -394,9 +448,19 @@ def chat_answer(
     ic = dict(DEFAULT_INTENT_CONFIG)
     ic.update({k: v for k, v in ((config or {}).get("intent") or {}).items() if v is not None})
 
+    if rag_context is None and ic.get("rag_enabled", True):
+        rag_context = retrieve_context(
+            text,
+            top_k=int(ic.get("rag_top_k", 3) or 0),
+            max_chars=int(ic.get("rag_max_chars", 1200) or 0),
+        )
+    rag_context = str(rag_context or "")
+
     messages: List[Any] = []
     try:
         head = _CHAT_SYSTEM
+        if rag_context:
+            head += (f"\n\n【本地知识库参考】（检索自本仓库因子语料，仅供参考）\n{rag_context}\n")
         if intent is not None and intent.intent == INTENT_CLARIFY:
             head += ("\n5. 本轮判定为「需要澄清」：先用一两句话说明你还缺什么信息，"
                      "再给出你认为用户最可能想要的那个方向。")
