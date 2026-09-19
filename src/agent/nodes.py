@@ -77,6 +77,18 @@ class FactorAgentNodes:
         # 实验追踪：记录每次因子评估，支撑可审计/可复现（见 src/engine/tracking.py）
         self.tracker = ExperimentTracker(config)
 
+        # 失败模式库：只学成功、不学失败会让同类错误反复发生
+        # （见 src/agent/failure_memory.py；写不进去时静默退化为 None）
+        self.failures = None
+        try:
+            from agent.failure_memory import FailureMemory
+
+            fm_path = ((self.config.get("agent", {}) or {})
+                       .get("failure_memory_path") or "data/failure_memory.json")
+            self.failures = FailureMemory(fm_path)
+        except Exception:  # pragma: no cover - 防御
+            self.failures = None
+
         # 多 LLM 路由（可选）：若 config 启用 llm.router 且配置了 draft/critic，
         # 则用路由层替换单一 LLM，实现「小模型海选 + 强模型精炼」（调用处无需改动）
         rc = (self.config.get("llm", {}) or {}).get("router", {}) or {}
@@ -141,7 +153,33 @@ class FactorAgentNodes:
                "若上文已挖出过因子且本轮是改进意见（换窗口/改参数/换标的池等），"
                "请在上文那版因子的基础上改，而不是另起炉灶写一个无关的因子。\n"
                if dialogue_context else "")
+            + self._failure_block()
         )
+
+    def _failure_block(self) -> str:
+        """历史失败约束（负面提示）。
+
+        硬编码的健壮性条款只能覆盖"我想到的"错误；这一块把**实际犯过的**错误
+        按频次注入，于是提示词会随使用自动长出来。
+        """
+        failures = getattr(self, "failures", None)   # 可能被绕过 __init__ 构造
+        if failures is None:
+            return ""
+        try:
+            block = failures.prompt_block(n=3)
+        except Exception:  # pragma: no cover - 防御
+            return ""
+        return f"\n{block}\n" if block else ""
+
+    def _record_failure(self, error: str, code: str = "") -> None:
+        """把一次失败归到某个模式并累计；库不可用时静默跳过。"""
+        failures = getattr(self, "failures", None)
+        if failures is None or not error:
+            return
+        try:
+            failures.record(error, code)
+        except Exception:  # pragma: no cover - 防御
+            pass
 
     def generate_factor(self, state: dict) -> dict:
         description = state.get("factor_description") or state.get("user_input", "")
@@ -474,8 +512,18 @@ class FactorAgentNodes:
         失败或未达标的因子不入库，避免污染学习库。
         """
         if self.learned is None:
+            # 没有学习库也要记失败——失败记忆是独立的通道
+            if not state.get("validation_ok"):
+                self._record_failure(
+                    state.get("validation_error", "")
+                    or str(state.get("metrics", {}).get("error", "")),
+                    state.get("factor_code", ""))
             return {}
         if not state.get("validation_ok"):
+            self._record_failure(
+                state.get("validation_error", "")
+                or str(state.get("metrics", {}).get("error", "")),
+                state.get("factor_code", ""))
             return {}
         metrics = state.get("metrics", {})
         if "error" in metrics:
@@ -486,10 +534,20 @@ class FactorAgentNodes:
         if not code:
             return {}
 
+        # 双向桥：把 Python 代码翻译成符号表达式存进 formula，符号搜索即可复用
+        # （翻不出来就留空——它是增益，不是主线的必经路径）
+        formula = ""
+        try:
+            from mining.bridge import seed_from_code
+
+            formula = seed_from_code(code) or ""
+        except Exception:  # pragma: no cover - 翻译失败不影响入库
+            formula = ""
+
         record = {
             "title": name,
             "category": "自学习/agent生成",
-            "formula": "",
+            "formula": formula,
             "description": desc,
             "code": code,
             "source": "self_learned",

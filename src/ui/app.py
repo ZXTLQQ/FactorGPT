@@ -2346,6 +2346,12 @@ def _gp_significance_tab():
         n_boot = st.number_input("bootstrap 重采样次数", 100, 5000, 500, 100,
                                  key="gp_sig_boot")
     alpha = st.slider("显著性水平 α", 0.01, 0.20, 0.05, 0.01, key="gp_sig_alpha")
+    use_genome = st.checkbox(
+        "启用因子基因库 warm start（跨任务记忆优质因子，写回 data/factor_genome.json）",
+        value=False, key="gp_sig_genome",
+        help="开启后搜索前用历史优质因子做种子、搜索后把本次结果写回。"
+             "注意：注入种子会改变候选集，同一组参数两次搜索不再逐条一致——"
+             "要可复现就别开。")
 
     b1, b2 = st.columns(2)
     run = b1.button("🔍 搜索 + 检验", type="primary", key="gp_sig_run")
@@ -2359,8 +2365,17 @@ def _gp_significance_tab():
                               max_expr=int(max_expr), max_seconds=float(max_seconds),
                               min_ic=0.02, top_k=int(top_k),
                               neutral_controls=("size",))
+        genome = None
+        if use_genome:
+            try:
+                from mining import genome as GMG
+
+                genome = GMG.GenomeBank()
+            except Exception as e:  # noqa: BLE001 - 基因库不可用不该中断搜索
+                st.warning(f"基因库不可用，本次按关闭处理：{e}")
         with st.spinner("算子网格搜索 ..."):
-            search = GM.mine(panel, config=cfg, pool=_library_pool(panel))
+            search = GM.mine(panel, config=cfg, pool=_library_pool(panel),
+                             genome=genome)
         with st.spinner("平稳块 bootstrap + 选择校正 + BH FDR ..."):
             sig = TR.significance_for_search(search, top_k=int(top_k),
                                              alpha=float(alpha), n_boot=int(n_boot),
@@ -2403,6 +2418,53 @@ def _gp_significance_tab():
                "偏窄（名义 5% 实际可达 10%+），而有效样本量口径把这个偏差直接算进"
                "自由度里。选择校正的门槛由**候选之间的离散度**给出，不用因子自身的 σ，"
                "否则等于用它自己判它自己。")
+    _gp_oos_block(st.session_state.get("gp_sig_search"))
+
+
+def _gp_oos_block(search) -> None:
+    """样本外复核：把 IS 与 OOS 摆在一起看。
+
+    复核只在搜索结束后开封一次，结果**不会**回头改搜索——改了就等于把确认段
+    又变成搜索段，OOS 数字立刻失去意义。
+    """
+    if search is None:
+        return
+    oos = getattr(search, "oos", None) or {}
+    split = getattr(search, "split", None) or {}
+    st.markdown("---\n**样本外复核（purged walk-forward）**")
+    if oos.get("mode") != "split":
+        st.caption(f"本次未做硬切分（{oos.get('reason') or split.get('reason', '')}）。"
+                   "样本不足两年时切掉确认段会让两段都不够长，此时改用分段一致性 "
+                   "+ bootstrap 抑制过拟合，比硬切更划算。")
+        return
+    plan = oos.get("plan") or split
+    st.caption(f"搜索段 {plan.get('n_search')} 天 / 确认段 {plan.get('n_confirm')} 天 · "
+               f"{len(oos.get('folds') or [])} 个 walk-forward 折叠 · "
+               f"折叠间 purge {plan.get('horizon')} 天"
+               + (f" + embargo {plan.get('embargo')}" if plan.get("embargo") else ""))
+
+    summ = oos.get("summary") or {}
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("复核因子数", _num(summ.get("n"), 0))
+    c2.metric("IC 衰减中位数", _pct(summ.get("median_decay")))
+    c3.metric("OOS 同号率", _pct(1.0 - summ["sign_flip_rate"])
+              if summ.get("sign_flip_rate") is not None else "—")
+    c4.metric("最差衰减", _pct(summ.get("worst_decay")))
+
+    table = getattr(search, "oos_table", None)
+    if table is not None and len(table):
+        st.dataframe(table.rename(columns={
+            "expression": "表达式", "is_ic": "样本内 IC",
+            "oos_ic_mean": "样本外 IC", "oos_icir": "样本外 ICIR",
+            "decay": "衰减", "n_folds": "折叠数", "sign_flip": "反号",
+        }), hide_index=True, width="stretch")
+    flips = [f for f in (oos.get("factors") or {}).values() if f.get("sign_flip")]
+    if flips:
+        st.warning(f"{len(flips)} 条因子样本外 IC 反号——这类基本可以判定为搜索期"
+                   "从噪声里挑出来的，不要只看样本内的 |IC|。")
+    st.caption("衰减 = 1 − |OOS IC| / |IS IC|。它衡量的不是因子好不好，而是"
+               "**样本内那个数字里有多少是选择偏差**：衰减 30% 意味着样本内 IC "
+               "里有三成是这次搜索挑出来的运气。")
 
 
 def _gp_domain_tab():

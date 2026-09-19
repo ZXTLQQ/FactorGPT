@@ -37,4 +37,5 @@ __all__ = [
            "panel",
            "report",
            "risk",
+           "split",
 ]

@@ -92,3 +92,8 @@ ima_subscription/crawl_state.json
 third_party/ima_skills/
 # Headline Arena forward-test ledger (local runtime artifact, not source)
 data/forwardtest/
+
+# mining runtime artifacts (machine-specific, regenerate locally)
+data/mining_baseline*.json
+data/factor_genome.json
+data/failure_memory.json
