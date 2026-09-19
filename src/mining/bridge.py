@@ -19,7 +19,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from . import expr as ex
 from . import ops
@@ -361,6 +361,8 @@ class _Translator:
     def __init__(self, known_fields: Optional[Any] = None) -> None:
         self.env: Dict[str, ex.Node] = {}
         self.unmatched: List[str] = []
+        # 认不出来的**新变量**名。非空即整条翻译作废：见 run() 的说明。
+        self.hard_fail: List[str] = []
         self.known = known_fields
 
     # -- 入口 --
@@ -377,6 +379,12 @@ class _Translator:
             stmts = fn.body
         for st in stmts:
             self._stmt(st)
+        if self.hard_fail:
+            # 有一条赋值认不出来，因子链就断了。此前这里会退回上一条"认得出来"
+            # 的赋值继续翻译——`rolling(window=20)` 认不出时，20 日动量就被翻成
+            # 上一句的 1 日收益率，还照样报"翻译成功"。这种漂移比翻不出来危险
+            # 得多：它会作为种子直接污染网格搜索。故认不出即整体放弃。
+            return None
         return self.env.get("factor") or self._last()
 
     def _last(self) -> Optional[ex.Node]:
@@ -388,10 +396,19 @@ class _Translator:
             tgt = st.targets[0]
             node = self._expr(st.value)
             key = self._target_key(tgt)
-            if key is not None and node is not None:
+            if node is not None and key is not None:
                 self.env[key] = node
-            elif node is None:
-                self.unmatched.append(ast.dump(st.value)[:60])
+                return
+            if node is None:
+                if key is None or key == "df":
+                    return          # 整表整理（df = df.sort_values(...)）不算断裂
+                if key in self.env:
+                    # 目标已存在（多为 df['factor'] = df['factor'].fillna(0)）：
+                    # 保留旧值，这不改变语义。
+                    self.unmatched.append(f"{key}: 覆盖语句未识别，沿用旧值")
+                    return
+                self.hard_fail.append(key)
+                self.unmatched.append(f"{key}: 赋值语句无法识别")
         elif isinstance(st, ast.Return):
             return          # 返回 df[['date','symbol','factor']] 不携带新信息
         elif isinstance(st, (ast.Import, ast.ImportFrom, ast.Expr)):
@@ -444,8 +461,11 @@ class _Translator:
                 return None
             name = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul",
                     ast.Div: "div", ast.Pow: "pow2"}.get(type(e.op))
-            if name is None or a is _INNER or b is _INNER:
+            if name is None:
                 return None
+            # 内层变量（``lambda x: (x - x.rolling(20).mean())`` 里的裸 ``x``）
+            # 允许出现在**子树**里：它由 _sub_inner 在收尾时替换成底数。此处若
+            # 一并拒绝，"减去自身均线"这类最常见的写法就永远翻不出来。
             return ex.Call(name, (a, b))
         self.unmatched.append(type(e).__name__)
         return None
@@ -468,13 +488,27 @@ class _Translator:
                 return self._transform(owner, e, inner)
             if attr == "pct_change":
                 base = self._base_of(owner, inner)
-                return ex.Call("ts_pct", (base,), 1) if base is not None else None
-            if attr == "shift" and e.args:
+                if base is None:
+                    return None
+                n = _kw_int(e, ("periods", "n")) or 1
+                return ex.Call("ts_pct", (base,), int(n))
+            if attr == "shift":
                 base = self._base_of(owner, inner)
-                n = _int_const(e.args[0])
+                n = _kw_int(e, ("periods", "n", "period"))
                 if base is None or n is None:
                     return None
-                return ex.Call("ts_delay", (base,), n)
+                return ex.Call("ts_delay", (base,), int(n))
+            if attr == "rank" and any(k.arg == "pct" for k in e.keywords):
+                base = self._base_of(owner, inner)
+                return ex.Call("rank_cs", (base,)) if base is not None else None
+            if attr == "mean" and isinstance(owner, ast.Call) \
+                    and isinstance(owner.func, ast.Attribute) \
+                    and owner.func.attr == "ewm":
+                base = self._base_of(owner.func.value, inner)
+                w = _kw_int(owner, ("span", "com", "halflife"))
+                if base is not None and w:
+                    return ex.Call("ema", (base,), int(w))
+                return None
             if attr == "apply" and isinstance(owner, ast.Call) \
                     and _is_rolling(owner):
                 return self._rolling(owner, inner, apply_node=e)
@@ -510,7 +544,7 @@ class _Translator:
         """``x.rolling(w).method()`` / ``x.rolling(w).apply(fn)``。"""
         owner = e.func.value if isinstance(e.func, ast.Attribute) else None
         base = self._base_of(owner, inner)
-        w = _int_const(e.args[0]) if e.args else None
+        w = _kw_int(e, ("window", "win", "w"))
         if base is None or w is None:
             return None
         if apply_node is not None:
@@ -584,6 +618,22 @@ def _int_const(e: ast.AST) -> Optional[int]:
     return None
 
 
+def _kw_int(e: ast.Call, names: Sequence[str], pos: int = 0) -> Optional[int]:
+    """取窗口/期数：先认关键字参数，再认位置参数。
+
+    LLM 极爱写 ``rolling(window=20)`` / ``shift(periods=5)``——只认位置参数时
+    这些调用整体认不出来，窗口就这么被静默丢掉（20 日动量退化成 1 日收益）。
+    """
+    for kw in (e.keywords or []):
+        if kw.arg in names:
+            v = _int_const(kw.value)
+            if v is not None:
+                return v
+    if len(e.args) > pos:
+        return _int_const(e.args[pos])
+    return None
+
+
 def code_to_expr(code: str,
                  known_fields: Optional[Any] = None) -> Optional[ex.Node]:
     """把 LLM 写的 ``alpha_factor(df)`` 翻译成 DSL 表达式树；翻不了返回 ``None``。"""
@@ -614,8 +664,10 @@ def translate(code: str, known_fields: Optional[Any] = None) -> Translation:
     tr = _Translator(known_fields)
     node = tr.run(tree)
     if node is None or node is _INNER:
-        return Translation(False, reason="没有可识别的因子赋值链",
-                           unmatched=tr.unmatched)
+        reason = ("赋值 " + "、".join(tr.hard_fail[:3])
+                  + " 无法识别：整条翻译作废，避免产出语义漂移的表达式"
+                  if tr.hard_fail else "没有可识别的因子赋值链")
+        return Translation(False, reason=reason, unmatched=tr.unmatched)
     flat = _sub_inner(node, ex.Field("__base__"))
     if "__base__" in flat.fields():
         return Translation(False, reason="存在未解析的内层变量（语义可能漂移）",

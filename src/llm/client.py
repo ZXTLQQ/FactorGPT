@@ -77,6 +77,8 @@ class LLMClient:
         self.temperature = float(llm_cfg.get("temperature", 0.3))
         self.timeout = float(llm_cfg.get("timeout", 60.0))
         self._llm = None
+        # 复用的 httpx 连接池（见 close() 的说明）
+        self._http = None
 
         # 环境变量覆盖（默认关闭, 由 config.llm.use_env_override 控制）。
         # 便于不落盘密钥或快速切换后端, 例如:
@@ -134,11 +136,38 @@ class LLMClient:
         try:
             import httpx
 
-            kwargs["http_client"] = httpx.Client(trust_env=get_trust_env())
+            if self._http is None:
+                self._http = httpx.Client(trust_env=get_trust_env(),
+                                          timeout=self.timeout)
+            kwargs["http_client"] = self._http
         except Exception:  # pragma: no cover
             pass
         self._llm = ChatOpenAI(**kwargs)
         return self._llm
+
+    # ------------------------------------------------------------------
+    # 连接回收
+    # ------------------------------------------------------------------
+    def close(self) -> None:
+        """关闭底层 httpx 连接池并失效缓存的 ChatModel。
+
+        旧实现每次 ``_build`` 都新建一个 ``httpx.Client`` 且从不关闭：一次挖掘
+        会话里 LLM 被调用几十次，TCP/TLS 连接只增不减；进程退出时还会抛
+        ResourceWarning，在本项目「告警即失败」的 pytest 配置下直接判失败。
+        """
+        self._llm = None
+        if self._http is not None:
+            try:
+                self._http.close()
+            except Exception:      # pragma: no cover - 关闭路径容错
+                pass
+            self._http = None
+
+    def __del__(self) -> None:     # pragma: no cover - GC 路径
+        try:
+            self.close()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # 运行时切换（支持用户在 UI 中通过 API Key 切换模型/供应商）

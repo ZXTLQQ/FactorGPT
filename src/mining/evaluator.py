@@ -86,6 +86,9 @@ class EvalConfig:
         "seg_win": (0.50, 1.00),
         "worst_seg_ic": (-0.02, 0.01),
         "rolling_ic_min": (-0.05, 0.02),
+        # 方向无关的稳定性量（0=某段/某窗口反号，1=与全段同强）
+        "worst_seg_ratio": (0.20, 0.80),
+        "rolling_ic_worst_ratio": (0.20, 0.80),
         "ac_l1": (0.30, 0.95),
         "coverage": (0.50, 1.00),
         "degenerate": (0.30, 0.00),
@@ -294,18 +297,43 @@ def ic_decay(factor: pd.DataFrame, panel: PanelData,
 
 
 def segmented_ic(ic: pd.Series, n_segments: int = 4) -> Dict[str, Any]:
-    """把 IC 序列等分成若干段（模拟不同市场环境）后的稳定性。"""
+    """把 IC 序列等分成若干段（模拟不同市场环境）后的稳定性。
+
+    **方向感知**（2026-09 修正）：负 IC 因子（反向因子）与正 IC 因子同样有效，
+    但旧口径里 ``seg_win = mean(段均值 > 0)``、``worst_seg_ic = min(段均值)``
+    都是按"越正越好"写的——负 IC 因子的最强段被当成最弱段、同号段占比恒为 0，
+    稳定性维度因此系统性低估所有反向因子。这里统一按整体 IC 的方向判定：
+
+    * ``seg_win``：与整体 IC **同号**的段占比（方向无关）；
+    * ``worst_seg_ic``：方向上最弱那段的 IC（保留原始符号，供报告展示）；
+    * ``worst_seg_ratio``：``|最弱段| / |全段|`` ∈ [0,1]，反号段记 0，
+      这是评分实际使用的方向无关量。
+    """
     x = ic.dropna()
     if len(x) < n_segments * 5:
         return {"segment_means": [], "seg_win": float("nan"),
-                "worst_seg_ic": float("nan"), "seg_std": float("nan")}
+                "worst_seg_ic": float("nan"), "worst_seg_ratio": float("nan"),
+                "seg_std": float("nan")}
     parts = np.array_split(x.to_numpy(dtype=np.float64), n_segments)
     means = [float(p.mean()) for p in parts if p.size]
+    if not means:
+        return {"segment_means": [], "seg_win": float("nan"),
+                "worst_seg_ic": float("nan"), "worst_seg_ratio": float("nan"),
+                "seg_std": float("nan")}
+    whole = float(np.mean(means))
+    sign = 1.0 if whole >= 0.0 else -1.0
+    signed = [m * sign for m in means]
+    worst_signed = float(min(signed))
+    if abs(whole) > 1e-12:
+        ratio = float(min(1.0, max(0.0, worst_signed / abs(whole))))
+    else:
+        ratio = 1.0 if worst_signed >= 0.0 else 0.0
     return {
         "segment_means": means,
-        "seg_win": float(np.mean(np.array(means) > 0)) if means else float("nan"),
-        "worst_seg_ic": float(np.min(means)) if means else float("nan"),
-        "seg_std": float(np.std(means)) if means else float("nan"),
+        "seg_win": float(np.mean([s > 0.0 for s in signed])),
+        "worst_seg_ic": float(worst_signed * sign),
+        "worst_seg_ratio": ratio,
+        "seg_std": float(np.std(means)),
     }
 
 
@@ -493,9 +521,19 @@ def evaluate(factor: pd.DataFrame, panel: PanelData,
     m.update(segmented_ic(ric, cfg.n_segments))
     roll = ric.rolling(cfg.rolling_ic_window,
                        min_periods=max(10, cfg.rolling_ic_window // 3)).mean()
-    m["rolling_ic_min"] = float(roll.min()) if roll.notna().any() else float("nan")
-    m["rolling_ic_pos"] = (float((roll.dropna() > 0).mean())
-                           if roll.notna().any() else float("nan"))
+    # 滚动 IC 同样按方向判定：负 IC 因子的 roll.min() 是它的**最强**窗口，
+    # 直接拿来当"最差窗口"会让反向因子的稳定性分恒为 0。
+    ic_sign = 1.0 if float(m["rank_ic_mean"]) >= 0.0 else -1.0
+    if roll.notna().any():
+        r = roll.dropna() * ic_sign
+        m["rolling_ic_min"] = float(r.min() * ic_sign)
+        m["rolling_ic_pos"] = float((r > 0).mean())
+        base = max(abs(float(m["rank_ic_mean"])), 1e-12)
+        m["rolling_ic_worst_ratio"] = float(min(1.0, max(0.0, float(r.min()) / base)))
+    else:
+        m["rolling_ic_min"] = float("nan")
+        m["rolling_ic_pos"] = float("nan")
+        m["rolling_ic_worst_ratio"] = float("nan")
 
     if pool:
         m.update(pool_correlation(factor, pool))
@@ -528,9 +566,13 @@ def evaluate(factor: pd.DataFrame, panel: PanelData,
         if m["rank_ic_mean"] * m["monotonicity"] < 0:
             predictive *= 0.6
 
+    # 稳定性用**方向无关**的比例量评分：旧口径直接拿「带符号的最差段/最差滚动
+    # 窗口」打分，等于只奖励正 IC 因子。worst_seg_ic / rolling_ic_min 仍带符号
+    # 落盘，供报告展示，但不参与打分。
     stab = (0.35 * cfg.scale("seg_win", m["seg_win"])
-            + 0.25 * cfg.scale("worst_seg_ic", m["worst_seg_ic"])
-            + 0.25 * cfg.scale("rolling_ic_min", m["rolling_ic_min"])
+            + 0.25 * cfg.scale("worst_seg_ratio", m["worst_seg_ratio"])
+            + 0.25 * cfg.scale("rolling_ic_worst_ratio",
+                               m["rolling_ic_worst_ratio"])
             + 0.15 * cfg.scale("ac_l1", m.get("ac_l1", float("nan"))))
     # 质量维度按"扣除预热后的覆盖率"打分：否则长回看因子（如 TTM）会被
     # 预热期白白扣分，而预热是表达式结构决定的、不是数据质量问题。

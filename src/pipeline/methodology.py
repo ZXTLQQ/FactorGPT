@@ -72,6 +72,15 @@ class MethodologyReport:
                     p = os.path.join(self.output_dir, f"{prefix}_{split}_{nm}.png")
                     fig.savefig(p, dpi=110, bbox_inches="tight")
                     paths.append(p)
+                    # 不 close 的话 pyplot 会一直持有这些 Figure：一次全流程
+                    # 几十张图，长跑会撞上 matplotlib 的 max_open_warning 并持续
+                    # 吃内存（与其它绘图处的口径一致）。
+                    try:
+                        import matplotlib.pyplot as plt
+
+                        plt.close(fig)
+                    except Exception:      # pragma: no cover - 无头/异常后端
+                        pass
             except Exception as e:
                 logger.warning("图表渲染失败(%s/%s): %s", split, prefix, e)
         return paths

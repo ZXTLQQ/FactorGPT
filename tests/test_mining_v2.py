@@ -194,6 +194,72 @@ def test_seed_from_code():
     assert seed and "ts_mean" in seed
 
 
+def test_bridge_keyword_arguments():
+    """``rolling(window=20)`` / ``shift(periods=5)`` 必须和位置参数等价。
+
+    LLM 几乎只写关键字参数。此前窗口取不到，翻译会静默丢掉窗口。
+    """
+    kw = ("def alpha_factor(df):\n"
+          "    df['ret'] = df['close'].pct_change()\n"
+          "    df['factor'] = df['ret'].rolling(window=20).mean()\n"
+          "    return df[['date', 'symbol', 'factor']]\n")
+    pos = kw.replace("rolling(window=20)", "rolling(20)")
+    a, b = B.translate(kw), B.translate(pos)
+    assert a.ok and b.ok, (a.reason, b.reason)
+    assert a.expression == b.expression == "ts_mean(ts_pct(close, 1), 20)"
+
+    sh = ("def alpha_factor(df):\n"
+          "    df['factor'] = df.groupby('symbol')['close'].shift(periods=5)\n"
+          "    return df[['date', 'symbol', 'factor']]\n")
+    assert B.translate(sh).expression == "ts_delay(close, 5)"
+
+
+def test_bridge_no_silent_drift():
+    """认不出的赋值必须整条作废，不能退回上一条"认得出来"的赋值。
+
+    实测过的漂移：``df['factor'] = df['ret'].rolling(window=20).mean()`` 认不出
+    时，翻译器曾退回 ``df['ret']`` 并报成功——20 日动量变成 1 日收益率，
+    再作为种子污染网格搜索。
+    """
+    code = ("def alpha_factor(df):\n"
+            "    df['ret'] = df['close'].pct_change()\n"
+            "    df['factor'] = df['ret'].rolling(window=20).apply(np.mean)\n"
+            "    return df[['date', 'symbol', 'factor']]\n")
+    tr = B.translate(code)
+    assert not tr.ok
+    assert "factor" in tr.reason      # 失败原因要点名是哪一步认不出来
+    assert tr.expression == ""
+
+    # 裸 lambda 内层变量参与四则运算（"减去自身均线"）必须能翻
+    z = ("def alpha_factor(df):\n"
+         "    df['factor'] = df.groupby('symbol')['close'].transform(\n"
+         "        lambda x: (x - x.rolling(window=20).mean()) / x.rolling(20).std())\n"
+         "    return df[['date', 'symbol', 'factor']]\n")
+    tr2 = B.translate(z)
+    assert tr2.ok, tr2.reason
+    assert tr2.expression == "div(sub(close, ts_mean(close, 20)), ts_std(close, 20))"
+
+
+def test_segmented_ic_direction_agnostic():
+    """稳定性口径必须对正/负 IC 因子一视同仁。
+
+    旧口径 ``seg_win = mean(段均值 > 0)``、``worst_seg_ic = min(段均值)``
+    是按"越正越好"写的：负 IC（反向）因子的最强段被当成最弱段、同号段占比恒
+    为 0，稳定性维度因此系统性压低所有反向因子。
+    """
+    ic = pd.Series([0.03] * 40 + [0.02] * 40 + [0.025] * 40 + [0.01] * 40)
+    pos, neg = EV.segmented_ic(ic, 4), EV.segmented_ic(-ic, 4)
+    assert pos["seg_win"] == pytest.approx(neg["seg_win"], abs=1e-9)
+    assert pos["worst_seg_ratio"] == pytest.approx(neg["worst_seg_ratio"], abs=1e-9)
+    assert pos["seg_win"] == 1.0
+    # 展示值保留原始符号（报告里要能看出这是反向因子）
+    assert pos["worst_seg_ic"] > 0 > neg["worst_seg_ic"]
+    # 出现反号段 → 比例归零（不再是"最差段是多少"这种带方向的数）
+    flip = EV.segmented_ic(pd.Series([0.03] * 40 + [-0.02] * 40), 2)
+    assert flip["worst_seg_ratio"] == 0.0
+    assert flip["seg_win"] == 0.5
+
+
 # ------------------------------------------------------------ 基因库
 def test_genome_warm_start(tmp_path, deep_panel):
     path = os.path.join(str(tmp_path), "genome.json")
