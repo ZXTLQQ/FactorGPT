@@ -7,8 +7,10 @@
 其余子模块请在调用处用 `from pipeline.refinery import ...` 显式导入。
 """
 
-from .schema import OreStock, CandidateFactor, RefineryResult
+from .schema import CandidateFactor, OreStock, RefineryResult
 
 __all__ = [
-    "OreStock", "CandidateFactor", "RefineryResult",
+    "CandidateFactor",
+    "OreStock",
+    "RefineryResult",
 ]

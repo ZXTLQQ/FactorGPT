@@ -19,11 +19,16 @@ from forwardtest import runner  # noqa: E402
 from forwardtest.client import HAError, HeadlineArenaClient  # noqa: E402
 from forwardtest.ledger import ForwardLedger, LedgerError  # noqa: E402
 from forwardtest.scorecard import (  # noqa: E402
-    aggregate_stats, brier_for_record, calibration_rows,
-    ha_directional_score, render_markdown,
+    aggregate_stats,
+    brier_for_record,
+    calibration_rows,
+    ha_directional_score,
+    render_markdown,
 )
 from forwardtest.translator import (  # noqa: E402
-    factor_to_theme, parse_theme, view_to_prediction,
+    factor_to_theme,
+    parse_theme,
+    view_to_prediction,
 )
 
 # ---------------------------------------------------------------- translator #

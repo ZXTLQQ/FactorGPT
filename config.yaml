@@ -114,7 +114,18 @@ data:
   default_start_date: "2020-01-01"
   default_end_date: "2024-12-31"
   # 请求频率控制（避免被封IP）
-  request_interval: 0.5            # 每次请求间隔秒数
+  # request_interval 此前无任何代码读取（配置是死的），现已由 _RateLimiter 实现：
+  # 并发抓取时同样生效——每个请求都先取许可，不会被并发绕过。
+  request_interval: 0.5            # 全局最小请求间隔（秒）；0 = 不限流
+  # 批量取数并发度：1 = 串行（默认，保持历史行为）。调到 2~4 可显著缩短数百只标的的
+  # 取数耗时；注意过快仍可能被行情源限流，建议配合 request_interval 一起调。
+  max_concurrency: 1
+  # cache_read_first：正常路径也先查本地缓存，命中即返回（此前缓存只在「实时源全失败」
+  # 时才被读取，每次跑全流程都要重打网络）。开启后区间不变的重复回测可秒级复跑。
+  # 需要拿到最新行情时置回 false。
+  cache_read_first: false
+  # >0 时，缓存文件修改时间超过该小时数即视为未命中；0 = 永不过期。
+  cache_ttl_hours: 0
   force_synthetic: false   # true 时跳过网络数据获取，使用可复现合成数据（离线演示/测试用）
   synthetic_on_fail: false  # true 时若所有实时数据源均失败，自动回退到合成数据（避免界面空白）
   # ── 本地缓存（预备数据源，抗网络波动） ──
@@ -198,6 +209,10 @@ refinery:
   cache_only: false        # true 时仅读取已预备整矿缓存，绝不触网（现场答辩防断网）
   multimodal: false        # true 时真实数据矿石纳入基本面/估值/资金流/新闻情绪多模态因子（需 akshare）
   run_portfolio: true      # true 时执行 P0 组合级回测 + 过拟合检验 + 因子动物园（交付证据）
+  deep_analysis: true      # true 时出因子后自动跑深度分析：统计体检 + 12 张图表 + 大模型解读
+  deep_analysis_dir: "output/factor_report"   # 图表与 Markdown 报告输出目录
+  deep_analysis_system: true    # 额外跑多因子体系（线性 max-IC / 显式非线性 / 树 / contextual）
+  deep_analysis_max_factors: 12 # 参与体系搭建的入选因子上限（控制树模型与贪心搜索开销）
   n_symbols: 200           # 中证1000 子集规模（演示）
   train_days: 500          # 训练集 2019-2023
   test_days: 120           # 测试集 2024 全年（独立，仅用于最终报告）

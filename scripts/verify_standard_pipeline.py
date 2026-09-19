@@ -8,9 +8,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 os.environ["FACTORGPT_FORCE_SYNTHETIC"] = "1"
-from llm.client import load_config
 from agent.graph import FactorAgent
-from agent.nodes import FactorAgentNodes
+from llm.client import load_config
 
 # 修正后的因子代码：对用户原代码做稳健化（dropna + 保护 std=0）
 HARDENED = '''
@@ -88,8 +87,8 @@ state.update(v)
 # 2) 评价 + 生成图表
 e = nodes.evaluate_factor(state)
 m = e.get("metrics", {})
-print("[评价]", "error" in m, "| IC=%.4f" % m.get("ic", float("nan")),
-      "| LS_sharpe=%.4f" % m.get("long_short_sharpe", float("nan")))
+print("[评价]", "error" in m, "| IC={:.4f}".format(m.get("ic", float("nan"))),
+      "| LS_sharpe={:.4f}".format(m.get("long_short_sharpe", float("nan"))))
 assert "error" not in m, "评价不应报错"
 state.update(e)
 
@@ -103,6 +102,6 @@ for p in state.get("chart_paths", []):
 
 print("\n[分层回测片段]")
 for line in report.splitlines():
-    if "分层回测" in line or line.startswith("|") and ("Q" in line or "多空" in line):
+    if "分层回测" in line or (line.startswith("|") and ("Q" in line or "多空" in line)):
         print(line)
 print("\n[PASS] 标准化回测流程（校验->评价->图表->分层表->报告）已跑通")

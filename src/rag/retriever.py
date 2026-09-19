@@ -14,8 +14,8 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from rag.paper_index import FactorPaperIndex, SEED_FACTORS
 from rag.learned_library import LearnedFactorLibrary
+from rag.paper_index import SEED_FACTORS, FactorPaperIndex
 
 # 项目根目录（src/rag/retriever.py -> factor-gpt/）
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -35,7 +35,7 @@ def _load_offline_knowledge() -> List[Dict]:
         return items
     for f in sorted(_KNOWLEDGE_DIR.rglob("chunks*.jsonl")):
         try:
-            with open(f, "r", encoding="utf-8") as fh:
+            with open(f, encoding="utf-8") as fh:
                 for line in fh:
                     line = line.strip()
                     if not line:

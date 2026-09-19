@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict
 
 
 def _code_keypoints(code: str) -> list:
@@ -89,7 +89,7 @@ def factor_interpretability_card(
             if txt:
                 lines.append("\n**3. 逻辑解读（LLM）**")
                 lines.append(txt.strip())
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     return "\n".join(lines)

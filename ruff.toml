@@ -1,0 +1,104 @@
+# Ruff 配置（渐进式收紧）
+# 说明：本项目历史代码量大且以脚本风格为主，一次性开启全部规则会产生数千条告警。
+# 因此采用「分批放开」策略：当前阶段只开启高价值、低噪声的规则集，
+# 后续每修一批就在 select 中追加一批（见文件末尾 ROADMAP）。
+
+line-length = 100
+target-version = "py311"
+
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "third_party",
+    "data",
+    "output",
+    "demo_output",
+    "scripts/_archive",   # 已归档的一次性脚本，不纳入维护范围
+]
+
+[lint]
+# 当前启用的规则集：
+#   E4/E7/E9  明显错误与语法问题（ruff 默认）
+#   F         pyflakes：未使用导入/变量、未定义名、重复键
+#   W         pycodestyle 空白类问题
+#   I         isort：导入排序（保持各模块 import 区整洁）
+#   B         flake8-bugbear：常见 bug 模式（可变默认参数等）
+#   S         flake8-bandit：安全（exec/eval/subprocess 等，本仓已按需 noqa）
+#   C4        flake8-comprehensions：不必要的 list/dict 推导
+#   UP        pyupgrade：现代化语法
+#   SIM       flake8-simplify：可简化的条件/表达式
+#   RUF       ruff 自有规则（含 RUF005 解包拼接等）
+select = ["E4", "E7", "E9", "F", "W", "I", "B", "S", "C4", "UP", "SIM", "RUF"]
+
+# 渐进期豁免：先记录、后治理，避免一次性改动淹没真正的缺陷
+ignore = [
+    # —— 中文项目固有：文档/字符串/注释中的全角标点会被判为「歧义 Unicode」——
+    "RUF001", "RUF002", "RUF003",
+    # RUF100 有副作用：按「当前启用规则」判定 noqa 是否多余，一旦误删就会丢失
+    # 尚在豁免队列中的规则标记（BLE001/E402 等）。治理 noqa 时再临时开启。
+    "RUF100",
+    "SIM115",  # 未用 with 打开文件
+    "RUF013", "RUF007",  # 隐式 Optional / pairwise（风格类，留待批次 3）
+    "S605", "S602",  # shell=True：scripts 内的本机命令调用，参数非外部输入
+    # —— 类型注解现代化（Dict→dict / Optional→|）：存量 1500+ 处，随批次 4 统一迁移——
+    "UP006", "UP045", "UP035", "UP037",
+    "E501",    # 行长：历史代码大量超 100 列，待格式化阶段统一处理
+    "B008",    # 函数调用作为默认值（本项目多处依赖该写法，改动面过大）
+    "B905",    # zip 严格模式（历史代码无 strict 参数）
+    "SIM102",  # 嵌套 if：部分为可读性有意保留
+    "SIM108",  # 三元表达式：部分分支可读性更佳
+    "RUF012",  # ClassVar 注解：存量类属性众多
+    "S101",    # assert：测试与内部断言大量使用
+    # —— 吞异常：本仓多处 try/except pass 为「可选依赖缺失」兜底，
+    #     统一改造为 logging.debug 前先豁免（见 ROADMAP 批次 2）——
+    "S110", "S112",
+    # —— 存量告警：数量可控但改动面广，列入批次 2/3 统一治理，
+    #     先豁免以保证 CI 能真正阻断「新增」问题——
+    "E402",    # 模块级导入不在顶部：多为「先补 sys.path 再导入」的有意写法
+    "B023",    # 闭包绑定循环变量
+    "UP031",   # printf 风格字符串格式化
+    "SIM105",  # 可用 contextlib.suppress 替代
+    "F841",    # 未使用的局部变量
+    "B007",    # 未使用的循环变量
+    "RUF059",  # 未使用的解包变量
+    "S310",    # urlopen：行情源/公告下载，URL 非用户可控
+    "S311",    # random：合成数据/蒙特卡洛，非密码学用途
+    "S301",    # pickle：因子沙箱在子进程内传递结果
+    "S324",    # hashlib md5：仅用于缓存 key
+    "S608",    # 字符串拼接 SQL：内部查询，参数均为程序内生成
+    "S105",    # 疑似硬编码密码：实为环境变量名常量
+    "E741",    # 歧义变量名（l/I/O）
+    "SIM109",  # 可用 in 替代元组比较
+    "C401",    # 多余的 set 生成器
+    "B904",    # except 内 raise 未带 from
+    "E731",    # lambda 赋值
+    "E712",    # 与 True/False 比较
+    "SIM103", "SIM210",  # 可化简的布尔表达式
+    "S603", "S607",  # subprocess：因子沙箱与 git 元数据采集，命令与路径均由程序内生成
+    "S314",    # xml：解析受控 feed（非不可信输入）
+    "E702",    # 分号多语句
+]
+
+# 测试文件放宽安全与断言类规则
+[lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "B011"]
+"scripts/*" = ["S101", "T201"]
+"demo_sim.py" = ["S101", "T201"]
+# 包初始化文件的导入多为对外再导出，删除会破坏 `from engine import X` 用法
+"__init__.py" = ["F401"]
+
+[lint.isort]
+known-first-party = ["engine", "pipeline", "agent", "data", "llm", "store", "ui", "rag", "netutil"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+
+# ROADMAP（分批放开）：
+#   批次 2：N（pep8-naming）、T20（print 追踪，需先统一 logging）、BLE001（裸 except）
+#   批次 3：PL（pylint 复杂度）、C901（圈复杂度，配合超长函数拆分）
+#   批次 4：ANN（类型注解补全）、D（docstring 规范）

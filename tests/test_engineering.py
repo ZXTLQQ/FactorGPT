@@ -20,7 +20,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from engine.backtest import FactorBacktester, batch_evaluate
+from engine.backtest import batch_evaluate
 from engine.genetic_factors import GeneticFactorMiner
 from engine.hpo import search_backtest_params
 from engine.tracking import ExperimentTracker
@@ -71,7 +71,7 @@ def test_genetic_mine() -> None:
         assert "code" in r and "train_ic" in r
         # 生成的代码语法合法且可定义 alpha_factor
         ns: dict = {}
-        exec(r["code"], ns)
+        exec(r["code"], ns)  # noqa: S102  测试内校验生成代码可编译，非沙箱路径
         assert callable(ns["alpha_factor"])
     print("test_genetic_mine OK")
 

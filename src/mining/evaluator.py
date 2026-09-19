@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """多维度评价体系（山西证券《算子网格搜索 + Numba 加速 + 多维度评价》落地）。
 
 研报把"评价"从单一 IC 拆成**四个维度**，理由是：只看 IC 的搜索一定会过拟合。
@@ -25,7 +24,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -37,10 +37,23 @@ from . import risk as _risk
 from .panel import PanelData
 
 __all__ = [
-    "EvalConfig", "FactorReport", "ICScreener", "evaluate", "evaluate_expr",
-    "rank_ic", "pearson_ic", "ic_stats", "quantile_stats", "turnover",
-    "ic_decay", "segmented_ic", "data_quality", "pool_correlation",
-    "incremental_ic", "factor_corr_matrix", "rank_reports",
+    "EvalConfig",
+    "FactorReport",
+    "ICScreener",
+    "data_quality",
+    "evaluate",
+    "evaluate_expr",
+    "factor_corr_matrix",
+    "ic_decay",
+    "ic_stats",
+    "incremental_ic",
+    "pearson_ic",
+    "pool_correlation",
+    "quantile_stats",
+    "rank_ic",
+    "rank_reports",
+    "segmented_ic",
+    "turnover",
 ]
 
 
@@ -571,7 +584,7 @@ def evaluate_expr(text: str, panel: PanelData,
     ev = evaluator or ex.Evaluator(panel, reg)
     try:
         values = ev.run(node)
-    except Exception as exc:  # noqa: BLE001 - 求值期异常也归入"无效因子"
+    except Exception as exc:
         return FactorReport(name=text, expression=node.render(),
                             errors=[f"求值失败: {type(exc).__name__}: {exc}"])
     return evaluate(values, panel, name=node.render(), expression=node.render(),

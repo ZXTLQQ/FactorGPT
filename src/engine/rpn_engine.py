@@ -16,7 +16,7 @@ import multiprocessing as mp
 import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -49,7 +49,7 @@ def multiprocessing_safe() -> Tuple[bool, str]:
     try:
         if mp.parent_process() is not None:
             return False, "当前已处于子进程中，禁止再派生进程池"
-    except Exception:  # noqa: BLE001  # Python <3.8 无该 API
+    except Exception:  # Python <3.8 无该 API
         pass
     if "streamlit" in sys.modules:
         return False, "运行于 Streamlit 脚本上下文，spawn 会重跑整个页面"
@@ -58,7 +58,7 @@ def multiprocessing_safe() -> Tuple[bool, str]:
     if not path:
         return False, "主模块无文件路径（交互式/嵌入式环境）"
     try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="ignore") as f:
             src = f.read()
     except OSError:
         return False, "主模块源码不可读，无法确认 __main__ 守卫"
@@ -173,10 +173,10 @@ class RPNEngine:
         try:
             with mp.Pool(processes=min(self.config.n_workers, len(items))) as pool:
                 results = pool.map(_eval_worker, args)
-        except Exception as e:  # noqa: BLE001  # 进程池不可用时兜底串行，保证流程不中断
+        except Exception as e:  # 进程池不可用时兜底串行，保证流程不中断
             logger.warning("多进程求值失败（%s），已回退串行计算", e)
             return {name: self.evaluate(f, kline) for name, f in items}
-        return {name: m for name, m in zip([n for n, _ in items], results)}
+        return dict(zip([n for n, _ in items], results))
 
     # -- 目标函数 / 排序 --------------------------------------------------- #
     def objective(self, metrics: Dict, w_turnover_penalty: Optional[float] = None) -> float:

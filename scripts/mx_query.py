@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """mx_query - 东方财富妙想 (MX) 数据接口统一入口。
 
 将 factorgpt-skill/skills/mx-*/ 下的 6 个妙想技能脚本封装为一条命令，
@@ -19,9 +18,9 @@ API Key 注入（环境变量 MX_APIKEY 优先，回退到项目 .env 文件）�
 """
 
 import os
-import sys
 import pathlib
 import subprocess
+import sys
 
 # 技能简称 -> (目录名, 脚本文件名)
 SKILLS = {

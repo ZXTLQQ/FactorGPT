@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 import numpy as np
 import pandas as pd
@@ -311,7 +311,7 @@ def _render_pool(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     lookup = pool.set_index("factor_name")
 
     if apply_sel:
-        names = edited.loc[edited["选择"] == True, "factor_name"].tolist()  # noqa: E712
+        names = edited.loc[edited["选择"] == True, "factor_name"].tolist()
         members = _merge_members(members, names, lookup)
         _persist(_SEL_KEY, members)
         ops_repo.log("factor_system", "select", f"更新体系候选因子，共 {len(members)} 个")
@@ -448,8 +448,8 @@ def _render_config(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 labels=list(dim_w.keys()),
                 values=[round(v * 100, 2) for v in dim_w.values()],
                 hole=0.58,
-                marker=dict(colors=theme.PALETTE, line=dict(color="#fff", width=2)),
-                textinfo="label+percent", textfont=dict(size=11),
+                marker={"colors": theme.PALETTE, "line": {"color": "#fff", "width": 2}},
+                textinfo="label+percent", textfont={"size": 11},
             ))
             st.plotly_chart(theme.style_fig(fig, height=310, legend=False, title="维度权重分布"),
                             use_container_width=True)
@@ -459,9 +459,9 @@ def _render_config(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             x=[weights.get(m["factor_name"], 0) * 100 for m in order][::-1],
             y=[m["display_name"][:22] for m in order][::-1],
             orientation="h",
-            marker=dict(color=theme.RED, line=dict(color=theme.RED_DEEP, width=0.5)),
+            marker={"color": theme.RED, "line": {"color": theme.RED_DEEP, "width": 0.5}},
             text=[f'{weights.get(m["factor_name"], 0) * 100:.1f}%' for m in order][::-1],
-            textposition="outside", textfont=dict(size=10),
+            textposition="outside", textfont={"size": 10},
         ))
         st.plotly_chart(
             theme.style_fig(fig, height=max(310, 24 * len(order) + 70), legend=False,
@@ -789,8 +789,8 @@ def _tab_structure(result: Dict[str, Any]) -> None:
                 labels=[d["dimension"] for d in dims],
                 values=[round(d["weight"] * 100, 2) for d in dims],
                 hole=0.58,
-                marker=dict(colors=theme.PALETTE, line=dict(color="#fff", width=2)),
-                textinfo="label+percent", textfont=dict(size=11),
+                marker={"colors": theme.PALETTE, "line": {"color": "#fff", "width": 2}},
+                textinfo="label+percent", textfont={"size": 11},
             ))
             st.plotly_chart(theme.style_fig(fig, height=340, legend=False, title="维度权重分布"),
                             use_container_width=True)
@@ -800,19 +800,19 @@ def _tab_structure(result: Dict[str, Any]) -> None:
             fig.add_trace(go.Bar(
                 x=[d["dimension"] for d in dims],
                 y=[round(d["weight"] * 100, 2) for d in dims],
-                name="权重(%)", marker=dict(color=theme.RED), yaxis="y",
+                name="权重(%)", marker={"color": theme.RED}, yaxis="y",
                 text=[f'{d["weight"] * 100:.0f}%' for d in dims], textposition="outside",
-                textfont=dict(size=10),
+                textfont={"size": 10},
             ))
             fig.add_trace(go.Scatter(
                 x=[d["dimension"] for d in dims],
                 y=[_num(d.get("mean_icir")) for d in dims],
                 name="维度均值 ICIR", mode="lines+markers", yaxis="y2",
-                line=dict(color=theme.BLUE, width=2), marker=dict(size=7),
+                line={"color": theme.BLUE, "width": 2}, marker={"size": 7},
             ))
             fig.update_layout(
-                yaxis=dict(title="权重(%)"),
-                yaxis2=dict(title="ICIR", overlaying="y", side="right", showgrid=False),
+                yaxis={"title": "权重(%)"},
+                yaxis2={"title": "ICIR", "overlaying": "y", "side": "right", "showgrid": False},
             )
             st.plotly_chart(theme.style_fig(fig, height=340, title="维度权重 vs 维度表现"),
                             use_container_width=True)
@@ -832,18 +832,18 @@ def _tab_structure(result: Dict[str, Any]) -> None:
             vals = [abs(_num(d.get(key))) / mx * 100 for d in dims]
             fig.add_trace(go.Scatterpolar(
                 r=vals + vals[:1], theta=labels + labels[:1], fill="toself", name=name,
-                line=dict(color=color, width=2), opacity=0.55,
+                line={"color": color, "width": 2}, opacity=0.55,
             ))
         vals = [d["n_factors"] / max_n * 100 for d in dims]
         fig.add_trace(go.Scatterpolar(
             r=vals + vals[:1], theta=labels + labels[:1], name="因子数量",
-            line=dict(color=theme.INK_MUTED, width=1.5, dash="dot"), fill=None,
+            line={"color": theme.INK_MUTED, "width": 1.5, "dash": "dot"}, fill=None,
         ))
-        fig.update_layout(polar=dict(
-            radialaxis=dict(visible=True, range=[0, 100], gridcolor="#F0F2F5", tickfont=dict(size=9)),
-            angularaxis=dict(gridcolor="#F0F2F5", tickfont=dict(size=11)),
-            bgcolor="#fff",
-        ))
+        fig.update_layout(polar={
+            "radialaxis": {"visible": True, "range": [0, 100], "gridcolor": "#F0F2F5", "tickfont": {"size": 9}},
+            "angularaxis": {"gridcolor": "#F0F2F5", "tickfont": {"size": 11}},
+            "bgcolor": "#fff",
+        })
         st.plotly_chart(theme.style_fig(fig, height=420), use_container_width=True)
 
     # 因子权重条形图
@@ -855,9 +855,9 @@ def _tab_structure(result: Dict[str, Any]) -> None:
             x=[weights.get(m["factor_name"], 0) * 100 for m in order][::-1],
             y=[m["display_name"][:24] for m in order][::-1],
             orientation="h",
-            marker=dict(color=[dim_color.get(m["dimension"], theme.RED) for m in order][::-1]),
+            marker={"color": [dim_color.get(m["dimension"], theme.RED) for m in order][::-1]},
             text=[f'{weights.get(m["factor_name"], 0) * 100:.1f}%' for m in order][::-1],
-            textposition="outside", textfont=dict(size=10),
+            textposition="outside", textfont={"size": 10},
             customdata=[[m["dimension"]] for m in order][::-1],
             hovertemplate="%{y}<br>维度：%{customdata[0]}<br>权重：%{x:.2f}%<extra></extra>",
         ))
@@ -891,9 +891,9 @@ def _tab_performance(result: Dict[str, Any]) -> None:
                 fig.add_trace(go.Scatter(
                     x=list(s.index), y=[v * 100 for v in s.values], mode="lines",
                     name=f"Q{int(g) + 1}",
-                    line=dict(width=2 if i in (0, n - 1) else 1.2, color=color),
+                    line={"width": 2 if i in (0, n - 1) else 1.2, "color": color},
                 ))
-            fig.add_hline(y=0, line=dict(color=theme.INK_MUTED, width=1, dash="dash"))
+            fig.add_hline(y=0, line={"color": theme.INK_MUTED, "width": 1, "dash": "dash"})
             st.plotly_chart(theme.style_fig(fig, height=330, title="分层累计收益（%）"),
                             use_container_width=True)
     with c2:
@@ -904,16 +904,16 @@ def _tab_performance(result: Dict[str, Any]) -> None:
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=list(cum.index), y=cum.values, mode="lines", name="多空累计收益",
-                line=dict(color=theme.RED, width=2.2), fill="tozeroy",
+                line={"color": theme.RED, "width": 2.2}, fill="tozeroy",
                 fillcolor="rgba(200,16,46,0.08)",
             ))
             fig.add_trace(go.Scatter(
                 x=list(dd.index), y=dd.values * 100, mode="lines", name="回撤",
-                line=dict(color=theme.INK_MUTED, width=1, dash="dot"), yaxis="y2",
+                line={"color": theme.INK_MUTED, "width": 1, "dash": "dot"}, yaxis="y2",
             ))
-            fig.update_layout(yaxis=dict(title="累计收益(%)"),
-                              yaxis2=dict(title="回撤(%)", overlaying="y", side="right",
-                                          showgrid=False))
+            fig.update_layout(yaxis={"title": "累计收益(%)"},
+                              yaxis2={"title": "回撤(%)", "overlaying": "y", "side": "right",
+                                          "showgrid": False})
             st.plotly_chart(theme.style_fig(fig, height=330, title="多空组合净值与回撤"),
                             use_container_width=True)
 
@@ -947,15 +947,15 @@ def _tab_stability(result: Dict[str, Any]) -> None:
         fig = go.Figure()
         fig.add_trace(go.Bar(
             x=list(s.index), y=s.values, name="日度 IC",
-            marker=dict(color=[theme.RED if v >= 0 else theme.BLUE for v in s.values]),
+            marker={"color": [theme.RED if v >= 0 else theme.BLUE for v in s.values]},
             opacity=0.55,
         ))
         fig.add_trace(go.Scatter(
             x=list(cum.index), y=cum.values, name="累计 IC", yaxis="y2",
-            line=dict(color=theme.RED_DEEP, width=2.2),
+            line={"color": theme.RED_DEEP, "width": 2.2},
         ))
-        fig.update_layout(yaxis=dict(title="日度 IC"),
-                          yaxis2=dict(title="累计 IC", overlaying="y", side="right", showgrid=False))
+        fig.update_layout(yaxis={"title": "日度 IC"},
+                          yaxis2={"title": "累计 IC", "overlaying": "y", "side": "right", "showgrid": False})
         st.plotly_chart(theme.style_fig(fig, height=330, title="IC 时间序列与累计 IC"),
                         use_container_width=True)
 
@@ -966,13 +966,13 @@ def _tab_stability(result: Dict[str, Any]) -> None:
             fig.add_trace(go.Scatter(
                 x=[d["period"] for d in decay], y=[d["ic"] for d in decay],
                 mode="lines+markers", name="IC",
-                line=dict(color=theme.RED, width=2.4), marker=dict(size=8),
+                line={"color": theme.RED, "width": 2.4}, marker={"size": 8},
                 fill="tozeroy", fillcolor="rgba(200,16,46,0.08)",
             ))
             fig.add_trace(go.Scatter(
                 x=[d["period"] for d in decay], y=[d["rank_ic"] for d in decay],
                 mode="lines+markers", name="Rank IC",
-                line=dict(color=theme.BLUE, width=2, dash="dash"), marker=dict(size=7),
+                line={"color": theme.BLUE, "width": 2, "dash": "dash"}, marker={"size": 7},
             ))
             fig.update_xaxes(title="持有期（交易日）")
             st.plotly_chart(theme.style_fig(fig, height=320, title="IC 衰减曲线"),
@@ -984,17 +984,17 @@ def _tab_stability(result: Dict[str, Any]) -> None:
             fig = go.Figure()
             fig.add_trace(go.Bar(
                 x=[d["n_factors"] for d in divers], y=[d["icir"] for d in divers],
-                name="体系 ICIR", marker=dict(color=theme.RED), opacity=0.85,
+                name="体系 ICIR", marker={"color": theme.RED}, opacity=0.85,
             ))
             fig.add_trace(go.Scatter(
                 x=[d["n_factors"] for d in divers], y=[d["sharpe"] for d in divers],
                 mode="lines+markers", name="多空夏普", yaxis="y2",
-                line=dict(color=theme.BLUE, width=2), marker=dict(size=7),
+                line={"color": theme.BLUE, "width": 2}, marker={"size": 7},
             ))
             fig.update_xaxes(title="纳入因子数（按 |ICIR| 降序）")
-            fig.update_layout(yaxis=dict(title="ICIR"),
-                              yaxis2=dict(title="夏普", overlaying="y", side="right",
-                                          showgrid=False))
+            fig.update_layout(yaxis={"title": "ICIR"},
+                              yaxis2={"title": "夏普", "overlaying": "y", "side": "right",
+                                          "showgrid": False})
             st.plotly_chart(theme.style_fig(fig, height=320, title="分散化收益递减曲线"),
                             use_container_width=True)
             best = max(divers, key=lambda d: abs(d["icir"]))
@@ -1024,15 +1024,15 @@ def _tab_stability(result: Dict[str, Any]) -> None:
                 y=[abs(_num(v.get("icir"))) for _, v in sub],
                 mode="markers+text", name=d,
                 text=[members.get(n, {}).get("display_name", n)[:10] for n, _ in sub],
-                textposition="top center", textfont=dict(size=9, color=theme.INK_SUB),
-                marker=dict(size=[8 + 26 * abs(_num(v.get("long_short_sharpe"))) / 3
+                textposition="top center", textfont={"size": 9, "color": theme.INK_SUB},
+                marker={"size": [8 + 26 * abs(_num(v.get("long_short_sharpe"))) / 3
                                   for _, v in sub],
-                            color=theme.PALETTE[i % len(theme.PALETTE)],
-                            line=dict(color="#fff", width=1), opacity=0.8),
+                            "color": theme.PALETTE[i % len(theme.PALETTE)],
+                            "line": {"color": "#fff", "width": 1}, "opacity": 0.8},
                 hovertemplate="%{text}<br>|IC|=%{x:.4f}<br>|ICIR|=%{y:.2f}<extra></extra>",
             ))
-        fig.add_hline(y=0.4, line=dict(color=theme.RED_LINE, width=1, dash="dash"))
-        fig.add_vline(x=0.02, line=dict(color=theme.RED_LINE, width=1, dash="dash"))
+        fig.add_hline(y=0.4, line={"color": theme.RED_LINE, "width": 1, "dash": "dash"})
+        fig.add_vline(x=0.02, line={"color": theme.RED_LINE, "width": 1, "dash": "dash"})
         fig.update_xaxes(title="|IC|")
         fig.update_yaxes(title="|ICIR|")
         st.plotly_chart(theme.style_fig(fig, height=430), use_container_width=True)
@@ -1056,11 +1056,11 @@ def _tab_correlation(result: Dict[str, Any]) -> None:
         fig = go.Figure(go.Heatmap(
             z=corr.to_numpy(), x=labels, y=labels,
             colorscale=theme.COLORSCALE_DIVERGING, zmid=0, zmin=-1, zmax=1,
-            colorbar=dict(thickness=12, len=0.85, tickfont=dict(size=10)),
+            colorbar={"thickness": 12, "len": 0.85, "tickfont": {"size": 10}},
             hovertemplate="%{y} × %{x}<br>ρ = %{z:.3f}<extra></extra>",
         ))
-        fig.update_xaxes(tickangle=-40, tickfont=dict(size=9))
-        fig.update_yaxes(tickfont=dict(size=9))
+        fig.update_xaxes(tickangle=-40, tickfont={"size": 9})
+        fig.update_yaxes(tickfont={"size": 9})
         st.plotly_chart(
             theme.style_fig(fig, height=max(360, 22 * len(labels) + 120), legend=False,
                             title="因子相关性矩阵"),
@@ -1074,18 +1074,18 @@ def _tab_correlation(result: Dict[str, Any]) -> None:
             fig = go.Figure()
             fig.add_trace(go.Bar(
                 x=[f"PC{i + 1}" for i in range(k)], y=[v * 100 for v in ev[:k]],
-                name="方差解释比(%)", marker=dict(color=theme.RED),
+                name="方差解释比(%)", marker={"color": theme.RED},
                 text=[f"{v * 100:.0f}%" for v in ev[:k]], textposition="outside",
-                textfont=dict(size=9),
+                textfont={"size": 9},
             ))
             fig.add_trace(go.Scatter(
                 x=[f"PC{i + 1}" for i in range(k)], y=cum, mode="lines+markers",
-                name="累计(%)", yaxis="y2", line=dict(color=theme.BLUE, width=2),
-                marker=dict(size=6),
+                name="累计(%)", yaxis="y2", line={"color": theme.BLUE, "width": 2},
+                marker={"size": 6},
             ))
-            fig.update_layout(yaxis=dict(title="解释比(%)"),
-                              yaxis2=dict(title="累计(%)", overlaying="y", side="right",
-                                          range=[0, 105], showgrid=False))
+            fig.update_layout(yaxis={"title": "解释比(%)"},
+                              yaxis2={"title": "累计(%)", "overlaying": "y", "side": "right",
+                                          "range": [0, 105], "showgrid": False})
             st.plotly_chart(theme.style_fig(fig, height=340, title="主成分方差解释"),
                             use_container_width=True)
 
@@ -1096,7 +1096,7 @@ def _tab_correlation(result: Dict[str, Any]) -> None:
                 x=[v for _, v in order][::-1],
                 y=[members.get(k, {}).get("display_name", k)[:14] for k, _ in order][::-1],
                 orientation="h",
-                marker=dict(color=[theme.RED if v >= 0 else theme.BLUE for _, v in order][::-1]),
+                marker={"color": [theme.RED if v >= 0 else theme.BLUE for _, v in order][::-1]},
             ))
             st.plotly_chart(
                 theme.style_fig(fig, height=max(260, 22 * len(order) + 70), legend=False,
@@ -1179,14 +1179,14 @@ def _tab_spectrum(result: Dict[str, Any]) -> None:
         fig = go.Figure()
         fig.add_trace(go.Bar(
             x=xs, y=ev, name="原始特征值",
-            marker=dict(color=theme.RED, opacity=0.82),
+            marker={"color": theme.RED, "opacity": 0.82},
             hovertemplate="%{x}<br>原始 λ = %{y:.3f}<extra></extra>",
         ))
         if evc:
             fig.add_trace(go.Scatter(
                 x=xs, y=evc, name="清洗后", mode="markers+lines",
-                line=dict(color=theme.BLUE, width=1.6, dash="dot"),
-                marker=dict(size=8, symbol="diamond"),
+                line={"color": theme.BLUE, "width": 1.6, "dash": "dot"},
+                marker={"size": 8, "symbol": "diamond"},
                 hovertemplate="%{x}<br>清洗后 λ = %{y:.3f}<extra></extra>",
             ))
         if lam_hi > lam_lo:
@@ -1195,7 +1195,7 @@ def _tab_spectrum(result: Dict[str, Any]) -> None:
                           line_width=0, layer="below")
             fig.add_annotation(x=len(ev) - 1, y=lam_hi, yshift=10,
                                text=f"MP 噪声带 [{lam_lo:.2f}, {lam_hi:.2f}]",
-                               showarrow=False, font=dict(size=10, color=theme.INK_SUB))
+                               showarrow=False, font={"size": 10, "color": theme.INK_SUB})
         st.plotly_chart(
             theme.style_fig(fig, height=360, title="特征值谱与 Marchenko–Pastur 噪声带"),
             use_container_width=True,
@@ -1241,10 +1241,10 @@ def _tab_spectrum(result: Dict[str, Any]) -> None:
             for i, col in enumerate(wdf.columns):
                 fig.add_trace(go.Bar(
                     x=wdf.index.tolist(), y=(wdf[col] * 100).tolist(), name=str(col),
-                    marker=dict(color=theme.PALETTE[i % len(theme.PALETTE)]),
+                    marker={"color": theme.PALETTE[i % len(theme.PALETTE)]},
                     hovertemplate="%{x}<br>" + str(col) + " = %{y:.2f}%<extra></extra>",
                 ))
-            fig.update_layout(barmode="group", yaxis=dict(title="权重(%)"))
+            fig.update_layout(barmode="group", yaxis={"title": "权重(%)"})
             st.plotly_chart(
                 theme.style_fig(fig, height=max(320, 20 * len(wdf) + 200), title="各方案权重分布"),
                 use_container_width=True,
@@ -1321,11 +1321,11 @@ def _tab_spectrum(result: Dict[str, Any]) -> None:
                     fig = go.Figure(go.Heatmap(
                         z=m, x=labs, y=labs, zmid=0, zmin=-1, zmax=1,
                         colorscale=theme.COLORSCALE_DIVERGING,
-                        colorbar=dict(thickness=10, len=0.8, tickfont=dict(size=9)),
+                        colorbar={"thickness": 10, "len": 0.8, "tickfont": {"size": 9}},
                         hovertemplate="%{y} × %{x}<br>ρ = %{z:.3f}<extra></extra>",
                     ))
-                    fig.update_xaxes(tickangle=-40, tickfont=dict(size=8))
-                    fig.update_yaxes(tickfont=dict(size=8))
+                    fig.update_xaxes(tickangle=-40, tickfont={"size": 8})
+                    fig.update_yaxes(tickfont={"size": 8})
                     st.plotly_chart(
                         theme.style_fig(fig, height=max(300, 20 * len(labs) + 140),
                                         legend=False, title=title),
@@ -1449,13 +1449,13 @@ def _render_run_history(system_id: int) -> None:
         xs = [h["created_at"][5:16] for h in reversed(history)]
         fig.add_trace(go.Scatter(
             x=xs, y=[_num(h["metrics"].get("ic")) for h in reversed(history)],
-            mode="lines+markers", name="IC", line=dict(color=theme.RED, width=2)))
+            mode="lines+markers", name="IC", line={"color": theme.RED, "width": 2}))
         fig.add_trace(go.Scatter(
             x=xs, y=[_num(h["metrics"].get("icir")) for h in reversed(history)],
             mode="lines+markers", name="ICIR", yaxis="y2",
-            line=dict(color=theme.BLUE, width=2, dash="dash")))
-        fig.update_layout(yaxis=dict(title="IC"),
-                          yaxis2=dict(title="ICIR", overlaying="y", side="right", showgrid=False))
+            line={"color": theme.BLUE, "width": 2, "dash": "dash"}))
+        fig.update_layout(yaxis={"title": "IC"},
+                          yaxis2={"title": "ICIR", "overlaying": "y", "side": "right", "showgrid": False})
         st.plotly_chart(theme.style_fig(fig, height=280, title="历次回测走势"),
                         use_container_width=True)
 

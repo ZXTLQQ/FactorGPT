@@ -7,8 +7,6 @@
 import os
 import sys
 
-import pytest
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from pipeline.refinery import RefineryPipeline, build_refinery_config  # noqa: E402
@@ -19,7 +17,7 @@ def _cfg(tmpdir, **overrides):
         "n_symbols": 10, "train_days": 50, "test_days": 25,
         "n_workers": 1, "seed": 7,
         "rl_backend": "heuristic", "rl_max_len": 3, "rl_candidates": 3,
-        "n_pool_seed": 6, "run_portfolio": False,
+        "n_pool_seed": 6, "run_portfolio": False, "deep_analysis": False,
         "output_dir": str(tmpdir), "offline": True, "use_real_data": False,
         "transformer": {"d_model": 32, "nhead": 4, "num_layers": 1},
         "rpn": {"parallel": False, "n_workers": 1},
@@ -99,6 +97,36 @@ def test_refinery_alpha_pool_switches(tmp_path):
     assert len(result.screened) >= 2
     assert result.composite is not None
     assert "icir" in result.composite_metrics
+
+
+def test_refinery_deep_analysis_hooked(tmp_path):
+    """deep_analysis=true 时，出因子后应自动产出报告/图表/体系推荐并写入 stage_trace。"""
+    out = tmp_path / "deep"
+    cfg = _cfg(tmp_path, deep_analysis=True, deep_analysis_dir=str(out),
+               deep_analysis_max_factors=5,
+               screener={"use_lasso": True, "use_human_collab": False,
+                         "topk_ratio": 0.8, "min_keep": 3})
+    pipe = RefineryPipeline(cfg)
+    ctx = pipe.run_to_review("深度分析挂钩")
+    result = pipe.resume_from_review(ctx, review_callback=lambda c: [x.name for x in c])
+
+    da = result.deep_analysis
+    assert da is not None, "deep_analysis=true 时应产出深度分析结果"
+    md = (da.get("paths") or {}).get("markdown")
+    assert md and os.path.exists(md), f"报告未落盘: {md}"
+    assert len(da.get("charts", [])) >= 1, "应至少生成 1 张图表"
+    assert "P2 深度分析" in {s["stage"] for s in result.stage_trace}
+    # 方法学报告应包含深度分析章节且不因额外字段报错
+    assert result.report_path and os.path.exists(result.report_path)
+
+
+def test_refinery_deep_analysis_off_by_flag(tmp_path):
+    """deep_analysis=false 时不应产出任何深度分析产物。"""
+    cfg = _cfg(tmp_path, deep_analysis=False)
+    pipe = RefineryPipeline(cfg)
+    result = pipe.resume_from_review(pipe.run_to_review("关闭深度分析"))
+    assert result.deep_analysis is None
+    assert not any("P2 深度分析" in s["stage"] for s in result.stage_trace)
 
 
 def test_refinery_invalid_keep_names_no_crash(tmp_path):

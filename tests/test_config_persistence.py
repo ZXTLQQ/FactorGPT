@@ -15,7 +15,6 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import pytest  # noqa: E402
 import yaml  # noqa: E402
 
 from llm.client import load_config, unresolved_env_placeholder  # noqa: E402
@@ -95,8 +94,8 @@ def test_placeholder_detection_matches_llm_client() -> None:
 # ----------------------------------------------------------------------
 def test_patch_updates_value_and_keeps_inline_comment() -> None:
     out = patch_yaml(_SAMPLE, ["llm"], {"provider": "openai"})
-    old_line = [ln for ln in _SAMPLE.splitlines() if ln.strip().startswith("provider:")][0]
-    line = [ln for ln in out.splitlines() if ln.strip().startswith("provider:")][0]
+    old_line = next(ln for ln in _SAMPLE.splitlines() if ln.strip().startswith("provider:"))
+    line = next(ln for ln in out.splitlines() if ln.strip().startswith("provider:"))
     assert line.startswith("  provider: openai")
     # 注释照旧跟着这一行，且换了个更短的值也不该让它左移
     assert line.index("#") == old_line.index("#")

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """为 README 各功能区块生成运行结果图例（调用真实引擎）。
 
 输出（docs/assets/）：
@@ -15,7 +14,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -37,15 +35,15 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+from engine.factor_library import FactorLibrary  # noqa: E402
+from engine.factor_system import build_synthetic_panel  # noqa: E402
 from engine.genetic_enhanced import (  # noqa: E402
     EnhancedFactorEvolver,
     EventWindow,
     eval_expr,
 )
-from engine.factor_system import build_synthetic_panel  # noqa: E402
-from engine.factor_library import FactorLibrary  # noqa: E402
-from engine.unstructured_miner import TextAnalyzer  # noqa: E402
 from engine.transformer_coupling import TransformerCoupling  # noqa: E402
+from engine.unstructured_miner import TextAnalyzer  # noqa: E402
 
 ASSETS = ROOT / "docs" / "assets"
 ASSETS.mkdir(parents=True, exist_ok=True)
@@ -58,8 +56,8 @@ plt.rcParams["axes.unicode_minus"] = False
 # 统一视觉风格（与 feature_gp_evolution.png 保持一致）
 # ---------------------------------------------------------------------------
 _PALETTE = ["#4C72B0", "#55A868", "#C44E52", "#8172B2", "#CCB974", "#64B5CD"]
-_CAPTION_BOX = dict(boxstyle="round,pad=0.35", fc="#F7F8FA", ec="#D6DAE2")
-_INFO_BOX = dict(boxstyle="round,pad=0.5", fc="#F7F8FA", ec="#4C72B0")
+_CAPTION_BOX = {"boxstyle": "round,pad=0.35", "fc": "#F7F8FA", "ec": "#D6DAE2"}
+_INFO_BOX = {"boxstyle": "round,pad=0.5", "fc": "#F7F8FA", "ec": "#4C72B0"}
 
 
 def fig_factor_library() -> None:
@@ -212,7 +210,7 @@ def _draw_expr_tree(ax, expr, caption: str = "") -> None:
             fc, ec = "#E6EDF7", "#4C72B0"
         ax.text(xs[n["idx"]], -n["depth"], n["label"], ha="center", va="center",
                 fontsize=8.0, zorder=2,
-                bbox=dict(boxstyle="round,pad=0.32", fc=fc, ec=ec, lw=1.0))
+                bbox={"boxstyle": "round,pad=0.32", "fc": fc, "ec": ec, "lw": 1.0})
     depth_max = max(n["depth"] for n in nodes)
     ax.set_xlim(-1.45, seq[0] + 0.45)
     ax.set_ylim(-depth_max - 1.15, 0.9)
@@ -222,7 +220,7 @@ def _draw_expr_tree(ax, expr, caption: str = "") -> None:
         caption = caption.replace(" | ", "\n")
         ax.text(0.5, 0.02, caption, transform=ax.transAxes, ha="center", va="bottom",
                 fontsize=8.5, color="#444",
-                bbox=dict(boxstyle="round,pad=0.35", fc="#F7F8FA", ec="#D6DAE2"))
+                bbox={"boxstyle": "round,pad=0.35", "fc": "#F7F8FA", "ec": "#D6DAE2"})
 
 
 def fig_gp_evolution() -> None:
@@ -379,7 +377,7 @@ def fig_gp_evolution() -> None:
         ax.text(0.02, 0.03,
                 f"事件窗口：{win_note}\n未加权 IC = {plain:.4f}\n事件窗口加权 IC = {weighted:.4f}",
                 transform=ax.transAxes, va="bottom", fontsize=8.5,
-                bbox=dict(boxstyle="round,pad=0.4", fc="#FFF9EC", ec="#E7A93B"))
+                bbox={"boxstyle": "round,pad=0.4", "fc": "#FFF9EC", "ec": "#E7A93B"})
         ax.legend(loc="upper right", fontsize=7.5)
     ax.set_title("(f) 事件窗口感知的适应度加权", fontsize=11)
     ax.set_ylabel("截面 IC")
@@ -504,7 +502,7 @@ def fig_transformer_coupling() -> None:
     ax.set_xlim(0, 1.06)
     ax.set_title("(a) 因子检索相关度 Top10", fontsize=11)
     ax.grid(alpha=0.25, axis="x")
-    ax.text(0.98, 0.03, f"意图：中期动量 + 波动率控制",
+    ax.text(0.98, 0.03, "意图：中期动量 + 波动率控制",
             transform=ax.transAxes, ha="right", va="bottom",
             fontsize=9, bbox=_CAPTION_BOX)
     fig.suptitle("Transformer-Agent Coupling · 深度耦合 · 语义检索 Top10", fontsize=12.5)

@@ -84,7 +84,7 @@ def secret_target(value: Any, env_var: str, *, plaintext_ok: bool = False) -> Tu
         return "", None
     if placeholder_var(text):
         return text, None
-    return "${%s}" % env_var, text
+    return f"${{{env_var}}}", text
 
 
 def yaml_scalar(value: Any) -> str:

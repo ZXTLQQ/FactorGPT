@@ -161,7 +161,7 @@ def universe_summary(flags: pd.DataFrame) -> Dict[str, Any]:
     """选股域的体检报告：每日可选数量、剔除原因分布、覆盖率。"""
     if flags is None or flags.empty:
         return {"ok": False, "reason": "空标签表"}
-    total = int(len(flags))
+    total = len(flags)
     trad = int(flags["tradable"].sum())
     per_day = flags.groupby("date")["tradable"].sum()
     reasons = (

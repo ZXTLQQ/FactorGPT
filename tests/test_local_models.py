@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
 """``src/llm/local_models`` 本机 Ollama 探测测试。
 
 云端密钥会过期、会 401（本机 .env 里的 DeepSeek key 正是如此），而机器上往往
 已经跑着一个 Ollama。让界面能列出**真实存在**的模型名，比让用户手敲
 ``qwen2.5-coder:7b`` 可靠得多。测试全部离线：monkeypatch 掉 urlopen。
 """
-import io
 import json
 import os
 import sys

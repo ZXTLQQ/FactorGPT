@@ -27,14 +27,14 @@ import pandas as pd
 
 from agent.rl_search import FactorRLSearch
 from agent.transformer_encoder import TransformerEncoder
-from data.feature_forge import FeatureForge, MINUTE_FEATURES
+from data.feature_forge import MINUTE_FEATURES, FeatureForge
 from engine.backtest import FactorBacktester
 from engine.rpn_engine import RPNConfig, RPNEngine
 from pipeline.alpha_pool import AlphaPool, AlphaPoolConfig
 from pipeline.factor_zoo import FactorZoo
 from pipeline.methodology import MethodologyReport
-from pipeline.screener import Screener, ScreenerConfig
 from pipeline.schema import CandidateFactor, OreStock, RefineryResult
+from pipeline.screener import Screener, ScreenerConfig
 
 logger = logging.getLogger("factor_gpt.refinery")
 
@@ -90,6 +90,11 @@ class RefineryConfig:
     multimodal: bool = False            # true 时真实数据矿石纳入基本面/估值/资金流/新闻情绪多模态因子
     # P0 组合级回测与过拟合检验（默认开启，作为交付证据）
     run_portfolio: bool = True
+    # 出因子后的深度分析（统计体检 + 图表 + 大模型解读 + 多因子体系）
+    deep_analysis: bool = True
+    deep_analysis_dir: str = "output/factor_report"
+    deep_analysis_system: bool = True      # 是否额外跑多因子体系搭建（需 >=2 个入选因子）
+    deep_analysis_max_factors: int = 12    # 参与体系搭建的因子上限（控制树模型/贪心搜索开销）
 
 
 class RefineryPipeline:
@@ -157,7 +162,7 @@ class RefineryPipeline:
         if keep_names is not None:
             keep_set = {str(n) for n in keep_names}
 
-            def review_callback(cands, _keep=keep_set):  # noqa: F811
+            def review_callback(cands, _keep=keep_set):
                 # 评审回调约定返回「保留的因子名列表」
                 return [c.name for c in cands if c.name in _keep]
 
@@ -222,12 +227,28 @@ class RefineryPipeline:
             ore=ore, candidates=candidates, screened=screened,
             composite=composite, composite_metrics=comp_metrics,
             loo_result=loo, stage_trace=trace,
+            deep_analysis=None,
             robustness=robustness, portfolio=portfolio, cost_sensitivity=cost_sens,
             ic_by_year=ic_year, benchmark_comparison=bench_cmp, factor_zoo=zoo,
             multimodal_factors=ore.meta.get("multimodal_factors"),
             eval_set=eval_set,
             screen_audit=dict(getattr(screener, "audit", {}) or {}),
         )
+
+        # P2 深度分析：出因子后自动产出统计体检 + 图表 + 大模型解读（+ 多因子体系）
+        # 置于方法学总结之前，使第十二章能引用其报告路径与推荐方案。
+        if self.config.deep_analysis:
+            try:
+                result.deep_analysis = self._stage07_deep_analysis(
+                    eval_kline, composite, screened, requirement)
+                da = result.deep_analysis or {}
+                trace.append(_stage("P2 深度分析", time.time() - t0,
+                                    f"MD={os.path.basename((da.get('paths') or {}).get('markdown', ''))} "
+                                    f"图表={len(da.get('charts') or [])} "
+                                    f"体系={da.get('recommended') or '-'}"))
+            except Exception as e:  # noqa: BLE001
+                logger.warning("深度分析失败（不影响主流程）: %s", e)
+                result.deep_analysis = None
 
         # P1 产品化交付：导出因子表达式 / 调仓 CSV / 可解释 HTML+PDF 报告
         try:
@@ -239,7 +260,7 @@ class RefineryPipeline:
                 f"HTML={os.path.basename(delivered.get('html', ''))} "
                 f"PDF={'有' if delivered.get('pdf') else '无'} "
                 f"JSON={'有' if delivered.get('json') else '无'}"))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("产品交付导出失败（不影响主流程）: %s", e)
         report_path = reporter.generate(result, requirement)
         result.report_path = report_path
@@ -247,6 +268,83 @@ class RefineryPipeline:
 
         logger.info("精炼厂流水线完成，总耗时 %.1fs", time.time() - t0)
         return result
+
+    # -- 深度分析（出因子后自动体检 + 图表 + 大模型解读） ------------------ #
+    def _stage07_deep_analysis(self, eval_kline: pd.DataFrame, composite,
+                               screened: List[CandidateFactor], requirement: str) -> Optional[Dict]:
+        """对合成后的复合因子跑一次完整深度分析，产物落盘并返回摘要。
+
+        包含统计体检（Newey-West t / bootstrap CI / JB / Ljung-Box / IC 衰减 /
+        分位单调性 / 夏普·索提诺·卡玛 / 回撤 / 换手）、12 张图表、大模型解读，
+        以及（入选因子 >=2 时）线性 max-IC / 显式非线性 / 树 / contextual 四层
+        多因子体系的增益对比与推荐方案。任一环节失败由调用方兜底。
+        """
+        from pipeline.deep_analysis import deep_analysis, write_report_bundle
+
+        if composite is None or eval_kline is None or eval_kline.empty:
+            return None
+        try:
+            extra = self._screened_to_frame(screened)
+            res = deep_analysis(
+                eval_kline, composite,
+                factor_name="AlphaPool_Composite",
+                factor_expr=requirement or "AlphaPool composite",
+                extra_factors=extra,
+                output_dir=self.config.deep_analysis_dir,
+                n_quantiles=self.config.rpn.n_quantiles,
+                forward_periods=self.config.rpn.forward_periods,
+                commission=self.config.rpn.commission,
+                risk_free_rate=self.config.rpn.risk_free_rate,
+                run_portfolio=self.config.run_portfolio,
+                run_system=self.config.deep_analysis_system and extra is not None
+                and extra.shape[1] >= 2,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("深度分析执行失败: %s: %s", type(e).__name__, e)
+            return None
+
+        out: Dict = {"paths": write_report_bundle(res, self.config.deep_analysis_dir)}
+        rep = res.get("report")
+        if rep is not None:
+            charts = getattr(rep, "charts", None) or {}
+            interp = getattr(rep, "interpretation", None) or {}
+            out["paths"]["charts_dir"] = self.config.deep_analysis_dir
+            # `_report_md` 是报告自身路径的哨兵键，不计入图表数
+            out["charts"] = sorted(k for k in charts if not str(k).startswith("_"))
+            if charts.get("_report_md"):
+                out["paths"]["markdown"] = charts["_report_md"]
+            out["interpretation_mode"] = interp.get("mode")
+            out["interpretation"] = interp.get("text", "")
+            out["n_metrics"] = len(res.get("metrics") or {})
+        sysres = res.get("system")
+        if sysres is not None:
+            rec = getattr(sysres, "recommended", None)
+            if rec is not None:
+                out["recommended"] = getattr(rec, "name", str(rec))
+                out["recommended_oos_ic"] = (getattr(rec, "oos_stats", None) or {}).get("ic")
+            out["layers"] = [getattr(r, "name", str(r))
+                             for r in (getattr(sysres, "layers", None) or [])]
+        return out
+
+    def _screened_to_frame(self, screened: List[CandidateFactor]) -> Optional[pd.DataFrame]:
+        """把入选因子拼成 (date, symbol, 因子列) 宽表，供深度分析做体系搭建与相关性图。"""
+        frames: Dict[str, pd.Series] = {}
+        ordered = sorted(screened or [],
+                         key=lambda c: -abs(float((c.metrics or {}).get("ic", 0.0) or 0.0)))
+        for c in ordered[: max(1, int(self.config.deep_analysis_max_factors))]:
+            s = getattr(c, "series", None)
+            if s is None or s.empty or not isinstance(s.index, pd.MultiIndex):
+                continue
+            idx = pd.MultiIndex.from_arrays(
+                [s.index.get_level_values(0).astype(str), s.index.get_level_values(1)])
+            frames[str(c.name)] = pd.Series(np.asarray(s.values, dtype=float), index=idx)
+        if len(frames) < 2:
+            return None
+        df = pd.DataFrame(frames)
+        df = df[~df.index.duplicated(keep="last")]
+        df = df.reset_index()
+        df.columns = ["date", "symbol", *frames.keys()]
+        return df
 
     # -- Kronos 预测因子接入 ------------------------------------------- #
     def _maybe_attach_kronos(self, ore: OreStock) -> None:
@@ -268,7 +366,7 @@ class RefineryPipeline:
                 from kronos import attach_kronos_factor
             except ImportError:
                 from src.kronos import attach_kronos_factor
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("Kronos 模块导入失败，跳过 Kronos 因子: %s", e)
             return
         # 合成数据(use_real_data=False)时 Kronos 预测为空, 真实权重派不上用场;
@@ -278,7 +376,7 @@ class RefineryPipeline:
         try:
             attach_kronos_factor(ore, {"kronos": kcfg})
             logger.info("[refinery] Kronos 预测因子 KRONOS_PRED 已接入因子池")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("Kronos 因子接入失败(已跳过): %s", e)
 
     # -- PART-01 --------------------------------------------------------- #
@@ -294,7 +392,7 @@ class RefineryPipeline:
             else:
                 try:
                     return self._build_real_ore()
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     logger.warning("真实数据矿石构建失败: %s", e)
                     cached = self._load_real_ore_cache()
                     if cached is not None:
@@ -326,7 +424,7 @@ class RefineryPipeline:
             with open(path, "wb") as f:
                 pickle.dump(ore, f)
             logger.info("整矿缓存已写入 %s", path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("整矿缓存写入失败: %s", e)
 
     def _load_real_ore_cache(self) -> Optional[OreStock]:
@@ -346,7 +444,7 @@ class RefineryPipeline:
                             ore.factor_pool[name] = s[~s.index.duplicated(keep="last")]
                     logger.info("已加载本地整矿缓存 %s", p)
                     return ore
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("整矿缓存读取失败: %s", e)
         return None
 
@@ -416,7 +514,7 @@ class RefineryPipeline:
                     factor_pool.update(mm)
                     multimodal_factors = list(mm.keys())
                     logger.info("多模态因子已并入因子池：%s", multimodal_factors)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("多模态因子构建失败，已跳过: %s", e)
 
         ore = OreStock(
@@ -501,7 +599,7 @@ class RefineryPipeline:
                 name="Transformer_SeqAlpha", source="transformer", series=tf_factor,
                 description="Transformer(d_model=128,2层,5头) 对分钟级序列建模派生的注意力 alpha",
             ))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("Transformer 派生因子失败: %s", e)
 
         # (b) MaskablePPO 因子组合搜索
@@ -512,7 +610,7 @@ class RefineryPipeline:
         )
         try:
             candidates += rl.run(ore.factor_pool, ore.train_kline, n_candidates=self.config.rl_candidates)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("RL 搜索失败: %s", e)
 
         # (c) 因子池直接取样（基础候选）
@@ -529,8 +627,9 @@ class RefineryPipeline:
     def _llm_mine(self, ore: OreStock, requirement: str) -> List[CandidateFactor]:
         """接入现有 FactorAgent 作为 LLM 矿场（需 LLM API 与行情数据）。"""
         try:
-            from ..agent import FactorAgent
             from llm.client import load_config
+
+            from ..agent import FactorAgent
             cfg = load_config()
             agent = FactorAgent(cfg)
             res = agent.run(requirement, max_iterations=int(cfg.get("agent", {}).get("max_iterations", 6)))
@@ -548,7 +647,7 @@ class RefineryPipeline:
                         references=st.get("factor_references", []),
                     )]
             logger.warning("LLM 矿场因子与精炼厂 universe 不对齐，已跳过")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("LLM 矿场调用失败（已跳过，不影响其余工序）: %s", e)
         return []
 
@@ -614,6 +713,10 @@ def build_refinery_config(d: Optional[dict] = None) -> RefineryConfig:
         output_dir=d.get("output_dir", "output"),
         multimodal=bool(d.get("multimodal", False)),
         run_portfolio=bool(d.get("run_portfolio", True)),
+        deep_analysis=bool(d.get("deep_analysis", True)),
+        deep_analysis_dir=d.get("deep_analysis_dir", "output/factor_report"),
+        deep_analysis_system=bool(d.get("deep_analysis_system", True)),
+        deep_analysis_max_factors=int(d.get("deep_analysis_max_factors", 12)),
         rpn=rpn, screener=screener, alpha_pool=alpha_pool,
     )
 

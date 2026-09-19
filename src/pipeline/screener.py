@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
 import numpy as np
@@ -27,7 +27,7 @@ SYMBOL = "symbol"
 try:
     from sklearn.linear_model import LassoCV
     _HAS_SKLEARN = True
-except Exception:  # noqa: BLE001
+except Exception:
     _HAS_SKLEARN = False
 
 
@@ -84,7 +84,7 @@ class Screener:
             keep = [candidates[i] for i in range(len(candidates)) if abs(coef[i]) > 1e-6]
             logger.info("LASSO 筛选：%d → %d（保留显著因子）", len(candidates), len(keep))
             return keep if keep else candidates
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("LASSO 失败，降级相关性去重: %s", e)
             return self._corr_redundancy(candidates, y, common, mask)
 

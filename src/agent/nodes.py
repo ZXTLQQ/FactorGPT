@@ -241,7 +241,7 @@ class FactorAgentNodes:
             else:
                 cols = list(factor_long.columns)
                 rename = {cols[0]: "date", cols[1]: "symbol"}
-                value_col = [c for c in cols if c not in ("date", "symbol")][0]
+                value_col = next(c for c in cols if c not in ("date", "symbol"))
                 rename[value_col] = "factor"
                 factor_long = factor_long.rename(columns=rename)
             factor_long = factor_long[["date", "symbol", "factor"]]
@@ -287,7 +287,7 @@ class FactorAgentNodes:
         try:
             # 样本内（训练集）指标：用于生成-反思闭环与早停
             metrics = self.backtester.evaluate(self.train_kline, factor_series)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             # 回测异常不应中断整个 Agent 流程，转为可展示的错误指标
             return {"metrics": {"error": f"回测执行异常: {type(e).__name__}: {e}"},
                     "error": "回测执行异常"}
@@ -305,7 +305,7 @@ class FactorAgentNodes:
             metrics["_style_exposure"] = attr["style"]
             metrics["_industry_exposure"] = attr["industry"]
             metrics["_risk_report"] = attr["report"]
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
         # 生成并保存标准化回测图表（IC 序列 / 分层收益 / 多空权益 / 分层累积收益）
@@ -325,14 +325,14 @@ class FactorAgentNodes:
                 },
                 tags={"stage": "evaluate", "source": state.get("factor_source") or "unknown"},
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"[tracking] 记录失败: {e}")
 
         # 样本外（OOS）独立验证：仅终局报告展示，不参与反思与早停，杜绝过拟合
         if self.test_kline is not None and not self.test_kline.empty:
             try:
                 out["metrics_oos"] = self.backtester.evaluate(self.test_kline, factor_series)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 out["metrics_oos"] = {"error": f"OOS 回测异常: {type(e).__name__}: {e}"}
         return out
 
@@ -421,7 +421,7 @@ class FactorAgentNodes:
             reflection = f"LLM 反思不可用: {e}"
             llm_error = f"第{iteration}轮反思阶段：{type(e).__name__}: {e}"
 
-        reflections = list(history) + [f"第{iteration}轮反思: {reflection or '（无）'}"]
+        reflections = [*list(history), f"第{iteration}轮反思: {reflection or '（无）'}"]
         if llm_error:
             # 反思记录里也要留下痕迹，否则报告正文看不出本轮是模型在改还是空转
             reflections.append(f"> ⚠️ LLM 未参与本轮改进：{llm_error}")
@@ -539,7 +539,7 @@ class FactorAgentNodes:
             )
             if card:
                 report += f"\n\n## 八、因子可解释性说明卡\n{card}\n"
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
         return {"report": report}

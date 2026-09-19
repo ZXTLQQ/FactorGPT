@@ -37,7 +37,7 @@ def setup_cjk_font() -> str:
     try:
         import matplotlib
         from matplotlib import font_manager
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.debug("matplotlib 不可用，跳过中文字体配置: %s", e)
         return ""
 
@@ -52,7 +52,7 @@ def setup_cjk_font() -> str:
                 _REGISTERED_NAME = name
                 logger.debug("已注册中文字体: %s <- %s", name, path)
                 break
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.debug("字体注册失败 %s: %s", path, e)
                 continue
 
@@ -61,12 +61,12 @@ def setup_cjk_font() -> str:
                  "Source Han Sans SC", "WenQuanYi Zen Hei",
                  "Noto Sans CJK SC", "Heiti TC", "Arial Unicode MS"]
         if name:
-            known = [name] + known
+            known = [name, *known]
         matplotlib.rcParams["font.family"] = "sans-serif"
-        matplotlib.rcParams["font.sans-serif"] = known + ["DejaVu Sans"]
+        matplotlib.rcParams["font.sans-serif"] = [*known, "DejaVu Sans"]
         # 关键：monospace 也前置中文字体，否则 fig.text(family="monospace") 仍会缺字形
-        matplotlib.rcParams["font.monospace"] = known + ["DejaVu Sans Mono"]
+        matplotlib.rcParams["font.monospace"] = [*known, "DejaVu Sans Mono"]
         matplotlib.rcParams["axes.unicode_minus"] = False
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.debug("设置 rcParams 失败: %s", e)
     return name

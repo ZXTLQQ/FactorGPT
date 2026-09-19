@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """验收闸门：把挖掘产出接到统计检验、选股域与分层多尺度挖掘。
 
 ``src/mining`` 回答"能挖出什么"，这一层回答"挖出来的东西值不值得信"。后者需要
@@ -32,10 +31,19 @@ import numpy as np
 import pandas as pd
 
 __all__ = [
-    "KLINE_FIELDS", "panel_long", "kline_long", "ic_series_of", "split_panels_by_time",
+    "KLINE_FIELDS",
+    "acceptance",
+    "domain_check",
+    "ic_series_of",
+    "kline_long",
+    "multiscale_mine",
+    "panel_long",
+    "quantile_domains",
+    "significance_check",
+    "significance_for_search",
     "specification_search",
-    "significance_check", "significance_for_search", "quantile_domains",
-    "universe_check", "domain_check", "multiscale_mine", "acceptance",
+    "split_panels_by_time",
+    "universe_check",
 ]
 
 #: GP 算子集（``engine.genetic_enhanced._COLS``）要求的原始列。
@@ -313,8 +321,8 @@ def multiscale_mine(panel: Any, horizon: int = 5, *, n_intervals: int = 8,
     out["spec_rl"] = bool(spec_rl)
     out["n_spec_seeds"] = int(n_spec)
     symbols, dates = getattr(panel, "symbols", None), getattr(panel, "dates", None)
-    out["n_symbols"] = int(len(symbols)) if symbols is not None else 0
-    out["n_dates_panel"] = int(len(dates)) if dates is not None else 0
+    out["n_symbols"] = len(symbols) if symbols is not None else 0
+    out["n_dates_panel"] = len(dates) if dates is not None else 0
     return out
 
 

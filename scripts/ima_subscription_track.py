@@ -37,14 +37,14 @@ import json
 import os
 import sys
 import time
-import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+import urllib.request
+from datetime import UTC, datetime
 
 from ima_sync import (
+    API_BASE,
     load_credentials,
     search_knowledge_base,
-    API_BASE,
 )
 
 DEFAULT_OUT_DIR = os.path.join(
@@ -65,7 +65,7 @@ MEDIA_EXT = {
 
 
 def _now_iso():
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")
 
 
 def _is_owned(kb):
@@ -133,7 +133,7 @@ def _crawl_folder(client_id, api_key, kb_id, folder_id, folder_path, state,
                     continue
                 state["done_folders"].append(mid)
                 ok, page_budget = _crawl_folder(
-                    client_id, api_key, kb_id, mid, folder_path + [title],
+                    client_id, api_key, kb_id, mid, [*folder_path, title],
                     state, delay, limit, max_pages, page_budget)
                 # 子文件夹处理完即落盘，保证断点可恢复
                 _save_state(state)
@@ -199,7 +199,7 @@ def track(client_id, api_key, out_dir, do_push=True, kb_name=None,
                  "entries": {}, "_state_path": state_path}
         if os.path.exists(state_path):
             try:
-                with open(state_path, "r", encoding="utf-8") as fh:
+                with open(state_path, encoding="utf-8") as fh:
                     saved = json.load(fh)
                 if saved.get("kb_id") == kb_id:
                     state["done_folders"] = saved.get("done_folders", [])
@@ -244,7 +244,7 @@ def track(client_id, api_key, out_dir, do_push=True, kb_name=None,
     prev = {}
     if os.path.exists(prev_path):
         try:
-            with open(prev_path, "r", encoding="utf-8") as fh:
+            with open(prev_path, encoding="utf-8") as fh:
                 prev = {e["media_id"]: e for e in json.load(fh).get("files", [])}
         except Exception:  # noqa
             prev = {}

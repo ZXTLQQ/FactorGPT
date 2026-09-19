@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import logging
+from typing import Dict
+
 import numpy as np
 import pandas as pd
 
@@ -23,7 +25,7 @@ try:
     import torch
     import torch.nn as nn
     _HAS_TORCH = True
-except Exception:  # noqa: BLE001
+except Exception:
     _HAS_TORCH = False
     nn = None
     torch = None

@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 
 from .client import HAError, HeadlineArenaClient
 from .ledger import ForwardLedger, LedgerError, default_ledger_dir
-from .scorecard import render_markdown, reconcile_pending
+from .scorecard import render_markdown
 from .translator import DEFAULT_ASSETS, factor_to_theme, parse_theme, view_to_prediction
 
 # config.yaml headline_arena 段与 runner 默认配置的映射
@@ -92,7 +92,7 @@ def fetch_open_challenges(
     try:
         c = client or build_client(ha_config)
         return c.open_challenges() or []
-    except Exception:  # noqa: BLE001 —— 降级：离线演示不因网络失败而中断
+    except Exception:
         return []
 
 
@@ -200,12 +200,12 @@ def run_forward(
     if mode == "live" and client is None:
         try:
             client = build_client(cfg)
-        except Exception:  # noqa: BLE001
+        except Exception:
             client = None
     if client is not None:
         try:
             challenges = client.open_challenges() or []
-        except Exception as e:  # noqa: BLE001 —— 网络失败降级 dry_run + 占位
+        except Exception as e:
             warnings.append(f"拉取开放挑战失败，使用离线占位挑战: {type(e).__name__}")
             challenges = []
     if not challenges:

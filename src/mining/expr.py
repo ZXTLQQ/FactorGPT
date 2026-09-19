@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """强类型表达式树：量价与基本面共处同一因子空间（中信建投《量价 X 基本面
 因子挖掘统一框架》落地）。
 
@@ -31,22 +30,48 @@ from __future__ import annotations
 import ast
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-import numpy as np
 import pandas as pd
 
 from . import ops
 from .ops import OpSpec
-from .panel import (DIM_AMOUNT, DIM_COUNT, DIM_FLAG, DIM_GROWTH, DIM_PRICE,
-                    DIM_RATIO, DIM_SCORE, DIM_VOLUME, FieldRegistry,
-                    PanelData, default_registry, residualize_cs)
+from .panel import (
+    DIM_AMOUNT,
+    DIM_COUNT,
+    DIM_FLAG,
+    DIM_GROWTH,
+    DIM_PRICE,
+    DIM_RATIO,
+    DIM_SCORE,
+    DIM_VOLUME,
+    FieldRegistry,
+    PanelData,
+    default_registry,
+    residualize_cs,
+)
 
 __all__ = [
-    "ExprError", "ExprParseError", "ExprTypeError",
-    "TypeInfo", "Node", "Const", "Field", "Call", "Neutral",
-    "parse", "render", "infer_type", "validate", "describe", "lookback",
-    "Evaluator", "evaluate", "NEUTRAL_OP", "DIMENSIONLESS", "COMMUTATIVE",
+    "COMMUTATIVE",
+    "DIMENSIONLESS",
+    "NEUTRAL_OP",
+    "Call",
+    "Const",
+    "Evaluator",
+    "ExprError",
+    "ExprParseError",
+    "ExprTypeError",
+    "Field",
+    "Neutral",
+    "Node",
+    "TypeInfo",
+    "describe",
+    "evaluate",
+    "infer_type",
+    "lookback",
+    "parse",
+    "render",
+    "validate",
 ]
 
 

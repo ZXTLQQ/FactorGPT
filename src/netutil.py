@@ -95,6 +95,6 @@ def patch_requests_session() -> None:
 
         _patched_init._netutil_patched = True
         req.Session.__init__ = _patched_init
-    except Exception:  # noqa: BLE001
+    except Exception:
         # requests 未安装或打补丁失败时不阻塞主流程
         pass

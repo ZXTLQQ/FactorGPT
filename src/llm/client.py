@@ -25,7 +25,6 @@ import yaml
 # localhost/127.0.0.1 始终直连，保证本地 Ollama 不受影响。具体策略在模块底部应用。
 from netutil import apply_proxy_settings, get_trust_env
 
-
 # config.yaml 里允许写 api_key: "${DEEPSEEK_API_KEY}" 把密钥外置到 .env。
 # 但当环境变量缺失、且 .env 也没加载到时，替换不会发生，取值会原样保留成
 # 一串带花括号的占位符——把它当作密钥发出去只会得到一次必然的 401，而上层
@@ -120,13 +119,13 @@ class LLMClient:
             raise ImportError(
                 "未安装 langchain-openai，请执行 pip install langchain-openai"
             ) from e
-        kwargs = dict(
-            model=self.model,
-            api_key=self.api_key or "EMPTY",
-            temperature=self.temperature,
-            timeout=self.timeout,
-            max_tokens=2048,
-        )
+        kwargs = {
+            "model": self.model,
+            "api_key": self.api_key or "EMPTY",
+            "temperature": self.temperature,
+            "timeout": self.timeout,
+            "max_tokens": 2048,
+        }
         # 自定义/本地端点往往无需鉴权或 base_url 为空，仅在有值时传入。
         if self.base_url:
             kwargs["base_url"] = self.base_url
@@ -270,7 +269,7 @@ def _load_dotenv(path: str = ".env") -> None:
     if not os.path.exists(path):
         return
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
@@ -278,7 +277,7 @@ def _load_dotenv(path: str = ".env") -> None:
                 k, v = line.split("=", 1)
                 k, v = k.strip(), v.strip().strip('"').strip("'")
                 os.environ.setdefault(k, v)
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 
@@ -303,7 +302,7 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
                 path = cand
                 break
             here = os.path.dirname(here)
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         text = f.read()
     # 环境变量插值：${VAR} -> os.environ[VAR]（未设置则保留原样，便于本地直接填值）
     pattern = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -320,5 +319,5 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
 try:
     _app_cfg = load_config()
     apply_proxy_settings((_app_cfg or {}).get("proxy"))
-except Exception:  # noqa: BLE001
+except Exception:
     apply_proxy_settings(None)

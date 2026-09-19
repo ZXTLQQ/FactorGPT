@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """消融实验：量化六道工序中关键模块对复合因子样本外表现的边际贡献。
 
 用法:
@@ -20,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from dataclasses import replace
@@ -37,6 +35,7 @@ from engine.traditional_factors import _ALL_FACTORS, get_all_factors  # noqa: E4
 from pipeline.alpha_pool import AlphaPool, AlphaPoolConfig  # noqa: E402
 from pipeline.schema import CandidateFactor  # noqa: E402
 from pipeline.screener import Screener, ScreenerConfig  # noqa: E402
+
 
 # --------------------------------------------------------------------------- #
 # 带信号合成数据：收益 = 滞后10日动量 + 噪声
@@ -205,9 +204,7 @@ def main() -> None:
           f" | 训练 {len(train_kline)} 行 / 测试 {len(test_kline)} 行")
 
     # equal_weight 与 reduced_library 是独立变体
-    all_variants = list(VARIANTS) + [
-        ("equal_weight", "等权合成（跳过 AlphaPool）", {}, {}),
-    ]
+    all_variants = [*list(VARIANTS), ("equal_weight", "等权合成（跳过 AlphaPool）", {}, {})]
     results = []
     for vname, _desc, sc_over, pc_over in all_variants:
         sc = replace(SCREENER_BASE, **sc_over)
@@ -238,7 +235,7 @@ def main() -> None:
     # 显著性检验：best vs baseline 各开关的边际贡献
     base = next(r for r in results if r.get("variant") == "baseline")
     base_icir = base.get("icir") or 0.0
-    print("\n=== 边际贡献（OOS ICIR, 相对 baseline %.4f）===" % base_icir)
+    print(f"\n=== 边际贡献（OOS ICIR, 相对 baseline {base_icir:.4f}）===")
     for r in results:
         if r.get("variant") == "baseline":
             continue

@@ -9,11 +9,14 @@
 
 import os
 import re
+import time
 import pickle
 import hashlib
 import logging
+import threading
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 import numpy as np
@@ -52,6 +55,33 @@ def _load_config_file() -> dict:
 
 
 _CONFIG_CACHE: Optional[dict] = None
+
+
+class _RateLimiter:
+    """全局最小请求间隔节流器（防行情源封 IP）。
+
+    config.yaml 的 data.request_interval 此前没有任何代码读取，等于未生效。
+    这里补上实现：以单调时钟 + 锁串行发放「请求许可」，sleep 在锁外执行，
+    因此并发线程只会被排队，不会互相阻塞持锁。
+    """
+
+    def __init__(self, interval: float) -> None:
+        self.interval = max(0.0, float(interval or 0.0))
+        self._lock = threading.Lock()
+        self._next_ts = 0.0
+
+    def acquire(self) -> None:
+        """取一次请求许可；interval<=0 时立即返回（不限流）。"""
+        if self.interval <= 0:
+            return
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                if now >= self._next_ts:
+                    self._next_ts = now + self.interval
+                    return
+                wait = self._next_ts - now
+            time.sleep(wait)
 
 
 def _resolve_env_token(val) -> Optional[str]:
@@ -126,6 +156,15 @@ class DataFetcher:
         self.cache_dir = data_cfg.get("cache_dir", "data/cache")
         self.use_cache = bool(data_cfg.get("use_cache", True))   # 成功后写缓存；失败时优先读缓存
         self.cache_only = bool(data_cfg.get("cache_only", False))  # true 时完全离线，只读取预备缓存
+        # cache_read_first：正常路径也先查缓存，命中即返回（默认 false 以保持「每次取实时数」语义）。
+        # 开启后，对区间不变的重复回测可秒级复跑；配合 cache_ttl_hours 控制新鲜度。
+        self.cache_read_first = bool(data_cfg.get("cache_read_first", False))
+        self.cache_ttl_hours = float(data_cfg.get("cache_ttl_hours", 0) or 0)
+        # 并发抓取：默认 1（保持历史串行行为）。调大可显著缩短批量取数耗时，
+        # 但每个请求仍须先向节流器取许可，不会被并发绕过限流。
+        self.max_concurrency = max(1, int(data_cfg.get("max_concurrency", 1) or 1))
+        self.request_interval = float(data_cfg.get("request_interval", 0) or 0)
+        self._limiter = _RateLimiter(self.request_interval)
 
         # 应用代理配置（config.yaml 的 proxy 段；localhost/127.0.0.1 始终直连）。
         # 未配置则保持强制直连，规避不可达系统代理导致的 ProxyError；若已设置
@@ -194,14 +233,20 @@ class DataFetcher:
         except Exception as e:  # noqa: BLE001
             logging.warning("[DataFetcher] 缓存写入失败 %s: %s", name, e)
 
-    def _load_cache(self, name: str):
+    def _load_cache(self, name: str, ttl_hours: float = 0.0):
+        """读取缓存；ttl_hours>0 时超过该时效的缓存视为未命中（按文件 mtime 判定）。"""
         p = os.path.join(self.cache_dir, name + ".pkl")
-        if os.path.exists(p):
-            try:
-                with open(p, "rb") as f:
-                    return pickle.load(f)
-            except Exception as e:  # noqa: BLE001
-                logging.warning("[DataFetcher] 缓存读取失败 %s: %s", name, e)
+        if not os.path.exists(p):
+            return None
+        if ttl_hours > 0:
+            age_h = (time.time() - os.path.getmtime(p)) / 3600.0
+            if age_h > ttl_hours:
+                return None
+        try:
+            with open(p, "rb") as f:
+                return pickle.load(f)
+        except Exception as e:  # noqa: BLE001
+            logging.warning("[DataFetcher] 缓存读取失败 %s: %s", name, e)
         return None
 
     def _kline_cache_key(self, symbols, start, end, adjust) -> str:
@@ -263,6 +308,15 @@ class DataFetcher:
                 "message": "已使用合成数据（force_synthetic=True）",
             }
             return self._synthetic_daily_kline(symbols, start, end, adjust)
+
+        # cache_read_first：命中即返回，避免「区间未变的重复回测」反复打网络。
+        if self.cache_read_first and self.use_cache:
+            cached = self._load_cache(self._kline_cache_key(symbols, start, end, adjust),
+                                      self.cache_ttl_hours)
+            if cached is not None and not cached.empty:
+                self.last_fetch_info = {"source": "cache",
+                                        "message": "cache_read_first：已命中本地行情缓存"}
+                return cached
 
         start_fmt = self._standardize_date(start)
         end_fmt = self._standardize_date(end)
@@ -339,15 +393,45 @@ class DataFetcher:
         return pd.DataFrame()
 
     # ---- 多源回退辅助方法 ----
-    def _fetch_batch(self, fn, symbols, start_fmt, end_fmt, period, adjust):
+    def _fetch_one(self, fn, symbol, start_fmt, end_fmt, period, adjust):
+        """抓取单只标的；失败返回 None（异常不外抛，保证批量抓取不中断）。"""
+        try:
+            self._limiter.acquire()
+            df = fn(symbol, start_fmt, end_fmt, period, adjust)
+            if df is not None and not df.empty:
+                return df
+        except Exception as e:  # noqa: BLE001
+            print(f"[DataFetcher] {symbol} 经 {getattr(fn, '__name__', fn)} 获取失败: {e}")
+        return None
+
+    def _fetch_batch(self, fn, symbols, start_fmt, end_fmt, period, adjust,
+                     max_workers: Optional[int] = None):
+        """逐 symbol 抓取行情，返回非空 DataFrame 列表。
+
+        max_workers>1 时走线程池并发（上限受 data.max_concurrency 约束）；
+        无论并发与否，每个请求都先向 _RateLimiter 取许可，保证
+        data.request_interval 的限流语义不被并发绕过。
+        """
         frames = []
-        for symbol in symbols:
-            try:
-                df = fn(symbol, start_fmt, end_fmt, period, adjust)
-                if df is not None and not df.empty:
+        if not symbols:
+            return frames
+        workers = int(max_workers or self.max_concurrency or 1)
+        workers = max(1, min(workers, len(symbols)))
+        if workers == 1:
+            for symbol in symbols:
+                df = self._fetch_one(fn, symbol, start_fmt, end_fmt, period, adjust)
+                if df is not None:
                     frames.append(df)
-            except Exception as e:
-                print(f"[DataFetcher] {symbol} 经 {getattr(fn, '__name__', fn)} 获取失败: {e}")
+            return frames
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(self._fetch_one, fn, s, start_fmt, end_fmt, period, adjust): s
+                for s in symbols
+            }
+            for fut in as_completed(futures):
+                df = fut.result()
+                if df is not None:
+                    frames.append(df)
         return frames
 
     def _fetch_batch_ths(self, symbols, start_fmt, end_fmt, period, adjust):

@@ -21,7 +21,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from llm.client import load_config
-from pipeline.refinery import build_refinery_config, RefineryPipeline
+from pipeline.refinery import RefineryPipeline, build_refinery_config
 
 
 def main() -> int:

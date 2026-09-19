@@ -306,7 +306,7 @@ def feasible_actions(state: SpecState, task: SpecTask, cat: DomainCatalogue,
         for k in feats:
             for t in range(1, len(cat.transforms)):
                 for g in range(len(cat.structures)):
-                    for v in [-1] + feats:
+                    for v in [-1, *feats]:
                         for w in range(len(cat.windows)):
                             for p in range(len(cat.params)):
                                 if g == 0 and v >= 0:
@@ -320,7 +320,7 @@ def feasible_actions(state: SpecState, task: SpecTask, cat: DomainCatalogue,
     for i, term in enumerate(state.terms):
         for t in range(len(cat.transforms)):
             for g in range(len(cat.structures)):
-                for v in [-1] + feats:
+                for v in [-1, *feats]:
                     for w in range(len(cat.windows)):
                         for p in range(len(cat.params)):
                             if g == 0 and v >= 0:
@@ -510,7 +510,7 @@ class PanelSpecEnvironment(SpecEnvironment):
         fit = abs(_safe_mean(np.asarray(ic, dtype=float)))
         if not np.isfinite(fit):
             return Estimate(float("nan"), False, {"reason": "ic_all_nan"})
-        return Estimate(float(fit), True, {"n_dates": int(len(ic))})
+        return Estimate(float(fit), True, {"n_dates": len(ic)})
 
 
 # ---------------------------------------------------------------------------
@@ -814,7 +814,7 @@ class MultitaskSpecAgent:
 
             if action.kind == "add":
                 previous = None
-                state = SpecState(state.terms + (action.term,))
+                state = SpecState((*state.terms, action.term))
             else:
                 i = action.index
                 if 0 <= i < len(state.terms):

@@ -77,3 +77,5 @@ class RefineryResult:
     eval_set: str = "train"
     # PART-04 三级筛选审计留痕（LASSO / 人机协同 / TOP-K 各级进出数量与人工剔除明细）
     screen_audit: Dict = field(default_factory=dict)
+    # 出因子后的深度分析（统计体检 + 图表 + 大模型解读 + 多因子体系），refinery.deep_analysis=true 时填充
+    deep_analysis: Optional[Dict] = None

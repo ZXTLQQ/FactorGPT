@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """离线微观数据补充（行业 / 板块 / 市值 / 估值 / 地区）。
 
 数据源（构建期联网、运行期完全离线）::
@@ -124,7 +123,7 @@ def sina_symbol(code: str) -> str:
 def _get(url: str, headers: Dict[str, str], timeout: int = 30) -> Optional[requests.Response]:
     """带退避重试的 GET，失败返回 None。"""
     err = ""
-    for wait in (0.0,) + BACKOFF:
+    for wait in (0.0, *BACKOFF):
         if wait:
             time.sleep(wait)
         try:
@@ -406,7 +405,7 @@ def write_micro(df: pd.DataFrame, as_of: str) -> Dict[str, object]:
         "micro": {
             "file": "micro_snapshot.parquet",
             "as_of": as_of,
-            "symbols": int(len(df)),
+            "symbols": len(df),
             "industries": {
                 "level1": int(df["industry"].nunique(dropna=True)),
                 "level2": int(df["industry_l2"].nunique(dropna=True)),

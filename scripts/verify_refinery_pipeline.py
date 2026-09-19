@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pipeline.refinery import RefineryPipeline, RefineryConfig
+from pipeline.refinery import RefineryConfig, RefineryPipeline
 
 
 def main() -> int:

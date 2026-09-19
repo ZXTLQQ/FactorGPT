@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
-__all__ = ["DEFAULT_OLLAMA_BASE_URL", "normalize_ollama_base_url", "probe_ollama", "list_ollama_models"]
+__all__ = ["DEFAULT_OLLAMA_BASE_URL", "list_ollama_models", "normalize_ollama_base_url", "probe_ollama"]
 
 #: Ollama 的 OpenAI 兼容端点（供 ChatOpenAI 使用）。
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
@@ -81,7 +81,7 @@ def probe_ollama(base_url: str = "", timeout: float = 3.0, use_cache: bool = Tru
         out["models"] = sorted(set(models))
     except urllib.error.URLError as e:
         out["error"] = f"无法连接 {origin}（Ollama 未启动？）：{e}"
-    except Exception as e:  # noqa: BLE001 —— 探测失败只影响可选功能
+    except Exception as e:
         out["error"] = f"{type(e).__name__}: {e}"
 
     if use_cache and out["available"]:

@@ -54,8 +54,8 @@ import pandas as pd
 
 from . import param_ops
 from .genetic_enhanced import (
-    MAX_DEPTH,
     _ROL_W,
+    MAX_DEPTH,
     eval_expr,
     expr_to_code,
     expr_to_expr_str,
@@ -381,7 +381,7 @@ def _subtree_paths(expr: Any, path: Tuple[int, ...] = ()) -> List[Tuple[int, ...
     out = [path]
     if isinstance(expr, tuple) and expr:
         for i in _child_positions(expr[0], expr):
-            out.extend(_subtree_paths(expr[i], path + (i,)))
+            out.extend(_subtree_paths(expr[i], (*path, i)))
     return out
 
 
@@ -635,7 +635,7 @@ class HierarchicalFactorMiner:
 
         # 训练 / 样本外切分：区间划分、演化、代理模型全部只用训练段；
         # 测试段仅在最后用于复核，否则"选哪些区间"这一步就会把测试信息吃进去。
-        n_test = int(round(self.n_dates * self.test_ratio))
+        n_test = round(self.n_dates * self.test_ratio)
         self.test_codes = np.arange(self.n_dates - n_test, self.n_dates) if n_test > 0 \
             else np.array([], dtype=int)
         self.train_codes = np.arange(0, self.n_dates - n_test)

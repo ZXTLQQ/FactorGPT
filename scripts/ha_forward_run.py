@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """ha_forward_run — FactorGPT × Headline Arena 前瞻检验统一入口。
 
 把因子层的宏观观点（利率、风格、商品方向）转成每日概率预测提交给 Headline Arena，

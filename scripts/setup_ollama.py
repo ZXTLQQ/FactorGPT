@@ -108,7 +108,7 @@ def find_ollama() -> str | None:
     # 常见安装位置
     candidates = [
         r"C:\Program Files\Ollama\ollama.exe",
-        r"C:\Users\%s\AppData\Local\Programs\Ollama\ollama.exe" % os.environ.get("USERNAME", ""),
+        r"C:\Users\{}\AppData\Local\Programs\Ollama\ollama.exe".format(os.environ.get("USERNAME", "")),
         os.path.join(ROOT, "ollama.exe"),
     ]
     for c in candidates:

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """统一算子库：六类算子 + Numba 加速 + 注册表。
 
 设计来源（四篇卖方研报的工程化落地）：
@@ -312,7 +311,7 @@ _ROLL_BINARY_JIT = _njit(cache=True, nogil=True)(_roll_binary_impl) if HAS_NUMBA
 
 def _default_minp(w: int) -> int:
     """窗口内最少有效样本：默认 ceil(w/2)（与常见滚动算子的宽松口径一致）。"""
-    return max(1, int(math.ceil(w / 2.0)))
+    return max(1, math.ceil(w / 2.0))
 
 
 def roll_unary(x: np.ndarray, w: int, kind: int, minp: Optional[int] = None) -> np.ndarray:
@@ -485,6 +484,13 @@ def _safe_div(a: pd.DataFrame, b: pd.DataFrame, eps: float = 1e-12) -> pd.DataFr
 
 def _align2(a: pd.DataFrame, b: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     return a.align(b, join="outer")
+
+
+def _elem(d: pd.DataFrame, fn: Callable[..., np.ndarray]) -> pd.DataFrame:
+    """逐元素套用 numpy 一元函数（log/log1p/sqrt/sign/tanh），NaN 安全。"""
+    with np.errstate(invalid="ignore", divide="ignore"):
+        arr = fn(d.to_numpy(dtype=np.float64))
+    return pd.DataFrame(arr, index=d.index, columns=d.columns)
 
 
 def _binary_np(a: pd.DataFrame, b: pd.DataFrame,

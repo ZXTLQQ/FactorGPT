@@ -32,6 +32,13 @@ jobs:
           # （alphalens.reformed 为有效签名研究提供第三方交叉印证）
           pip install alphalens-reloaded
 
+      - name: Lint (ruff)
+        # 规则集见仓库根目录 ruff.toml（渐进式放开，当前只阻断新增的高价值问题）
+        # 锁定大版本：规则的增删改会随 ruff 版本漂移，避免 CI 因升级意外转红
+        run: |
+          pip install "ruff==0.16.*"
+          ruff check src scripts tests --output-format=github
+
       - name: Run test suite
         # 不设 --maxfail，让所有失败都可见（避免早期失败掩盖后续缺陷）
         run: python -m pytest tests/ -q --timeout=180

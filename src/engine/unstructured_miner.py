@@ -12,16 +12,15 @@
 
 from __future__ import annotations
 
-import json
-import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
+from engine.safe_expr import safe_factor_expr
 
 # ===================================================================
 # 1. 文本分析引擎（零外部 NLP 依赖，基于关键词 + 规则）
@@ -176,7 +175,7 @@ class DataUploadParser:
         return mapping
 
     def parse_file(
-        self, file_path: Union[str, Path], sheet_name: Optional[str] = None
+        self, file_path: str | Path, sheet_name: Optional[str] = None
     ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """解析文件并返回 (数据框, 元信息字典)。
 
@@ -196,7 +195,7 @@ class DataUploadParser:
         elif ext == ".json":
             df = pd.read_json(file_path)
         elif ext == ".txt":
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 lines = f.readlines()
             df = pd.DataFrame({"text": lines, "line_no": range(len(lines))})
         elif ext == ".pdf":
@@ -265,7 +264,8 @@ class DataUploadParser:
         out["symbol"] = df[mapping["symbol"]].astype(str)
 
         if factor_expr:
-            out["factor"] = eval(factor_expr, {"df": df, "np": np})
+            # 安全求值：AST 白名单替代裸 eval，拒绝 import/赋值/dunder 属性逃逸
+            out["factor"] = safe_factor_expr(df, factor_expr)
         elif "factor" in mapping:
             out["factor"] = pd.to_numeric(df[mapping["factor"]], errors="coerce")
         elif "close" in mapping:
@@ -447,7 +447,7 @@ class UnstructuredFactorIntegrator:
             merged = merged.merge(p, on=["date", "symbol"], how="outer")
         merged = merged.fillna(0.0)
 
-        factor_cols = [n for n in factor_names]
+        factor_cols = list(factor_names)
         actual_weights = weights or self._weights
 
         if method == "naive_mean":

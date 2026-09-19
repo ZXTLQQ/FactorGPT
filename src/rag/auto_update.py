@@ -47,7 +47,7 @@ def fetch_arxiv(
     try:
         with urllib.request.urlopen(url, timeout=20) as resp:
             data = resp.read().decode("utf-8")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"[auto_update] arXiv 抓取失败：{e}")
         return []
 
@@ -135,9 +135,9 @@ class FactorDecayMonitor:
         self.records: List[Dict] = []
         if os.path.exists(self.path):
             try:
-                with open(self.path, "r", encoding="utf-8") as f:
+                with open(self.path, encoding="utf-8") as f:
                     self.records = json.load(f).get("records", [])
-            except Exception:  # noqa: BLE001
+            except Exception:
                 self.records = []
 
     def record(self, factor_name: str, date: str, ic: float) -> None:

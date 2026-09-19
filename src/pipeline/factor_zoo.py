@@ -109,7 +109,7 @@ class FactorZoo:
         try:
             beta, *_ = np.linalg.lstsq(Xc, yc, rcond=None)
             residual = yc - Xc @ beta
-        except Exception:  # noqa: BLE001
+        except Exception:
             residual = yc
         # 残差因子 ICIR：以残差作为新因子，重算 per-date rank IC
         resid_series = pd.Series(residual, index=common)

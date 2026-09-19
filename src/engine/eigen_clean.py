@@ -527,7 +527,7 @@ def optimize_weights(
                 w, success, msg = np.asarray(res.x, dtype=float), True, "SLSQP 收敛"
             else:
                 msg = str(getattr(res, "message", "SLSQP 未收敛"))
-        except Exception as e:  # noqa: BLE001  —— scipy 缺失或数值异常都走兜底
+        except Exception as e:
             msg = f"{type(e).__name__}: {e}"
 
         if not success:
@@ -538,7 +538,7 @@ def optimize_weights(
                     w = _project_simplex(inv @ np.ones(n), max_weight)
                     success = True
                     msg = "解析解 C⁻¹1 + 单纯形投影（SCIPY 不可用）"
-                except Exception:  # noqa: BLE001
+                except Exception:
                     w = np.full(n, 1.0 / n)
                     msg = f"解析解失败，退回等权（{msg}）"
             else:
@@ -912,8 +912,8 @@ def analyze_factor_system_spectrum(
 
     if n_obs is None:
         idx0 = valid.index.get_level_values(0) if isinstance(valid.index, pd.MultiIndex) else None
-        n_obs = int(pd.Index(idx0).nunique()) if idx0 is not None else int(len(valid))
-    n_rows = int(len(valid))
+        n_obs = int(pd.Index(idx0).nunique()) if idx0 is not None else len(valid)
+    n_rows = len(valid)
 
     spec = analyze_spectrum(corr, n_obs=max(int(n_obs), 1), method=method, shrink=shrink, names=names)
     clean_df = spec.corr_clean_df

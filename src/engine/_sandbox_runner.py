@@ -11,10 +11,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-
-from factor_builder import _SAFE_BUILTINS  # noqa: E402
+import numpy as np
+import pandas as pd
+from factor_builder import _SAFE_BUILTINS
 
 
 def _apply_memory_limit() -> None:
@@ -48,7 +47,6 @@ def _apply_memory_limit() -> None:
                     os._exit(137)  # SIGKILL-style exit
             except (psutil.NoSuchProcess, Exception):
                 pass
-        import atexit
         # 在每次 pd/np 运算前检查内存（通过 monkey-patch 常见操作的开销可能过高，
         # 这里采用保守方案：在执行 alpha_factor 前检查一次）
         # 更完整的方案是在 _run_inprocess 中给 exec 加 trace 函数，但开销大。
@@ -62,13 +60,13 @@ def main() -> None:
     code_path, in_path, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
     _apply_memory_limit()
 
-    with open(code_path, "r", encoding="utf-8") as f:
+    with open(code_path, encoding="utf-8") as f:
         code = f.read()
     with open(in_path, "rb") as f:
         df = pickle.load(f)
 
     g = {"__builtins__": _SAFE_BUILTINS, "pd": pd, "np": np, "df": df.copy()}
-    exec(code, g)  # noqa: S102
+    exec(code, g)  # noqa: S102  受限沙箱：已白名单化导入与内置，并在子进程内执行
 
     fn = g.get("alpha_factor")
     if callable(fn):

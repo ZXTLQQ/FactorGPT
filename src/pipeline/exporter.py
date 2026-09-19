@@ -29,7 +29,7 @@ from engine.backtest import FactorBacktester
 try:
     from .fonts import setup_cjk_font
     setup_cjk_font()
-except Exception:  # noqa: BLE001
+except Exception:
     pass
 
 logger = logging.getLogger("factor_gpt.exporter")
@@ -46,7 +46,7 @@ def plt_close(fig):
     try:
         import matplotlib.pyplot as plt
         plt.close(fig)
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 
@@ -109,7 +109,7 @@ class Exporter:
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
         nav = portfolio["equity"]
         bench_ret = FactorBacktester().equal_weight_benchmark(result.ore.train_kline)
@@ -132,7 +132,7 @@ class Exporter:
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
         years = sorted(ic_year.keys())
         ic = [ic_year[y].get("ic", np.nan) for y in years]
@@ -153,12 +153,12 @@ class Exporter:
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
         z = zoo["zoo_icir"]
         comp = zoo.get("composite_icir", np.nan)
         incr = zoo.get("incremental_icir", np.nan)
-        names = list(z.keys()) + ["复合因子", "增量(残差)"]
+        names = [*list(z.keys()), "复合因子", "增量(残差)"]
         vals = [z[n] for n in z] + [comp, incr]
         fig, ax = plt.subplots(figsize=(8, 3.2))
         colors = ["#1f77b4"] * len(z) + ["#ff7f0e", "#9467bd"]
@@ -255,7 +255,7 @@ class Exporter:
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
             from matplotlib.backends.backend_pdf import PdfPages
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("PDF 导出依赖缺失: %s", e)
             return ""
 

@@ -22,7 +22,7 @@ import os
 def build_dataset(src: str, out: str, max_samples: int | None = None) -> int:
     """读 learned_factors.jsonl，构造 SFT 数据集（instruction / input / output）。"""
     rows = []
-    with open(src, "r", encoding="utf-8") as f:
+    with open(src, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:

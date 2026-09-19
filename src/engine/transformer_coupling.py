@@ -14,7 +14,6 @@ Transformer-Agent 深度耦合 (src/engine/transformer_coupling.py)
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +23,6 @@ import numpy as np
 import pandas as pd
 
 from .traditional_factors import ALL_CATEGORIES, CATEGORY_LABELS
-
 
 # ===================================================================
 # 1. 因子编码器 (FactorEncoder)
@@ -276,7 +274,7 @@ class CrossAttentionFusion:
         """
         _, attn_info = self.fuse(encodings, return_attention=True)
         if attn_info is None:
-            return {n: 1.0 for n in encodings}
+            return dict.fromkeys(encodings, 1.0)
 
         names = attn_info["factor_names"]
         N = len(names)
@@ -516,7 +514,7 @@ class PatternMemory:
     def load(self) -> None:
         if not self._persist_path or not Path(self._persist_path).exists():
             return
-        with open(self._persist_path, "r", encoding="utf-8") as f:
+        with open(self._persist_path, encoding="utf-8") as f:
             data = json.load(f)
         self._winners = data.get("winners", [])
         self._losers = data.get("losers", [])

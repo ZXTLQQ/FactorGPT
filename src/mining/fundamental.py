@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """量价 × 基本面统一框架（中信建投《"逐鹿"Alpha专题报告(三十)》落地）。
 
 研报的核心论断是：**量价因子与基本面因子不该是两套系统**。它们共用同一个
@@ -26,23 +25,45 @@ spread/ts_corr/ts_reg_resi`）与跨域中性化（`neutral(x, 基本面控件)`
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
 from . import expr as ex
 from . import ops
-from .panel import (DIM_AMOUNT, DIM_COUNT, ROLE_FUNDAMENTAL, SEM_GROWTH,
-                    SEM_LEVERAGE, SEM_QUALITY, SEM_SIZE, SEM_VALUATION,
-                    FieldMeta, FieldRegistry, PanelData, asof_align, day_delta)
+from .panel import (
+    DIM_AMOUNT,
+    DIM_COUNT,
+    ROLE_FUNDAMENTAL,
+    SEM_GROWTH,
+    SEM_LEVERAGE,
+    SEM_QUALITY,
+    SEM_SIZE,
+    SEM_VALUATION,
+    FieldMeta,
+    FieldRegistry,
+    PanelData,
+    asof_align,
+    day_delta,
+)
 
 __all__ = [
-    "FUND_FIELDS", "register_fundamental_fields", "install_fundamentals",
-    "synthetic_quarterly", "check_pit", "pit_reference", "check_history",
+    "FUND_FACTOR_LIBRARY",
+    "FUND_FIELDS",
     "MIN_HISTORY_DAYS",
-    "FUND_FACTOR_LIBRARY", "library_errors", "market_factor_library",
-    "mixed_templates", "TTM_QUARTER_OFFSETS", "QUARTER_DAYS", "YEAR_DAYS",
+    "QUARTER_DAYS",
+    "TTM_QUARTER_OFFSETS",
+    "YEAR_DAYS",
+    "check_history",
+    "check_pit",
+    "install_fundamentals",
+    "library_errors",
+    "market_factor_library",
+    "mixed_templates",
+    "pit_reference",
+    "register_fundamental_fields",
+    "synthetic_quarterly",
 ]
 
 # 交易日近似：一年 ≈ 250 个交易日、一季 ≈ 61 个交易日
@@ -311,28 +332,28 @@ FUND_FACTOR_LIBRARY: Dict[str, str] = {
     "净利润增速变化": "sub(ts_yoy(net_profit, %d), ts_delay(ts_yoy(net_profit, %d), %d))"
                      % (YEAR_DAYS, YEAR_DAYS, YEAR_DAYS),
     # -- 质量（杜邦三因子 + 现金流）--
-    "ROE_TTM": "div(%s, total_equity)" % NET_PROFIT_TTM,
-    "ROA_TTM": "div(%s, total_assets)" % NET_PROFIT_TTM,
-    "毛利率_TTM": "div(%s, %s)" % (GROSS_PROFIT_TTM, REVENUE_TTM),
-    "资产周转率_TTM": "div(%s, total_assets)" % REVENUE_TTM,
-    "现金流质量": "div(%s, %s)" % (CFO_TTM, NET_PROFIT_TTM),
-    "应计利润": "div(sub(%s, %s), total_assets)" % (NET_PROFIT_TTM, CFO_TTM),
+    "ROE_TTM": f"div({NET_PROFIT_TTM}, total_equity)",
+    "ROA_TTM": f"div({NET_PROFIT_TTM}, total_assets)",
+    "毛利率_TTM": f"div({GROSS_PROFIT_TTM}, {REVENUE_TTM})",
+    "资产周转率_TTM": f"div({REVENUE_TTM}, total_assets)",
+    "现金流质量": f"div({CFO_TTM}, {NET_PROFIT_TTM})",
+    "应计利润": f"div(sub({NET_PROFIT_TTM}, {CFO_TTM}), total_assets)",
     # -- 杠杆与偿债 --
     "资产负债率": "div(total_liab, total_assets)",
     "权益乘数": "div(total_assets, total_equity)",
     # -- 估值 --
-    "PE_TTM": "div(market_cap, %s)" % NET_PROFIT_TTM,
+    "PE_TTM": f"div(market_cap, {NET_PROFIT_TTM})",
     "PB": "div(market_cap, total_equity)",
-    "PS_TTM": "div(market_cap, %s)" % REVENUE_TTM,
-    "PCF_TTM": "div(market_cap, %s)" % CFO_TTM,
-    "盈利收益率": "inv(div(market_cap, %s))" % NET_PROFIT_TTM,
+    "PS_TTM": f"div(market_cap, {REVENUE_TTM})",
+    "PCF_TTM": f"div(market_cap, {CFO_TTM})",
+    "盈利收益率": f"inv(div(market_cap, {NET_PROFIT_TTM}))",
     "账面市值比": "inv(div(market_cap, total_equity))",
     # -- 标准化/中性化后的常用形式 --
-    "ROE_TTM_z": "zscore_cs(div(%s, total_equity))" % NET_PROFIT_TTM,
-    "应计利润_z": "zscore_cs(div(sub(%s, %s), total_assets))" % (NET_PROFIT_TTM, CFO_TTM),
-    "EP_TTM_z": "zscore_cs(inv(div(market_cap, %s)))" % NET_PROFIT_TTM,
+    "ROE_TTM_z": f"zscore_cs(div({NET_PROFIT_TTM}, total_equity))",
+    "应计利润_z": f"zscore_cs(div(sub({NET_PROFIT_TTM}, {CFO_TTM}), total_assets))",
+    "EP_TTM_z": f"zscore_cs(inv(div(market_cap, {NET_PROFIT_TTM})))",
     "净利润同比_z": "zscore_cs(ts_yoy(net_profit, %d))" % YEAR_DAYS,
-    "规模中性ROE": "neutral(zscore_cs(div(%s, total_equity)), size)" % NET_PROFIT_TTM,
+    "规模中性ROE": f"neutral(zscore_cs(div({NET_PROFIT_TTM}, total_equity)), size)",
 }
 
 

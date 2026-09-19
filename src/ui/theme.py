@@ -574,23 +574,23 @@ def style_fig(fig, height: Optional[int] = None, legend: bool = True,
     fig.update_layout(
         template="plotly_white",
         colorway=PALETTE,
-        font=dict(family=FONT_STACK, size=12, color=INK),
-        title=dict(text=title, font=dict(size=14, color=RED_DEEP), x=0.01, xanchor="left")
+        font={"family": FONT_STACK, "size": 12, "color": INK},
+        title={"text": title, "font": {"size": 14, "color": RED_DEEP}, "x": 0.01, "xanchor": "left"}
         if title
         else None,
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FFFFFF",
-        margin=margin or dict(l=48, r=24, t=44 if title else 22, b=40),
-        hoverlabel=dict(bgcolor="#FFFFFF", bordercolor=RED_LINE,
-                        font=dict(family=FONT_STACK, size=12, color=INK)),
+        margin=margin or {"l": 48, "r": 24, "t": 44 if title else 22, "b": 40},
+        hoverlabel={"bgcolor": "#FFFFFF", "bordercolor": RED_LINE,
+                        "font": {"family": FONT_STACK, "size": 12, "color": INK}},
         showlegend=legend,
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
-                    font=dict(size=11)),
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.01, "xanchor": "right", "x": 1,
+                    "font": {"size": 11}},
     )
     if height:
         fig.update_layout(height=height)
     fig.update_xaxes(showgrid=False, linecolor=LINE, zeroline=False,
-                     tickfont=dict(size=11, color=INK_SUB))
+                     tickfont={"size": 11, "color": INK_SUB})
     fig.update_yaxes(showgrid=True, gridcolor="#F2F4F7", linecolor=LINE, zeroline=False,
-                     tickfont=dict(size=11, color=INK_SUB))
+                     tickfont={"size": 11, "color": INK_SUB})
     return fig

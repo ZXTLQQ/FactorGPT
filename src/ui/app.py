@@ -25,43 +25,45 @@ FactorGPT — Streamlit 交互入口
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 import yaml
 
 # 允许以 `python -m ui.app` 或 `streamlit run src/ui/app.py` 两种方式运行
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from agent.graph import FactorAgent   # noqa: E402
-from agent.intent import classify, chat_answer  # noqa: E402
-from agent.vibe_trading import VibeTradingSession  # noqa: E402
+from agent.graph import FactorAgent
 from agent.integration import (
-    get_library, get_coupling, get_unstructured_manager, get_text_analyzer,
-    query_to_factor_suggestions, build_enriched_knowledge,
-    mass_produce_from_library, analyze_unstructured_file,
+    analyze_unstructured_file,
+    get_coupling,
+    get_library,
+    get_text_analyzer,
+    get_unstructured_manager,
+    mass_produce_from_library,
 )
-from engine import factor_system as FS  # noqa: E402
-from engine.genetic_enhanced import EnhancedFactorEvolver  # noqa: E402
-from ui.methodologist import run_methodologist, get_factor_name_from_report  # noqa: E402
-from ui.market_hub import render_market_hub  # noqa: E402
-from ui import nav, theme  # noqa: E402
-from ui.factor_system import (  # noqa: E402
+from agent.intent import chat_answer, classify
+from agent.vibe_trading import VibeTradingSession
+from engine import factor_system as FS
+from engine.genetic_enhanced import EnhancedFactorEvolver
+from rag.chroma_store import ensure_chroma
+from rag.retriever import rag_vector_enabled
+from store import database as db
+from store import mining as mining_repo
+from store import ops as ops_repo
+from store import runs as runs_repo
+from store import state as state_repo
+from store import systems as systems_repo
+from ui import nav, theme
+from ui.factor_system import (
     render_system_advisor,
     render_system_analysis,
     render_system_builder,
 )
-from rag.chroma_store import ensure_chroma  # noqa: E402
-from rag.retriever import rag_vector_enabled  # noqa: E402
-from store import chats as chat_repo  # noqa: E402
-from store import database as db  # noqa: E402
-from store import mining as mining_repo  # noqa: E402
-from store import ops as ops_repo  # noqa: E402
-from store import runs as runs_repo  # noqa: E402
-from store import state as state_repo  # noqa: E402
-from store import systems as systems_repo  # noqa: E402
+from ui.market_hub import render_market_hub
+from ui.methodologist import get_factor_name_from_report, run_methodologist
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
 # 密钥存放位置：config.yaml 受版本控制，真值只写这里（已被 .gitignore 忽略）。
@@ -122,7 +124,7 @@ def load_config():
         return _load_interpolated(str(CONFIG_PATH)) or {}
     except Exception:
         try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
         except Exception:
             return {}
@@ -189,7 +191,7 @@ def _probe_local_models(base_url: str) -> Dict[str, Any]:
 
     try:
         return probe_ollama(base_url, timeout=3.0, use_cache=False)
-    except Exception as e:  # noqa: BLE001 —— 探测失败只影响这项可选功能
+    except Exception as e:
         return {"available": False, "models": [], "base_url": base_url, "error": str(e)}
 
 
@@ -425,7 +427,7 @@ def _render_offline_status(index: str):
     if not meta_p.exists():
         st.success(f"离线数据文件已就绪：{len(bars_ps)} 个分片（共 {total_mb:.1f} MB）")
         return
-    with open(meta_p, "r", encoding="utf-8") as f:
+    with open(meta_p, encoding="utf-8") as f:
         meta = _json.load(f)
     micro = meta.get("micro") or {}
     cov = micro.get("coverage") or {}
@@ -779,7 +781,7 @@ def _line_chart(df, key, value_hints=("收盘", "close", "净值"), date_hints=(
     if d.empty:
         return
     fig = px.line(d, x=date_col, y=val_col, title=f"{key}：{val_col}")
-    fig.update_layout(margin=dict(l=20, r=20, t=40, b=20), height=360)
+    fig.update_layout(margin={"l": 20, "r": 20, "t": 40, "b": 20}, height=360)
     st.plotly_chart(fig, width='stretch')
 
 
@@ -813,7 +815,7 @@ def _candlestick_chart(df, key, date_hints=("日期", "date"),
     )])
     fig.update_layout(
         title=f"{key} K 线",
-        margin=dict(l=20, r=20, t=40, b=20), height=420,
+        margin={"l": 20, "r": 20, "t": 40, "b": 20}, height=420,
         xaxis_rangeslider_visible=False,
     )
     st.plotly_chart(fig, width='stretch')
@@ -921,7 +923,7 @@ def render_memory():
         counts = ops_repo.module_counts()
         if counts:
             theme.badges([f"{k} · {v}" for k, v in counts.items()], "gray")
-        modules = ["全部"] + list(counts.keys())
+        modules = ["全部", *list(counts.keys())]
         c1, c2 = st.columns([1.2, 3])
         with c1:
             pick = st.selectbox("模块筛选", modules, key="mem_mod")
@@ -992,7 +994,7 @@ def render_memory():
         saved = state_repo.all()
         if saved:
             with st.expander(f"当前记住的界面状态（{len(saved)} 项）"):
-                st.json({k: v for k, v in list(saved.items())[:40]})
+                st.json(dict(list(saved.items())[:40]))
 
 
 # ----------------------------------------------------------------------
@@ -1146,7 +1148,7 @@ def render_agent_chat():
 def render_refinery():
     st.caption("RL(MaskablePPO) 因子组合搜索 + RAG 知识 + Transformer 编码 的复合因子管线。")
     try:
-        from pipeline.refinery import RefineryPipeline
+        pass
     except Exception as e:
         st.error(f"精炼厂模块加载失败：{e}")
         return
@@ -1486,7 +1488,7 @@ def _assumptions_summary(result) -> str:
 # ----------------------------------------------------------------------
 def render_futures_options():
     st.caption("期货主力实时行情、期货/期权 K 线、上交所期权与商品期权合约链（数据：AKShare）。")
-    from data.market_data import MarketDataFetcher, FUTURES_MAIN_HINTS, FUTURES_SYMBOLS
+    from data.market_data import FUTURES_SYMBOLS, MarketDataFetcher
 
     tab1, tab2, tab3, tab4 = st.tabs(
         ["期货主力实时", "期货 K 线", "上交所期权实时", "商品期权合约链"]
@@ -1778,6 +1780,7 @@ def render_stocks():
 def render_monitor():
     """📡 因子实时监控：展示已学习因子的 IC 水平、类别分布与衰减趋势。"""
     import plotly.express as px
+
     from rag.learned_library import LearnedFactorLibrary
 
     if st.button("🔄 刷新"):
@@ -1883,7 +1886,12 @@ def render_vibe_trading():
 # ----------------------------------------------------------------------
 def render_traditional_factors():
     st.caption("五大方向 · 55+ 预置因子 · 因子簇参数扩增 · 与遗传规划/LLM 联动")
-    from src.engine.traditional_factors import CATEGORY_LABELS, ALL_CATEGORIES, get_factors_by_category, get_all_factors, export_all_to_dict
+    from src.engine.traditional_factors import (
+        ALL_CATEGORIES,
+        CATEGORY_LABELS,
+        get_all_factors,
+        get_factors_by_category,
+    )
 
     # 统计卡片
     library = get_library()

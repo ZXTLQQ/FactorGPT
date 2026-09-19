@@ -39,11 +39,11 @@ import json
 import os
 import sys
 import time
-import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+import urllib.request
+from datetime import UTC, datetime
 
-from ima_sync import load_credentials, search_knowledge_base, API_BASE
+from ima_sync import API_BASE, load_credentials, search_knowledge_base
 
 DEFAULT_OUT_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ima_subscription"
@@ -60,7 +60,7 @@ DEFAULT_KEYWORDS = [
 
 
 def _now_iso():
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")
 
 
 def _today():
@@ -132,7 +132,7 @@ def load_keywords(out_dir, cli_keywords=None, add_keyword=None):
     path = os.path.join(out_dir, "watch_keywords.json")
     if os.path.exists(path):
         try:
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 cfg = json.load(fh)
             words = cfg.get("keywords", [])
         except Exception:  # noqa
@@ -164,7 +164,7 @@ def load_seen(out_dir):
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh).get("hits", {})
     except Exception:  # noqa
         return {}

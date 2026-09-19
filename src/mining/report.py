@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """因子研究报告生成：把挖掘层的中间产物落成可复核的 Markdown / JSON。
 
 为什么研究层需要"报告"这一层：四篇研报给出的不只是算子，还有**验收口径**。
@@ -25,7 +24,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
@@ -37,8 +36,12 @@ if TYPE_CHECKING:                                     # pragma: no cover
     from .panel import PanelData
 
 __all__ = [
-    "ReportInput", "build_from_expressions", "render_markdown", "report_payload",
-    "write_report", "DASH",
+    "DASH",
+    "ReportInput",
+    "build_from_expressions",
+    "render_markdown",
+    "report_payload",
+    "write_report",
 ]
 
 DASH = "—"          # 缺失值占位符：文档里出现 "nan" 会被误读成真实数值
@@ -179,7 +182,7 @@ class ReportInput:
         """生成时刻（UTC，ISO8601）。显式传入时为可复现的定值。"""
         if self.generated_at:
             return self.generated_at
-        return datetime.now(timezone.utc).replace(
+        return datetime.now(UTC).replace(
             microsecond=0).isoformat().replace("+00:00", "Z")
 
 
@@ -197,7 +200,7 @@ def _count(obj: Any) -> int:
     if obj is None:
         return 0
     try:
-        return int(len(obj))
+        return len(obj)
     except TypeError:                                # pragma: no cover - 标量兜底
         return 0
 
@@ -455,19 +458,19 @@ def _sec_relation(ri: ReportInput) -> List[str]:
         for i, idx in enumerate(mat.index):
             rows.append([str(idx)] + [_fmt(mat.iloc[i, j]) for j in range(len(cols))])
         out += ["## 因子相关性", "",
-                _table(["因子"] + cols, rows, aligns=["l"] + ["r"] * len(cols)), ""]
+                _table(["因子", *cols], rows, aligns=["l"] + ["r"] * len(cols)), ""]
     if ri.pools:
         rows = [[name] + [_fmt(v) for v in blk.values()]
                 for name, blk in ri.pools.items()]
         heads = list(next(iter(ri.pools.values())).keys())
-        out += ["## 池内相关性", "", _table(["因子"] + heads, rows,
+        out += ["## 池内相关性", "", _table(["因子", *heads], rows,
                                            aligns=["l"] + ["r"] * len(heads)), ""]
     if ri.incremental:
         heads = list(next(iter(ri.incremental.values())).keys())
         rows = [[name] + [_fmt(v, 4) for v in blk.values()]
                 for name, blk in ri.incremental.items()]
         out += ["## 增量信息（相对既有因子池）", "",
-                _table(["因子"] + heads, rows, aligns=["l"] + ["r"] * len(heads)),
+                _table(["因子", *heads], rows, aligns=["l"] + ["r"] * len(heads)),
                 "", "增量 IC 为把候选对既有因子的横截面正交化后的 RankIC 均值；"
                     "接近 0 说明该因子已被因子池解释掉。", ""]
     return out
@@ -603,8 +606,8 @@ def _sec_multiscale(ri: ReportInput) -> List[str]:
     coarse, fine = int(res.get("coarse_evals") or 0), int(res.get("fine_evals") or 0)
     out = ["## 分层多尺度挖掘", ""]
     facts = [
-        ["评估粒度（粗 / 细）", f"{str(ms.get('coarse_freq') or DASH)} / "
-                               f"{str(ms.get('fine_freq') or DASH)}"],
+        ["评估粒度（粗 / 细）", f"{ms.get('coarse_freq') or DASH!s} / "
+                               f"{ms.get('fine_freq') or DASH!s}"],
         ["区间数 / 被选中加密", f"{_fmt(res.get('total_intervals'), 0)} / "
                                f"{_fmt(res.get('selected_intervals'), 0)}"],
         ["粗尺度评估次数", f"{coarse}"],

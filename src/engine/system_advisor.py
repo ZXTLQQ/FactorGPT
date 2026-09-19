@@ -545,7 +545,7 @@ def build_actions(facts: Dict[str, Any]) -> List[Dict[str, Any]]:
             "detail": f"把它按 α*={_val(d['alpha'], 2)} 混入现有体系，波动可降 "
                       f"{_val(d['vol_cut_pct'], 2)}%；与体系的相关性只有 {_val(d['corr'], 2)}，"
                       f"说明它覆盖了现有因子没有的风险方向。",
-            "evidence": f"候选排行第二："
+            "evidence": "候选排行第二："
                         + (f"{outside[1]['name']} 降幅 {_val(outside[1]['vol_cut_pct'], 2)}%"
                            if len(outside) > 1 else "无"),
         })
@@ -673,7 +673,7 @@ def _answer_overfit(f: Dict[str, Any]) -> str:
     lines += [
         "",
         "**动作**",
-        f"1. 用「因子体系分析 → 谱清洗与风险」页的清洗后矩阵复算一次权重，与当前结果对比。",
+        "1. 用「因子体系分析 → 谱清洗与风险」页的清洗后矩阵复算一次权重，与当前结果对比。",
         f"2. 把回测区间至少再延长一倍（当前 {f['n_dates']} 个交易日）后再看 ICIR 是否还在 "
         f"{_val(f['icir'], 2)} 附近；这个指标对区间长度最敏感。",
         "3. 剔除或替换 |ICIR| 偏低的因子后重跑，观察体系 ICIR 是升还是降——升说明原来在摊薄。",
@@ -732,7 +732,7 @@ def _answer_weight(f: Dict[str, Any]) -> str:
     cur, best = f["current_scheme"], f["best_scheme"]
     lines = [
         f"**结论**：当前权重方案是「{cur['label']}」；"
-        + (f"在清洗后矩阵下它已经是方差最小的方案。" if f["same_scheme"]
+        + ("在清洗后矩阵下它已经是方差最小的方案。" if f["same_scheme"]
            else f"在清洗后矩阵下方差最小的方案是「{best['label']}」，"
                 f"切换后体系方差可降 {_val(f['variance_cut_pct'], 2)}%。"),
         "",
@@ -851,8 +851,8 @@ def _answer_spectrum(f: Dict[str, Any]) -> str:
         f"3. 对 {f['n_inband']} 个带内方向不要急着下结论：它们既没被证实也没被否证，"
         f"扩样本后再判。",
         "",
-        f"**提示**：噪声带的位置只由 q 决定，与因子好坏无关；"
-        f"低于下界只说明「这个方向在样本里看不出信号」，不等于经济逻辑一定错。",
+        "**提示**：噪声带的位置只由 q 决定，与因子好坏无关；"
+        "低于下界只说明「这个方向在样本里看不出信号」，不等于经济逻辑一定错。",
     ]
     return "\n".join(lines)
 
@@ -973,8 +973,8 @@ def _answer_capacity(f: Dict[str, Any]) -> str:
         "3. 容量测算需要盘口与成交额数据：按目标持仓市值与标的日均成交额估算，"
         "冲击成本随规模非线性上升，本模块没有日内数据，给不出精确容量数字。",
         "",
-        f"**提示**：上表成本是量级估算，不含冲击成本、融券费用与滑点；"
-        f"实盘前请用真实成交数据重估。",
+        "**提示**：上表成本是量级估算，不含冲击成本、融券费用与滑点；"
+        "实盘前请用真实成交数据重估。",
     ]
     return "\n".join(lines)
 

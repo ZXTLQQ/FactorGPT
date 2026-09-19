@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import os
-import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -30,13 +29,14 @@ logger = logging.getLogger(__name__)
 import numpy as np
 import pandas as pd
 
-from agent.context import DEFAULT_TURNS as DEFAULT_CONTEXT_TURNS, render_dialogue_context
+from agent.context import DEFAULT_TURNS as DEFAULT_CONTEXT_TURNS
+from agent.context import render_dialogue_context
 from agent.nodes import FactorAgentNodes
 from agent.state import AgentState
 from engine.backtest import FactorBacktester
 from llm.client import LLMClient, load_config
+from rag.learned_library import DEFAULT_LEARNED_PATH, LearnedFactorLibrary
 from rag.retriever import FactorRetriever, rag_vector_enabled
-from rag.learned_library import LearnedFactorLibrary, DEFAULT_LEARNED_PATH
 
 
 class FactorAgent:
@@ -244,7 +244,7 @@ class FactorAgent:
         if kline is None or kline.empty or "date" not in kline.columns:
             return kline, None
         dates = np.sort(pd.to_datetime(kline["date"]).unique())
-        n_test = max(min_test_days, int(round(len(dates) * test_frac)))
+        n_test = max(min_test_days, round(len(dates) * test_frac))
         if n_test >= len(dates) - 1:
             # 数据量不足以切分，退回全量（不报 OOS）
             return kline, None
@@ -380,7 +380,7 @@ class FactorAgent:
                 "ledger_path": summary.get("ledger_path", ""),
                 "warnings": summary.get("warnings", []),
             }
-        except Exception as e:  # noqa: BLE001 —— 影子节点永不中断主流程
+        except Exception as e:
             ft = {"error": f"{type(e).__name__}: {e}", "submitted": 0, "dry_run": 0}
         if ft.get("submitted", 0) > 0:
             head = (

@@ -18,12 +18,12 @@ import pandas as pd
 try:
     from .fonts import setup_cjk_font
     setup_cjk_font()
-except Exception:  # noqa: BLE001
+except Exception:
     pass
 
 from engine.backtest import FactorBacktester
 from engine.rpn_engine import RPNConfig, RPNEngine
-from pipeline.schema import CandidateFactor, RefineryResult
+from pipeline.schema import RefineryResult
 
 logger = logging.getLogger("factor_gpt.methodology")
 
@@ -47,7 +47,7 @@ class MethodologyReport:
                     "long_short_cum_return", "annualized_return", "max_drawdown",
                     "turnover", "stability_score"
                 )}
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 out[split] = {"error": str(e)}
         return out
 
@@ -72,7 +72,7 @@ class MethodologyReport:
                     p = os.path.join(self.output_dir, f"{prefix}_{split}_{nm}.png")
                     fig.savefig(p, dpi=110, bbox_inches="tight")
                     paths.append(p)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("图表渲染失败(%s/%s): %s", split, prefix, e)
         return paths
 
@@ -282,6 +282,32 @@ class MethodologyReport:
                          "（量价 + 基本面 + 估值 + 资金流 + 新闻情绪）。")
             lines.append("")
 
+        # 十二、深度分析（统计体检 / 图表 / 大模型解读 / 多因子体系）
+        da = result.deep_analysis
+        if da:
+            lines.append("## 十二、深度分析（统计体检 · 图表 · 模型解读）")
+            lines.append("")
+            paths = da.get("paths") or {}
+            md = paths.get("markdown")
+            if md:
+                lines.append(f"- 独立报告：`{md}`；指标明细：`{paths.get('metrics_csv', '—')}`；")
+            if da.get("charts"):
+                lines.append(f"- 可视化图表 {len(da['charts'])} 张"
+                             f"（{'、'.join(da['charts'])}），输出目录 `{paths.get('charts_dir', '—')}`；")
+            if da.get("interpretation_mode"):
+                lines.append(f"- 结论来源：**{da['interpretation_mode']}**"
+                             f"（LLM 不可用时自动降级为规则化结论）；")
+                if da.get("interpretation"):
+                    lines.append("")
+                    lines.append("> " + str(da["interpretation"]).replace("\n", "\n> "))
+                    lines.append("")
+            if da.get("recommended"):
+                oos = da.get("recommended_oos_ic")
+                extra = f"，样本外 IC {oos:.4f}" if isinstance(oos, (int, float)) else ""
+                lines.append(f"- 多因子体系推荐方案：**{da['recommended']}**{extra}；"
+                             f"对比层级：{'、'.join(da.get('layers') or []) or '—'}。")
+            lines.append("")
+
         lines.append("---")
         lines.append("*本报告由「因子精炼厂」流水线自动生成，供研究与审计使用。*")
 
@@ -310,6 +336,8 @@ class MethodologyReport:
             "benchmark_comparison": result.benchmark_comparison,
             "factor_zoo": result.factor_zoo,
             "multimodal_factors": result.multimodal_factors,
+            "deep_analysis": {k: v for k, v in (result.deep_analysis or {}).items()
+                              if k != "interpretation"},
             "charts": charts,
         }
         json_path = os.path.join(self.output_dir, f"method_summary_{ts}.json")
@@ -327,5 +355,5 @@ def _fmt(v) -> str:
         if isinstance(v, float) and (v != v):
             return "N/A"
         return f"{v:.4f}"
-    except Exception:  # noqa: BLE001
+    except Exception:
         return str(v)

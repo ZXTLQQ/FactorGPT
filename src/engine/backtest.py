@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import warnings
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -153,7 +154,7 @@ def batch_evaluate(
         res = Parallel(n_jobs=n_jobs)(delayed(_one)(n) for n in names)
     else:
         res = [_one(n) for n in names]
-    out = {n: m for n, m in res}
+    out = dict(res)
     if verbose:
         print(f"[batch_evaluate] 完成 {len(out)} 个因子回测（{'joblib' if use_joblib else 'serial'} 后端）")
     return out
@@ -297,7 +298,7 @@ class FactorBacktester:
                 "ann_ret": float(ann),
                 "cum_ret": float(cum.iloc[-1]) if len(cum) else 0.0,
                 "sharpe": sharpe_g,
-                "n": int(len(gret)),
+                "n": len(gret),
             }
 
         return {
@@ -350,7 +351,7 @@ class FactorBacktester:
                 "rank_ic": float(ric_s.mean()) if len(ric_s) else float("nan"),
                 "icir": float(ic_s.mean() / ic_std) if ic_std and ic_std > 0 else float("nan"),
                 "ic_positive_ratio": float((ic_s > 0).mean()),
-                "n_dates": int(len(ic_s)),
+                "n_dates": len(ic_s),
             }
         return out
 
@@ -426,15 +427,27 @@ class FactorBacktester:
         rebalance_list: List[Dict[str, Any]] = []
         prev_w: Dict[str, float] = {}
 
+        # 按交易日预切分并建立 symbol 索引：原实现在每个交易日做一次全表布尔扫描
+        # （O(T²·N)，T=1200/N=800 时约 10^9 次比较），这里一次性 groupby 切好，
+        # 循环内 O(1) 取用，整体降为 O(T·N)。内存约为原表一份，可接受。
+        date_frames: Dict[Any, pd.DataFrame] = {
+            d: g.set_index("symbol") for d, g in panel.groupby("date", sort=False)
+        }
+
         for i, t in enumerate(dates[:-1]):
             trade_date = dates[i + 1]
-            sub = panel[panel["date"] == t].set_index("symbol")
+            sub = date_frames.get(t)
+            if sub is None:
+                continue
             held = [s for s in prev_w if s in sub.index]
-            gross = float(sum(
-                prev_w[s] * sub.loc[s, "fwd_ret"]
-                for s in held
-                if not np.isnan(sub.loc[s, "fwd_ret"])
-            ))
+            if held:
+                # NaN 收益按 0 贡献计（等价于原循环中跳过该项）
+                gross = float(
+                    (pd.Series({s: prev_w[s] for s in held})
+                     * sub.loc[held, "fwd_ret"].fillna(0.0)).sum()
+                )
+            else:
+                gross = 0.0
 
             tradable = sub[(sub["vol_next"] > 0) & (sub["amt_next"] >= min_daily_amount)]
 
@@ -449,19 +462,19 @@ class FactorBacktester:
             if not tradable.empty:
                 ranked = tradable["factor"].sort_values(ascending=False)
                 n_long = max(1, int(np.ceil(top_frac * len(ranked))))
-                longs = set(ranked.head(n_long).index)
-                for s in longs:
-                    chg = sub.loc[s, "fwd_ret"]  # 次交易日涨跌幅，用于涨跌停判定
-                    # 涨停无法买入（A 股现实约束，无论做空与否均适用，修复 1.3）
-                    if chg >= limit_up_pct - 1e-6:
-                        continue
-                    new_w[s] = 1.0
+                cand = ranked.head(n_long).index
+                # 次交易日涨跌幅，用于涨跌停判定
+                chg_all = sub.loc[cand, "fwd_ret"]
+                # 涨停无法买入（A 股现实约束，无论做空与否均适用，修复 1.3）
+                longs = set(cand[chg_all < limit_up_pct - 1e-6])
+                new_w.update(dict.fromkeys(longs, 1.0))
                 # 跌停无法卖出：持有中的可交易标的若跌停且未被选中，强制保留原权重
-                for s in tradable.index:
-                    if s in prev_w and prev_w[s] > 0.0 and s not in longs:
-                        chg = sub.loc[s, "fwd_ret"]
-                        if chg <= -limit_up_pct + 1e-6:
-                            new_w[s] = prev_w[s]
+                held_tr = [s for s in tradable.index
+                           if s in prev_w and prev_w[s] > 0.0 and s not in longs]
+                if held_tr:
+                    chg_tr = sub.loc[held_tr, "fwd_ret"]
+                    frozen = chg_tr.index[chg_tr <= -limit_up_pct + 1e-6]
+                    new_w.update({s: prev_w[s] for s in frozen})
 
             # 3) 归一化；全空则回退到上期权重
             tot = sum(new_w.values())

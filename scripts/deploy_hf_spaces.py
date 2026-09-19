@@ -7,7 +7,6 @@ FactorGPT → HuggingFace Spaces 部署脚本
 """
 
 import sys
-import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -56,25 +55,25 @@ def main():
                 space_sdk="streamlit",
                 private=False,
             )
-            print(f"[+] Space created!")
+            print("[+] Space created!")
         except Exception as e:
             print(f"[✗] Create error: {e}")
             sys.exit(1)
 
     # Upload files
-    print(f"[*] Uploading files...")
+    print("[*] Uploading files...")
     upload_folder(
         folder_path=DEMO_DIR,
         repo_id=space_id,
         repo_type="space",
         commit_message="Deploy FactorGPT demo v1.0",
     )
-    print(f"[+] Files uploaded!")
+    print("[+] Files uploaded!")
 
     # Done
     print(f"\n{'='*50}")
     print(f"[✓] DEMO LIVE: https://huggingface.co/spaces/{space_id}")
-    print(f"[*] Build takes ~3-5 minutes on first run")
+    print("[*] Build takes ~3-5 minutes on first run")
     print(f"{'='*50}")
 
 

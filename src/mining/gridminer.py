@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """分层算子网格搜索（山西证券《基于算子网格搜索、Numba 加速的多维度评价体系》落地）。
 
 研报给的是"工程纪律"而不是"一个模型"：**预算可控、逐层收敛、剪枝在前、
@@ -27,8 +26,9 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field as dc_field
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from dataclasses import field as dc_field
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -39,9 +39,18 @@ from . import ops
 from .panel import FieldRegistry, PanelData, default_registry
 
 __all__ = [
-    "SearchConfig", "Candidate", "LayerStats", "SearchResult", "GridMiner",
-    "mine", "UNARY_OPS", "CS_OPS", "TS_OPS", "TS2_OPS", "BIN_OPS",
+    "BIN_OPS",
+    "CS_OPS",
     "DEFAULT_WINDOWS",
+    "TS2_OPS",
+    "TS_OPS",
+    "UNARY_OPS",
+    "Candidate",
+    "GridMiner",
+    "LayerStats",
+    "SearchConfig",
+    "SearchResult",
+    "mine",
 ]
 
 
@@ -101,7 +110,7 @@ class SearchConfig:
     seed: int = 42
 
     def to_dict(self) -> Dict[str, Any]:
-        d = {k: v for k, v in self.__dict__.items()}
+        d = dict(self.__dict__.items())
         for k, v in d.items():
             if isinstance(v, tuple):
                 d[k] = list(v)
@@ -258,7 +267,7 @@ class GridMiner:
             return None, "invalid"
         try:
             values = self.evaluator.run(node)
-        except Exception:  # noqa: BLE001 - 求值期异常按剪枝处理
+        except Exception:
             return None, "error"
         self._result.n_evaluated += 1
         # 覆盖率门槛用**扣除必然预热期**后的口径：长回看表达式（如 TTM 需要
@@ -352,7 +361,7 @@ class GridMiner:
                 continue
             try:
                 values = self.evaluator.run(n)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
             self._result.n_evaluated += 1
             st = self.screener.screen(values, cfg.horizon,

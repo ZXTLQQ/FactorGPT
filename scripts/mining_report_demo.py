@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """离线生成一份 ``src/mining`` 因子研究报告（合成面板，无网络、无 API Key）。
 
 跑通这一条命令就能看到挖掘层的全貌：PIT 财务字段安装与前视自检、概念数量
@@ -25,14 +24,14 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-from mining import concept as CC            # noqa: E402
-from mining import evaluator as EV          # noqa: E402
-from mining import fundamental as FD        # noqa: E402
-from mining import gridminer as GM          # noqa: E402
-from mining import panel as PN              # noqa: E402
-from mining import report as RP             # noqa: E402
-from mining import risk as R                # noqa: E402
-from mining import triage as TR             # noqa: E402
+from mining import concept as CC  # noqa: E402
+from mining import evaluator as EV  # noqa: E402
+from mining import fundamental as FD  # noqa: E402
+from mining import gridminer as GM  # noqa: E402
+from mining import panel as PN  # noqa: E402
+from mining import report as RP  # noqa: E402
+from mining import risk as R  # noqa: E402
+from mining import triage as TR  # noqa: E402
 
 PIT_FIELDS = ("revenue", "net_profit", "gross_profit", "cfo", "total_assets",
               "total_equity", "total_liab", "shares")

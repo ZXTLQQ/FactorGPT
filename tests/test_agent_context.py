@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """``src/agent/context`` 多轮上下文回归测试。
 
 挖掘流水线此前是无状态的：``run(user_input)`` 只拿到当前这一句，上一轮的因子代码、

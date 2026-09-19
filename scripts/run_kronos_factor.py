@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """Kronos 预测因子演示脚本 (scripts/run_kronos_factor.py)。
 
 把 Kronos(金融 K 线基础模型) 作为一个"预测收益因子"接入 FactorGPT 的选股框架:
@@ -100,7 +99,7 @@ def evaluate(preds: pd.DataFrame) -> dict:
     icir = ic / (np.std(ic_by_day) + 1e-9) if len(ic_by_day) > 1 else float("nan")
     ls = np.mean(long_short_by_day) if long_short_by_day else float("nan")
     return {
-        "n_points": int(len(preds)),
+        "n_points": len(preds),
         "mean_ic": float(ic),
         "icir": float(icir),
         "mean_long_short_ret": float(ls),

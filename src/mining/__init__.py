@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """统一因子挖掘与多维度评价（FactorGPT mining layer）。
 
 四篇卖方研报的工程化落地：
@@ -26,7 +25,16 @@ from __future__ import annotations
 
 __version__ = "1.1.0"
 
-from . import ops, panel  # noqa: F401  （基础层，无重依赖，直接可用）
+from . import ops, panel
 
-__all__ = ["ops", "panel", "expr", "evaluator", "gridminer", "risk",
-           "fundamental", "concept", "report"]
+__all__ = [
+           "concept",
+           "evaluator",
+           "expr",
+           "fundamental",
+           "gridminer",
+           "ops",
+           "panel",
+           "report",
+           "risk",
+]

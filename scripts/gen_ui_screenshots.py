@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
 import sys
 import time
-import subprocess
 import urllib.request
 
 # 修复 Windows 控制台 GBK 编码问题

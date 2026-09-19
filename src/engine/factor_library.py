@@ -16,30 +16,20 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
-import pandas as pd
 
 from .traditional_factors import (
-    FactorDef,
-    get_all_factors,
-    get_factors_by_category,
-    get_factor_by_name,
-    search_factors,
-    get_factor_stats,
-    export_all_to_dict,
     ALL_CATEGORIES,
     CATEGORY_LABELS,
     CATEGORY_PRICE_TREND,
     CATEGORY_VOLATILITY,
-    CATEGORY_TRADING_DIFFICULTY,
-    CATEGORY_PRICE_VOLUME_DIVERGENCE,
-    CATEGORY_VOLUME_PRICE_FORMULA,
+    FactorDef,
+    get_all_factors,
 )
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -83,7 +73,7 @@ class FactorLibrary:
         if not path.exists():
             return
         try:
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 data = json.load(fh)
             for item in data.get("generated", []):
                 fd = FactorDef(**item)
@@ -234,7 +224,7 @@ class FactorLibrary:
             new_code = base.code.replace(param_name, str(v))
             new_display = base.display_name.replace(param_name, str(v)) if param_name in base.display_name else f"{base.display_name}({v})"
             new_desc = base.description.replace(param_name, str(v)) if param_name in base.description else f"{base.description} 窗口={v}"
-            new_tags = base.tags + [f"window_{v}", "auto_expanded"]
+            new_tags = [*base.tags, f"window_{v}", "auto_expanded"]
 
             fd = FactorDef(
                 name=new_name,
@@ -274,7 +264,7 @@ class FactorLibrary:
             new_name = f"{base_name}_{tag_suffix}"
             new_code = transform_fn(base.code)
             new_desc = f"{base.description} [{tag_suffix}变换]"
-            new_tags = base.tags + [tag_suffix, "event_transform"]
+            new_tags = [*base.tags, tag_suffix, "event_transform"]
 
             fd = FactorDef(
                 name=new_name,
@@ -331,7 +321,7 @@ class FactorLibrary:
                             description=base.description.replace(str(orig_w), str(w)),
                             direction=base.direction,
                             code=new_code,
-                            tags=base.tags + ["cluster_expanded"],
+                            tags=[*base.tags, "cluster_expanded"],
                             source="cluster_expansion",
                             quality_score=base.quality_score * 0.88,
                         )

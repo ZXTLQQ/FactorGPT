@@ -29,8 +29,8 @@ import json
 import os
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 # ---------------------------------------------------------------------------
 # 配置加载
@@ -46,7 +46,7 @@ def _load_env_file(path):
     env = {}
     if not os.path.exists(path):
         return env
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -161,13 +161,12 @@ def download_file(url, dest_path, headers=None):
     if headers:
         for k, v in headers.items():
             req.add_header(k, v)
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        with open(dest_path, "wb") as f:
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                f.write(chunk)
+    with urllib.request.urlopen(req, timeout=120) as resp, open(dest_path, "wb") as f:
+        while True:
+            chunk = resp.read(65536)
+            if not chunk:
+                break
+            f.write(chunk)
 
 
 # ---------------------------------------------------------------------------

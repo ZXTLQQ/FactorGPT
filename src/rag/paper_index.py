@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 
 import yaml
 
+
 # ----------------------------------------------------------------------
 # HuggingFace 下载环境配置（国内镜像，解决 BGE 模型下载超时）
 # ----------------------------------------------------------------------
@@ -27,7 +28,7 @@ def _rag_config() -> dict:
     """读取 config.yaml 的 rag 段配置（不触发任何下载）。"""
     try:
         cfg_path = Path(__file__).resolve().parent.parent.parent / "config.yaml"
-        with open(cfg_path, "r", encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("rag", {}) or {}
     except Exception:
@@ -186,7 +187,7 @@ class FactorPaperIndex:
     def _init_vector_store(self) -> None:
         try:
             _apply_hf_env(_rag_config())
-            import chromadb  # noqa: F401
+            import chromadb
             from chromadb.config import Settings  # type: ignore
 
             os.makedirs(self.persist_dir, exist_ok=True)

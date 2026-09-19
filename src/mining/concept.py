@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """概念数量因子（西部证券《因子手工作坊系列(7)：概念数量因子》落地）。
 
 研报把"个股属于多少个概念"当成一类另类数据：
@@ -27,20 +26,33 @@ DGTW         按市值分箱后组内标准化（剥离市值的非线性影响�
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 from . import expr as ex
 from . import ops
-from .panel import (DIM_COUNT, DIM_SCORE, ROLE_ALT, SEM_CONCEPT, SEM_SENTIMENT,
-                    FieldMeta, FieldRegistry, PanelData)
+from .panel import (
+    DIM_COUNT,
+    DIM_SCORE,
+    ROLE_ALT,
+    SEM_CONCEPT,
+    SEM_SENTIMENT,
+    FieldMeta,
+    FieldRegistry,
+    PanelData,
+)
 
 __all__ = [
-    "CONCEPT_FIELDS", "register_concept_fields", "synthetic_concepts",
-    "install_concepts", "concept_membership_counts", "CONCEPT_FACTOR_LIBRARY",
-    "concept_library_errors", "dgtw_adjust",
+    "CONCEPT_FACTOR_LIBRARY",
+    "CONCEPT_FIELDS",
+    "concept_library_errors",
+    "concept_membership_counts",
+    "dgtw_adjust",
+    "install_concepts",
+    "register_concept_fields",
+    "synthetic_concepts",
 ]
 
 CONCEPT_FIELDS: Tuple[Tuple[str, str, str, str], ...] = (

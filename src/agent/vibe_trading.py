@@ -35,7 +35,7 @@ def load_vibe_alpha_catalog(path: Optional[str] = None) -> List[Dict]:
     if not p.exists():
         return []
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             items = json.load(f)
         for it in items:
             it.setdefault("source", VIBE_SOURCE)
@@ -85,9 +85,9 @@ def generate_vibe_strategy_native(prompt: str) -> str:
     任何依赖缺失/不可用时抛出 RuntimeError，由调用方降级到 FactorGPT 引擎。
     """
     try:
-        from vibetrading.strategy import generate, validate  # type: ignore
-        from vibetrading.backtest import run as backtest_run  # type: ignore
         from vibetrading.analyze import analyze  # type: ignore
+        from vibetrading.backtest import run as backtest_run  # type: ignore
+        from vibetrading.strategy import generate, validate  # type: ignore
     except Exception as e:  # 包未安装
         raise RuntimeError(f"vibetrading 包不可用：{e}") from e
 

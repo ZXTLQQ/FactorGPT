@@ -83,7 +83,8 @@ class KronosForecaster:
             if os.path.isdir(_p) and _p not in sys.path:
                 sys.path.insert(0, _p)
         try:
-            import torch  # noqa: F401
+            import torch
+
             # 本地随附的 Kronos 模型代码: third_party/kronos/model/
             from model import Kronos, KronosPredictor, KronosTokenizer
         except Exception as e:  # pragma: no cover - 依赖缺失

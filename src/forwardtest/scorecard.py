@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import statistics
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .translator import ASSET_META, DIRECTIONS
 

@@ -25,24 +25,19 @@ import hashlib
 import random
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
 
+from .factor_builder import analyze_lookahead
 from .factor_library import FactorLibrary
 from .ic_utils import panel_ic
 from .traditional_factors import (
-    FactorDef,
     ALL_CATEGORIES,
     CATEGORY_LABELS,
-    CATEGORY_PRICE_TREND,
-    CATEGORY_VOLATILITY,
-    CATEGORY_TRADING_DIFFICULTY,
-    CATEGORY_PRICE_VOLUME_DIVERGENCE,
-    CATEGORY_VOLUME_PRICE_FORMULA,
+    FactorDef,
 )
-from .factor_builder import analyze_lookahead
 
 _COLS = ["open", "high", "low", "close", "volume", "amount", "pct_chg"]
 

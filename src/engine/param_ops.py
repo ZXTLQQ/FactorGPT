@@ -23,8 +23,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from dataclasses import asdict, dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -97,7 +97,7 @@ class HyperbolicParams:
     def from_dict(cls, d: Optional[Dict[str, Any]]) -> "HyperbolicParams":
         if not d:
             return cls()
-        known = {k: d[k] for k in list(_BOUNDS) + ["max_lag"] if k in d}
+        known = {k: d[k] for k in [*list(_BOUNDS), "max_lag"] if k in d}
         return cls(**known)
 
 

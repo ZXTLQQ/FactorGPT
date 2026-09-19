@@ -15,9 +15,8 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
-
+from typing import Any, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
 # 因子分类常量

@@ -150,7 +150,7 @@ def _read_rows(path: str):
     if ext in (".json", ".jsonl"):
         rows = []
         cols = set()
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             if ext == ".jsonl":
                 for line in f:
                     line = line.strip()

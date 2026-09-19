@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 
@@ -80,7 +80,7 @@ class ExperimentTracker:
         """记录一次因子评估。返回写入的记录字典。"""
         record = {
             # utcnow() 已废弃（且返回 naive 时间），改用带时区的 UTC 并保留 Z 后缀
-            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "experiment": self.experiment,
             "name": name,
             "status": status,
@@ -112,7 +112,7 @@ class ExperimentTracker:
         if not os.path.exists(self.jsonl_path):
             return []
         out: List[dict] = []
-        with open(self.jsonl_path, "r", encoding="utf-8") as f:
+        with open(self.jsonl_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:

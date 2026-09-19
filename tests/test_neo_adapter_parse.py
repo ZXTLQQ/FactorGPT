@@ -265,7 +265,7 @@ def test_map_financials_from_profit_table() -> None:
     assert df["报告期"].iloc[0] == "2025-12-31", "应取最新报告期"
     assert df["报表类型"].iloc[0] == "2025-FY"
     # `--` 缺失值不应写入结果
-    assert all("--" != str(v).strip() for v in df.iloc[0].tolist()), "缺失值 -- 未被剔除"
+    assert all(str(v).strip() != "--" for v in df.iloc[0].tolist()), "缺失值 -- 未被剔除"
     assert ds._map_financials({}, "600519") is None, "空响应应返回 None"
     print("test_map_financials_from_profit_table OK")
 

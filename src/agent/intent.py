@@ -35,9 +35,18 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "INTENT_MINING", "INTENT_QA", "INTENT_CHITCHAT", "INTENT_CLARIFY",
-    "INTENTS", "IntentResult", "DEFAULT_INTENT_CONFIG",
-    "rule_classify", "classify", "chat_answer", "retrieve_context", "is_mining",
+    "DEFAULT_INTENT_CONFIG",
+    "INTENTS",
+    "INTENT_CHITCHAT",
+    "INTENT_CLARIFY",
+    "INTENT_MINING",
+    "INTENT_QA",
+    "IntentResult",
+    "chat_answer",
+    "classify",
+    "is_mining",
+    "retrieve_context",
+    "rule_classify",
 ]
 
 INTENT_MINING = "mining"
@@ -352,7 +361,7 @@ def classify(
         result = _parse(raw, text)
         if result is None:
             error = f"模型返回无法解析为意图 JSON：{str(raw)[:120]}"
-    except Exception as e:  # noqa: BLE001 —— 分类失败绝不能挡住用户
+    except Exception as e:
         error = f"{type(e).__name__}: {e}"
         logger.warning("[intent] LLM 分类失败，退化为规则兜底: %s", error)
 
@@ -395,7 +404,7 @@ def retrieve_context(text: str, top_k: int = 3, max_chars: int = 1200) -> str:
         return ""
     try:
         docs = _rag_retriever().retrieve(text, top_k=top_k)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("[intent] 知识库检索不可用，跳过：%s", e)
         return ""
     body = "\n\n".join(f"【参考 {i+1}】\n{d}" for i, d in enumerate(docs or []) if d)
@@ -419,7 +428,7 @@ def _message(role: str, content: str) -> Any:
 
         return {"system": SystemMessage, "user": HumanMessage,
                 "assistant": AIMessage}[role](content=content)
-    except Exception:  # noqa: BLE001 —— 缺依赖时降级为 dict，不阻断对话
+    except Exception:
         return {"role": role, "content": content}
 
 
@@ -480,7 +489,7 @@ def chat_answer(
         client, _ = _resolve_llm(config, llm)
         reply = client.chat(messages, temperature=float(ic.get("temperature", 0.0)) or 0.3)
         return (reply or "").strip() or "模型返回了空内容，请换个说法再试一次。"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return (
             "没能连上大模型，所以这里不会给你一份「看起来正常」的因子报告——\n\n"
             f"失败原因：`{type(e).__name__}: {e}`\n\n"

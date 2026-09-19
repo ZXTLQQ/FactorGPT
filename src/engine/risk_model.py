@@ -71,7 +71,7 @@ class RiskModel:
                         corrs.append(sub[style].corr(sub["factor"]))
                 exposures[style] = float(np.nanmean(corrs)) if corrs else float("nan")
             return exposures
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return {"error": f"风格暴露计算失败: {type(e).__name__}: {e}"}
 
     def industry_exposure(
@@ -104,7 +104,7 @@ class RiskModel:
                 "max_bias": max_bias,
                 "neutral": max_bias <= neutral_threshold,
             }
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return {"neutral": True, "max_bias": 0.0, "by_industry": {}, "error": str(e)}
 
     def attribution_report(self, style: Dict[str, float], industry: Dict) -> str:

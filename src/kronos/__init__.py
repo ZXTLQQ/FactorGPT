@@ -13,6 +13,6 @@ OpenAI 兼容模型(可指向本地 Ollama)负责。
   - config.kronos.fallback_to_stub == true
 """
 
-from .forecaster import KronosForecaster, attach_kronos_factor, KRONOS_COLS
+from .forecaster import KRONOS_COLS, KronosForecaster, attach_kronos_factor
 
-__all__ = ["KronosForecaster", "attach_kronos_factor", "KRONOS_COLS"]
+__all__ = ["KRONOS_COLS", "KronosForecaster", "attach_kronos_factor"]

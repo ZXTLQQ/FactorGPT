@@ -4,7 +4,7 @@ FactorGPT → GitHub Topics 设置脚本
 用法：
   set GITHUB_TOKEN=ghp_xxxxxxxxxxxx
   python scripts/set_github_topics.py
-  
+
 Token 创建：https://github.com/settings/tokens (勾选 'repo')
 """
 

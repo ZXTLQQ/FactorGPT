@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """风险因子视角的因子评估（天风证券《BetaAgent：交易风险因子挖掘和评估系统》落地）。
 
 与常规 alpha 评价（IC 越大越好）相反，交易风险因子的验收标准在报告里被明确
@@ -23,7 +22,7 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -179,7 +178,7 @@ def delta_r2(candidate: pd.DataFrame, fwd: pd.DataFrame,
 
     _, _, r2_base, _ = cross_sectional_ols(y, exp_v, min_stocks=min_stocks)
     params, _, r2_full, tstats = cross_sectional_ols(
-        y, exp_v + [cand_v], min_stocks=min_stocks)
+        y, [*exp_v, cand_v], min_stocks=min_stocks)
     cand_col = params.columns[-1]
     n_obs = valid.sum(axis=1).astype(float).replace(0.0, np.nan)
 
@@ -203,7 +202,7 @@ def delta_r2(candidate: pd.DataFrame, fwd: pd.DataFrame,
         "t_mean": float(t_series.mean()) if len(t_series) else 0.0,
         "t_gt2_ratio": float((t_series > 2.0).mean()) if len(t_series) else 0.0,
         "beta_mean": float(params.loc[both, cand_col].mean()),
-        "n_dates": int(len(both)),
+        "n_dates": len(both),
     }
 
 

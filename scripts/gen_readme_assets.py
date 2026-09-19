@@ -24,13 +24,13 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+import matplotlib
 import numpy as np
 import pandas as pd
 
-import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import seaborn as sns
 
 from src.engine.backtest import FactorBacktester
@@ -187,7 +187,7 @@ def main():
     ax.set_title("分层累积收益曲线（按因子分位组，检验收益单调性）", fontsize=12)
     ax.set_xlabel("日期", fontsize=10)
     ax.set_ylabel("累积收益（%）", fontsize=10)
-    _date_axis(ax, pd.to_datetime(list(qc.values())[0].index))
+    _date_axis(ax, pd.to_datetime(next(iter(qc.values())).index))
     ax.legend(ncol=5, fontsize=8, loc="upper left")
     save(fig, "quantile_cum.png")
 

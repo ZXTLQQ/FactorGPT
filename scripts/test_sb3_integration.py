@@ -1,5 +1,7 @@
 """验证 sb3_contrib 的 MaskablePPO 已真实接入 RL 因子搜索（通过 refinery 入口，避免触发 agent 包顶层导入）。"""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from pipeline.refinery import RefineryPipeline, build_refinery_config

@@ -26,7 +26,7 @@ def _load_llm_cfg() -> dict:
         data = load_config(str(CONFIG_PATH)) or {}
     except Exception:
         try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
         except Exception:
             data = {}

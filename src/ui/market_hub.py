@@ -22,13 +22,21 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from data.market_data import MarketDataFetcher, FUTURES_MAIN_HINTS
-from data.cache_db import get_cache_db, NS_QUOTE, NS_KLINE, NS_NEWS, NS_RESEARCH, NS_CONSTITUENT, NS_INDEX_SPOT
+from data.cache_db import (
+    NS_CONSTITUENT,
+    NS_INDEX_SPOT,
+    NS_INTRADAY,
+    NS_KLINE,
+    NS_NEWS,
+    NS_QUOTE,
+    NS_RESEARCH,
+    get_cache_db,
+)
+from data.market_data import FUTURES_MAIN_HINTS, MarketDataFetcher
 
 # 五大核心指数
 MAJOR_INDICES = [
@@ -92,20 +100,20 @@ def _sina_symbol(code: str) -> str:
 # ----------------------------------------------------------------------
 def _apply_light(fig, height, **kw):
     """把行情图统一到红白主题：白底、深灰文字、淡灰网格，消除黑底与低对比。"""
-    margin = kw.pop("margin", dict(l=40, r=20, t=30, b=20))
+    margin = kw.pop("margin", {"l": 40, "r": 20, "t": 30, "b": 20})
     fig.update_layout(
         template="plotly_white",
         height=height,
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FFFFFF",
-        font=dict(family='"PingFang SC","Microsoft YaHei","Hiragino Sans GB",'
+        font={"family": '"PingFang SC","Microsoft YaHei","Hiragino Sans GB",'
                         '"Helvetica Neue",Arial,sans-serif',
-                  size=12, color="#5A6472"),
+                  "size": 12, "color": "#5A6472"},
         margin=margin,
-        hoverlabel=dict(
-            bgcolor="#FFFFFF", bordercolor="#F3D2D7",
-            font=dict(size=12, color="#1B1F24"),
-        ),
+        hoverlabel={
+            "bgcolor": "#FFFFFF", "bordercolor": "#F3D2D7",
+            "font": {"size": 12, "color": "#1B1F24"},
+        },
         **kw,
     )
     fig.update_xaxes(gridcolor="#EBEEF3", zerolinecolor="#EBEEF3", linecolor="#EBEEF3")
@@ -118,7 +126,7 @@ def _candlestick(df, height=380, with_volume=True, title=""):
     fig = go.Figure()
     if df is None or df.empty:
         fig.add_annotation(text="暂无行情数据", showarrow=False,
-                           font=dict(color="#5A6472"))
+                           font={"color": "#5A6472"})
         return _apply_light(fig, height)
     date_col = next((c for c in df.columns if "日期" in str(c)), df.columns[0])
     req = ["开盘", "收盘", "最高", "最低"]
@@ -131,7 +139,7 @@ def _candlestick(df, height=380, with_volume=True, title=""):
         ))
     else:
         fig.add_trace(go.Scatter(x=df[date_col], y=df["收盘"],
-                                  line=dict(color="#4ea1ff"), name="收盘"))
+                                  line={"color": "#4ea1ff"}, name="收盘"))
     if with_volume and "成交量" in df.columns:
         vol_color = "#B7C0CC"
         if "开盘" in df.columns and "收盘" in df.columns:
@@ -140,12 +148,12 @@ def _candlestick(df, height=380, with_volume=True, title=""):
         fig.add_trace(go.Bar(x=df[date_col], y=df["成交量"],
                              name="成交量", marker_color=vol_color,
                              yaxis="y2", opacity=0.4))
-        fig.update_layout(yaxis2=dict(overlaying="y", side="right",
-                                      showgrid=False, visible=False))
+        fig.update_layout(yaxis2={"overlaying": "y", "side": "right",
+                                      "showgrid": False, "visible": False})
     return _apply_light(
         fig, height, title=title, xaxis_rangeslider_visible=False,
-        margin=dict(l=40, r=20, t=30, b=20),
-        legend=dict(orientation="h", y=1.02, x=0),
+        margin={"l": 40, "r": 20, "t": 30, "b": 20},
+        legend={"orientation": "h", "y": 1.02, "x": 0},
         hovermode="x unified",
     )
 
@@ -153,12 +161,12 @@ def _candlestick(df, height=380, with_volume=True, title=""):
 def _mini_line(series, color, height=46):
     """迷你走势线（卡片用）。"""
     fig = go.Figure()
-    fig.add_trace(go.Scatter(y=series, line=dict(color=color, width=1.6),
+    fig.add_trace(go.Scatter(y=series, line={"color": color, "width": 1.6},
                              showlegend=False))
     fig.update_layout(height=height, template="plotly_white",
                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      margin=dict(l=0, r=0, t=0, b=0), xaxis=dict(visible=False),
-                      yaxis=dict(visible=False))
+                      margin={"l": 0, "r": 0, "t": 0, "b": 0}, xaxis={"visible": False},
+                      yaxis={"visible": False})
     return fig
 
 
@@ -178,11 +186,11 @@ def _compare_figure(items):
         color = palette[i % len(palette)]
         fig.add_trace(go.Scatter(x=df[date_col].iloc[: len(norm)], y=norm,
                                  mode="lines", name=label,
-                                 line=dict(color=color, width=2)))
+                                 line={"color": color, "width": 2}))
     return _apply_light(
-        fig, 460, margin=dict(l=40, r=20, t=30, b=30),
+        fig, 460, margin={"l": 40, "r": 20, "t": 30, "b": 30},
         yaxis_title="区间涨跌幅 (%)", hovermode="x unified",
-        legend=dict(orientation="h", y=1.04, x=0),
+        legend={"orientation": "h", "y": 1.04, "x": 0},
     )
 
 
@@ -339,7 +347,7 @@ def _factor_agent():
         try:
             import yaml
 
-            with open(cfg_path, "r", encoding="utf-8") as f:
+            with open(cfg_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
         except Exception:
             cfg = {}
@@ -350,7 +358,7 @@ def _run_factor_for_stock(code: str, name: str) -> str:
     """调用因子挖掘 Agent，围绕该股票生成因子思路。"""
     try:
         agent = _factor_agent()
-    except Exception as e:  # noqa
+    except Exception as e:
         return f"因子挖掘模块未就绪：{e}"
     prompt = (
         f"请围绕 A 股股票 {name}（代码 {code}）设计 2-3 个可量化的选股/择时因子，"
@@ -361,7 +369,7 @@ def _run_factor_for_stock(code: str, name: str) -> str:
         if isinstance(res, dict):
             return res.get("report") or res.get("answer") or str(res)
         return str(res)
-    except Exception as e:  # noqa
+    except Exception as e:
         return f"因子挖掘调用失败：{e}"
 
 
@@ -578,7 +586,7 @@ def _render_db_status():
     st.markdown("#### 🗄️ 后端短时缓存（SQLite）")
     try:
         stats = get_cache_db().stats()
-    except Exception as e:  # noqa
+    except Exception as e:
         st.caption(f"缓存读取失败：{e}")
         return
     if not stats:

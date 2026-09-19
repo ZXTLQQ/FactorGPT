@@ -93,7 +93,7 @@ def _t_sf(x: float, df: float) -> float:
         from scipy import stats  # type: ignore
 
         return float(stats.t.sf(x, df))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return float(0.5 * math.erfc(x / math.sqrt(2.0)))
 
 
@@ -104,13 +104,13 @@ def _t_isf(q: float, df: float) -> float:
         from scipy import stats  # type: ignore
 
         return float(stats.t.isf(q, df))
-    except Exception:  # noqa: BLE001
+    except Exception:
         # 正态近似：用 Acklam 有理逼近的极简版本（精度 ~1e-3，足够做门槛判断）
         try:
             from scipy.special import erfinv  # type: ignore
 
             return float(math.sqrt(2.0) * erfinv(1.0 - 2.0 * q))
-        except Exception:  # noqa: BLE001
+        except Exception:
             return float(1.645 if q <= 0.05 else 2.576)
 
 

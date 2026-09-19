@@ -155,10 +155,10 @@ def test_reflect_failure_is_merged_not_overwritten(tmp_path) -> None:
 # 3) 报告必须写明来源
 # ----------------------------------------------------------------------
 def _report(**kw) -> str:
-    base = dict(
-        name="f", desc="d", code="x", metrics={}, knowledge="", reflections=[],
-        validation_ok=False, validation_error="", error=None,
-    )
+    base = {
+        "name": "f", "desc": "d", "code": "x", "metrics": {}, "knowledge": "", "reflections": [],
+        "validation_ok": False, "validation_error": "", "error": None,
+    }
     base.update(kw)
     return _build_report(**base)
 

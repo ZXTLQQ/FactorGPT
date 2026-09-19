@@ -13,7 +13,6 @@ from typing import Optional
 import yaml
 
 from rag.paper_index import FactorPaperIndex
-from rag.retriever import rag_vector_enabled
 
 _INDEX: Optional[FactorPaperIndex] = None
 
@@ -22,7 +21,7 @@ def _rag_config() -> dict:
     """读取 config.yaml 中的 rag 段配置（不触发任何下载）。"""
     try:
         cfg_path = Path(__file__).resolve().parent.parent.parent / "config.yaml"
-        with open(cfg_path, "r", encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("rag", {}) or {}
     except Exception:

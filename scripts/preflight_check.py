@@ -160,7 +160,7 @@ def check_rag(cfg: dict) -> None:
 
     lib = os.path.join(ROOT, str(rag.get("learned_library_path", "data/learned_factors.jsonl")))
     if os.path.exists(lib):
-        with open(lib, "r", encoding="utf-8") as f:
+        with open(lib, encoding="utf-8") as f:
             n = sum(1 for line in f if line.strip())
         record("已学习因子库", OK, f"{n} 条记录可供 RAG 检索复用")
     else:
@@ -193,7 +193,7 @@ def check_runtime(cfg: dict) -> None:
 # ── 一键切离线档位 ──────────────────────────────────────────────────── #
 def switch_offline() -> None:
     path = os.path.join(ROOT, "config.yaml")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         text = f.read()
     replaced = 0
     out_lines = []

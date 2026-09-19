@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """``src/mining/triage`` 验收闸门回归测试。
 
 ``engine.significance`` / ``engine.universe`` / ``engine.multiscale_gp`` 三个模块
@@ -30,11 +29,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
-from mining import evaluator as EV            # noqa: E402
-from mining import report as RP               # noqa: E402
-from mining import risk as R                  # noqa: E402
-from mining import triage as TR               # noqa: E402
-from mining.panel import PanelData            # noqa: E402
+from mining import evaluator as EV  # noqa: E402
+from mining import report as RP  # noqa: E402
+from mining import risk as R  # noqa: E402
+from mining import triage as TR  # noqa: E402
+from mining.panel import PanelData  # noqa: E402
 
 N_SYMBOLS, N_DAYS, SEED = 30, 320, 5
 HORIZON = 5

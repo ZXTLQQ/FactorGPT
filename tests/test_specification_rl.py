@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """``src/engine/specification_rl``（多任务 RL 辅助规范搜索）回归测试。
 
 落地的文献是 ``2609.18441v1``（Delphos）。本文件钉的是**机制**而不是"分数"：
@@ -27,11 +26,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
-from engine import specification_rl as SRL          # noqa: E402
-from engine.multiscale_gp import eval_tree          # noqa: E402
-from mining import report as RP                     # noqa: E402
-from mining import triage as TR                     # noqa: E402
-from mining.panel import PanelData                  # noqa: E402
+from engine import specification_rl as SRL  # noqa: E402
+from engine.multiscale_gp import eval_tree  # noqa: E402
+from mining import report as RP  # noqa: E402
+from mining import triage as TR  # noqa: E402
+from mining.panel import PanelData  # noqa: E402
 
 # 受控环境用的小目录：3 个特征槽位 × 6 变换 × 4 结构 × 5 窗口
 CAT = SRL.DomainCatalogue(

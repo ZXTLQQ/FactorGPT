@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """离线数据补充导出（从本地 Qlib 行情库生成 data/offline/ 补充数据集）。
 
 在既有的 ``bars_<index>_part*.parquet`` 日K分片之外，补充以下随仓库分发的文件，
@@ -105,7 +104,7 @@ def scan_bars() -> tuple:
     for p in sorted(OUT_DIR.glob("bars_*_part*.parquet")):
         col = pd.read_parquet(p, columns=["instrument"])["instrument"]
         insts |= {str(x).upper() for x in col.unique()}
-        rows += int(len(col))
+        rows += len(col)
     return insts, rows
 
 
@@ -136,7 +135,7 @@ def write_outputs(index_bars: pd.DataFrame, constituents: Dict[str, List[str]],
             "codes": sorted(index_bars["instrument"].unique().tolist()),
             "names": {k: v for k, v in INDEXES.items()
                       if k in set(index_bars["instrument"].unique())},
-            "rows": int(len(index_bars)),
+            "rows": len(index_bars),
         },
         "constituents": {p: len(c) for p, c in sorted(constituents.items())},
         "calendar": {

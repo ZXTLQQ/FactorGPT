@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """``src/mining`` 因子挖掘层回归测试。
 
 把四篇卖方研报的落地从"一次性冒烟脚本"固化为可回归的测试：
@@ -21,15 +20,14 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
-from mining import concept as CC          # noqa: E402
-from mining import evaluator as EV        # noqa: E402
-from mining import expr as ex             # noqa: E402
-from mining import fundamental as FD      # noqa: E402
-from mining import gridminer as GM        # noqa: E402
-from mining import ops                    # noqa: E402
-from mining import risk as R              # noqa: E402
-from mining.panel import (DIM_FLAG, FieldMeta, PanelData,  # noqa: E402
-                          asof_align, residualize_cs)
+from mining import concept as CC  # noqa: E402
+from mining import evaluator as EV  # noqa: E402
+from mining import expr as ex  # noqa: E402
+from mining import fundamental as FD  # noqa: E402
+from mining import gridminer as GM  # noqa: E402
+from mining import ops  # noqa: E402
+from mining import risk as R  # noqa: E402
+from mining.panel import DIM_FLAG, FieldMeta, PanelData, asof_align, residualize_cs  # noqa: E402
 
 POOL_FIELDS = ("size", "beta", "momentum", "liquidity", "reversal")
 

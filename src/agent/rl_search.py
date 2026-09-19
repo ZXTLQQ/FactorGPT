@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+
 import numpy as np
 import pandas as pd
 
@@ -24,17 +25,17 @@ DATE = "date"
 SYMBOL = "symbol"
 
 try:
-    from stable_baselines3 import PPO  # noqa: F401
     from sb3_contrib import MaskablePPO  # type: ignore
+    from stable_baselines3 import PPO  # noqa: F401
     _HAS_SB3 = True
-except Exception:  # noqa: BLE001
+except Exception:
     _HAS_SB3 = False
     MaskablePPO = None
 
 try:
     import gymnasium as gym  # 仅 SB3/MaskablePPO 后端需要
     _HAS_GYM = True
-except Exception:  # noqa: BLE001
+except Exception:
     gym = None
     _HAS_GYM = False
 
@@ -191,7 +192,7 @@ class FactorRLSearch:
         if self.use_sb3:
             try:
                 return self._run_sb3(factor_pool, kline, n_candidates, timesteps)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("SB3 路径失败，降级启发式: %s", e)
         return self._run_heuristic(factor_pool, kline, n_candidates)
 
@@ -207,9 +208,9 @@ class FactorRLSearch:
                 for i in range(env.n):
                     if i in used:
                         continue  # 动作屏蔽：不重复选取
-                    factor = _combine([factor_pool[names[j]] for j in sel + [i]], sel + [i])
+                    factor = _combine([factor_pool[names[j]] for j in [*sel, i]], [*sel, i])
                     icir = _fast_icir(factor, kline, self.fwd)
-                    new_beam.append((sel + [i], icir))
+                    new_beam.append(([*sel, i], icir))
             new_beam.sort(key=lambda x: x[1], reverse=True)
             beam = new_beam[:max(n_candidates, 3)]
         candidates = []

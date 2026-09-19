@@ -53,7 +53,7 @@ Features: AI-powered factor generation, multi-source data integration, rigorous 
 [GitHub Repository](https://github.com/ZXTLQQ/FactorGPT)
 """
 
-with open("hf_space/index.html", "r", encoding="utf-8") as f:
+with open("hf_space/index.html", encoding="utf-8") as f:
     html = f.read()
 
 # Also create a .nojekyll file so GitHub Pages doesn't interfere
