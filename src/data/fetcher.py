@@ -7,24 +7,24 @@
 所有方法均包含完善的异常处理，失败时返回空 DataFrame 而非抛出异常。
 """
 
-import os
-import re
-import time
-import pickle
 import hashlib
 import logging
+import os
+import pickle
+import re
 import threading
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 # 代理/直连策略统一由 netutil 管理：默认强制直连（规避 Windows 不可达系统代理
 # 导致的 ProxyError）；当 config.yaml 的 proxy 段启用且给出地址，或已设置
 # HTTP_PROXY 环境变量时，改走代理；localhost/127.0.0.1 始终直连。
-from netutil import apply_proxy_settings, get_trust_env, patch_requests_session
+from netutil import apply_proxy_settings, patch_requests_session
 
 apply_proxy_settings(None)   # 默认直连
 patch_requests_session()     # 让 requests.Session 跟随当前策略
@@ -46,7 +46,7 @@ def _load_config_file() -> dict:
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         path = os.path.join(root, "config.yaml")
         if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
     except Exception:  # noqa: BLE001
         cfg = {}
@@ -55,6 +55,14 @@ def _load_config_file() -> dict:
 
 
 _CONFIG_CACHE: Optional[dict] = None
+
+# 数据源内部名 -> 中文标签（失败原因展示用）
+_SOURCE_LABELS = {
+    "_fetch_single_eastmoney": "东方财富",
+    "_fetch_single_sina": "新浪",
+    "_fetch_single_tushare": "Tushare",
+    "ths": "同花顺",
+}
 
 
 class _RateLimiter:
@@ -84,17 +92,112 @@ class _RateLimiter:
             time.sleep(wait)
 
 
+_DOTENV_CACHE: Optional[tuple] = None
+
+
+class _TushareGatewayClient:
+    """Tushare 中转网关客户端，暴露与官方 ``pro_api`` 相同的调用方式。
+
+    官方 SDK 只认 api.tushare.pro 与其签发的 token；第三方 Tushare 中转服务有
+    自己的 base_url 与 ``X-API-Key`` 鉴权，但返回体沿用官方的
+    ``{code, msg, data:{fields, items}}`` 结构。这里把 ``pro.daily(...)``
+    / ``pro.daily_basic(...)`` 之类的调用翻译成 ``GET {base_url}/{api_name}``，
+    使上层无需区分两者。
+
+    - ``base_urls`` 按顺序尝试，前一个失败自动换下一个（主网关 + 备用网关）；
+    - 统一返回 DataFrame：空结果返回空表而不是抛错，交给上层回退链处理；
+    - 证书校验默认开启（实测中转域名证书有效），可由构造参数关闭。
+    """
+
+    def __init__(self, base_urls: List[str], token: str, timeout: int = 30,
+                 verify: bool = True) -> None:
+        self.base_urls = [str(u).strip().rstrip("/") for u in base_urls if u]
+        self.token = token
+        self.timeout = timeout
+        self.verify = verify
+
+    def __getattr__(self, api_name: str):
+        # 任何 pro.xxx(**params) 都等价于 query("xxx", **params)
+        if api_name.startswith("_"):
+            raise AttributeError(api_name)
+        return lambda **params: self.query(api_name, **params)
+
+    def query(self, api_name: str, **params) -> pd.DataFrame:
+        import requests
+
+        errors: List[str] = []
+        for base in self.base_urls:
+            try:
+                r = requests.get(
+                    f"{base}/{api_name}", params=params,
+                    headers={"X-API-Key": self.token},
+                    timeout=self.timeout, verify=self.verify,
+                )
+                r.raise_for_status()
+                payload = r.json()
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{base} {type(e).__name__}: {str(e)[:80]}")
+                continue
+            if payload.get("ok") is False or payload.get("code") not in (0, None):
+                errors.append(f"{base} code={payload.get('code')} "
+                              f"{payload.get('error') or payload.get('msg')}")
+                continue
+            data = payload.get("data") or {}
+            fields = data.get("fields") or []
+            items = data.get("items") or []
+            if not items:
+                return pd.DataFrame(columns=fields)
+            return pd.DataFrame(items, columns=fields)
+        raise RuntimeError("Tushare 网关全部不可用：" + "；".join(errors))
+
+
+def _dotenv_values() -> dict:
+    """极简读取项目根 .env（KEY=VALUE），供 token 解析兜底（按 mtime 缓存）。
+
+    DataFetcher 常被无参实例化（refinery / market_data / agent.graph），这些
+    调用点未必经过 llm.client.load_config()，os.environ 里就没有 .env 的值，
+    于是 UI 保存到 .env 的 TUSHARE_TOKEN 在数据源侧恒为空——表现正是
+    「明明填了 token，Tushare 却始终连不上/不生效」。这里补上兜底读取，
+    不覆盖已有环境变量。按文件 mtime 缓存，UI 改写 .env 后自动重新加载。
+    """
+    global _DOTENV_CACHE
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    path = os.path.join(root, ".env")
+    try:
+        mt = os.path.getmtime(path) if os.path.exists(path) else None
+    except Exception:  # noqa: BLE001
+        return (_DOTENV_CACHE or (None, {}))[1] if _DOTENV_CACHE else {}
+    if _DOTENV_CACHE is not None and _DOTENV_CACHE[0] == mt:
+        return _DOTENV_CACHE[1]
+    vals: dict = {}
+    try:
+        if mt is not None:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    vals[k.strip()] = v.strip().strip('"').strip("'")
+    except Exception:  # noqa: BLE001
+        vals = {}
+    _DOTENV_CACHE = (mt, vals)
+    return vals
+
+
 def _resolve_env_token(val) -> Optional[str]:
     """解析 tushare_token：支持 ${ENV} / $ENV 占位符；占位符未设置或为空时返回 None。
 
     避免把 config.yaml 里的字面量 '${TUSHARE_TOKEN}' 当成有效 token 传入 Tushare。
+    环境变量缺失时回退读取项目根 .env（见 _dotenv_values 的动机说明）。
     """
     if not isinstance(val, str):
         return val or None
     s = val.strip()
     m = re.match(r"^\$\{(.+)\}$", s) or re.match(r"^\$([A-Za-z_][A-Za-z0-9_]*)$", s)
     if m:
-        return os.environ.get(m.group(1)) or None
+        name = m.group(1)
+        return os.environ.get(name) or _dotenv_values().get(name) or None
     return s or None
 
 
@@ -140,6 +243,19 @@ class DataFetcher:
         # tushare token：显式参数优先，其次读取配置（支持 ${ENV} 占位符），再次读环境变量
         raw_token = tushare_token or data_cfg.get("tushare_token") or os.environ.get("TUSHARE_TOKEN")
         self.tushare_token = _resolve_env_token(raw_token)
+        if raw_token and not self.tushare_token:
+            # 配了占位符但环境变量/.env 里都没有真值：此前会静默变成「没有 Tushare」，
+            # 用户侧只能看到「连不上」，无法区分「没配」与「配了但无效」。
+            logging.warning(
+                "[DataFetcher] data.tushare_token 配置为 %s，但环境变量未设置且 .env 中无此键，"
+                "Tushare 数据源未启用（请在 .env 写入该变量，或在 UI 数据源面板填写并保存）",
+                raw_token,
+            )
+
+        # Tushare 网关地址（可选）：留空走官方 SDK，填写则走第三方中转网关
+        # （鉴权为 X-API-Key 头，token 用网关签发的 key，与官方 token 不通用）。
+        self.tushare_base_url = _resolve_env_token(data_cfg.get("tushare_base_url"))
+        self.tushare_fallback_url = _resolve_env_token(data_cfg.get("tushare_fallback_url"))
 
         # 数据源与回退开关
         self.primary_source = data_cfg.get("primary_source", "akshare")
@@ -175,6 +291,8 @@ class DataFetcher:
 
         # 每次行情查询后的实际数据源与提示（供 UI 展示）
         self.last_fetch_info: Dict[str, str] = {"source": None, "message": ""}
+        # 各数据源最近一次失败原因（供 UI 区分「没配 token」与「token 无效/网络不通」）
+        self._source_errors: Dict[str, str] = {}
 
         # 同花顺 THS（可选，需配置 token 与 API 地址）
         self.ths_fetcher = None
@@ -286,6 +404,7 @@ class DataFetcher:
             symbols = [symbols]
         symbols = [str(s).strip() for s in symbols if str(s).strip()]
         self.last_fetch_info = {"source": None, "message": ""}
+        self._source_errors = {}
 
         if not symbols:
             self.last_fetch_info = {"source": "none", "message": "未提供股票代码"}
@@ -336,6 +455,12 @@ class DataFetcher:
             source_chain.append(("tushare", self._fetch_single_tushare, "Tushare"))
         if self.ths_fetcher is not None:
             source_chain.append(("ths", "_ths_", "同花顺"))
+        # primary_source 指定 tushare / ths 时把它提到链首。此前该配置项对这两个源
+        # 完全无效（Tushare 恒定排在 akshare/sina 之后，而新浪在本机可用），于是
+        # 「选了 Tushare 当主力却永远轮不到它」，表面看就像填了 token 也没连上。
+        preferred = str(self.primary_source or "").lower()
+        if preferred in ("tushare", "ths") and any(s[0] == preferred for s in source_chain):
+            source_chain.sort(key=lambda item: 0 if item[0] == preferred else 1)
 
         frames = None
         source = None
@@ -382,12 +507,19 @@ class DataFetcher:
             self.last_fetch_info = {"source": "synthetic", "message": "实时数据源全部不可用，已回退至合成数据"}
             return self._synthetic_daily_kline(symbols, start, end, adjust)
 
+        # 逐个源列出真实失败原因：此前只说「均不可用」，用户无法区分
+        # 「token 未配置」与「token 无效/接口不通」，只能猜测。
+        detail = "；".join(
+            f"{_SOURCE_LABELS.get(k, k)} {v}" for k, v in (self._source_errors or {}).items()
+        )
         self.last_fetch_info = {
             "source": "none",
             "message": (
                 f"所有实时数据源均不可用（已尝试：{', '.join(attempts) or '无'}）。"
-                f"常见原因：当前网络无法访问东方财富/新浪服务器，或 akshare 接口已变更。"
-                f"可在 config.yaml 将 data.synthetic_on_fail 设为 true 使用模拟数据。"
+                + (f"失败原因：{detail}。" if detail else "")
+                + "常见原因：当前网络无法访问东方财富/新浪服务器，或 akshare 接口已变更；"
+                "若使用 Tushare，请确认 .env 的 TUSHARE_TOKEN 已填写且有效。"
+                "可在 config.yaml 将 data.synthetic_on_fail 设为 true 使用模拟数据。"
             ),
         }
         return pd.DataFrame()
@@ -401,7 +533,9 @@ class DataFetcher:
             if df is not None and not df.empty:
                 return df
         except Exception as e:  # noqa: BLE001
-            print(f"[DataFetcher] {symbol} 经 {getattr(fn, '__name__', fn)} 获取失败: {e}")
+            name = getattr(fn, "__name__", str(fn))
+            self._source_errors.setdefault(name, f"{type(e).__name__}: {str(e)[:160]}")
+            print(f"[DataFetcher] {symbol} 经 {name} 获取失败: {e}")
         return None
 
     def _fetch_batch(self, fn, symbols, start_fmt, end_fmt, period, adjust,
@@ -440,6 +574,7 @@ class DataFetcher:
             if df is not None and not df.empty:
                 return [df]
         except Exception as e:
+            self._source_errors.setdefault("ths", f"{type(e).__name__}: {str(e)[:160]}")
             print(f"[DataFetcher] 同花顺行情获取失败: {e}")
         return []
 
@@ -474,9 +609,9 @@ class DataFetcher:
         return self._normalize_kline(df, symbol)
 
     def _fetch_single_tushare(self, symbol, start_fmt, end_fmt, period, adjust):
-        import tushare as ts
-
-        pro = ts.pro_api(self.tushare_token)
+        pro = self._get_tushare_pro()
+        if pro is None:
+            return pd.DataFrame()
         ts_code = f"{symbol}.SH" if symbol.startswith("6") else f"{symbol}.SZ"
         df = pro.daily(
             ts_code=ts_code, start_date=start_fmt, end_date=end_fmt,
@@ -522,7 +657,6 @@ class DataFetcher:
 
     def _synthetic_daily_kline(self, symbols, start, end, adjust) -> pd.DataFrame:
         """离线合成行情（随机游走 OHLC），仅用于无网络时的兜底/演示。"""
-        import numpy as np
 
         start_fmt = self._standardize_date(start)
         end_fmt = self._standardize_date(end)
@@ -993,7 +1127,11 @@ class DataFetcher:
             return pd.DataFrame()
 
     def _get_tushare_pro(self):
-        """惰性初始化并缓存 Tushare pro 客户端；无 token 或初始化失败时返回 None。"""
+        """惰性初始化并缓存 Tushare 客户端；无 token 或初始化失败时返回 None。
+
+        配置了 ``tushare_base_url``（第三方中转网关）时返回网关客户端，否则走
+        官方 SDK 的 api.tushare.pro；两者向上层暴露同一套 ``pro.daily(...)`` 调用。
+        """
         if not self.tushare_token:
             return None
         client = getattr(self, "_tushare_pro_client", None)
@@ -1001,8 +1139,12 @@ class DataFetcher:
             return self._tushare_pro_client if client is not None else None
         self._tushare_pro_tried = True
         try:
-            import tushare as ts
-            self._tushare_pro_client = ts.pro_api(self.tushare_token)
+            urls = [u for u in (self.tushare_base_url, self.tushare_fallback_url) if u]
+            if urls:
+                self._tushare_pro_client = _TushareGatewayClient(urls, self.tushare_token)
+            else:
+                import tushare as ts
+                self._tushare_pro_client = ts.pro_api(self.tushare_token)
         except Exception:  # noqa: BLE001
             self._tushare_pro_client = None
         return self._tushare_pro_client

@@ -91,6 +91,16 @@ data:
   # 可让新浪成为首选数据源，跳过东方财富的无谓失败与日志噪音。
   prefer_sina: true
   tushare_token: "${TUSHARE_TOKEN}"  # 可用环境变量 TUSHARE_TOKEN 覆盖
+  # ── Tushare 网关（可选） ──
+  # 留空：走官方 SDK（api.tushare.pro）与官方 token。
+  # 填写：走第三方 Tushare 中转网关，请求为 GET {base_url}/{接口名}?参数，
+  #       鉴权头 X-API-Key（填该网关签发的 key，与官方 token 不通用），
+  #       返回体仍是官方的 {code,msg,data:{fields,items}} 结构。
+  # base_url 失败时自动改用 fallback_url（主备双网关）。
+  # ⚠️ 中转网关为第三方服务：key 与全部查询条件都会经过对方服务器，
+  #    仅用于本机/研究场景；生产环境请用官方 token 并清空这两项。
+  tushare_base_url: "https://pcd.mobcvb.cn/tushare/pro"
+  tushare_fallback_url: "http://datahubco.com/app-api/openapi/v1/tushare"
 
   # ── 同花顺 iFinD MCP 网关数据源（可选） ──
   # token 为 JWE 鉴权令牌（RSA-OAEP-256+A256GCM），仅作 Bearer 令牌向网关鉴权，

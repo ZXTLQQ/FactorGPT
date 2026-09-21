@@ -389,6 +389,9 @@ def _init_data_source_session():
         "ui_ds_primary": "akshare",
         "ui_ds_prefer_sina": True,
         "ui_ds_tushare_token": "",
+        # 网关地址非敏感，从 config 回显（否则「保存」会把已配好的地址清空）
+        "ui_ds_tushare_base_url": "",
+        "ui_ds_tushare_fallback_url": "",
         "ui_ds_neodata_base_url": str(neo_cfg.get("base_url") or ""),
         "ui_ds_ths_base_url": "",
         "ui_ds_ths_token": "",
@@ -502,6 +505,12 @@ def _render_data_source_panel():
                         help="部分网络下东方财富连接会被重置，置 true 可让新浪成为首选。")
             st.text_input("Tushare Token", type="password", key="ui_ds_tushare_token",
                           help="legacy=tushare 时填写；留空则忽略。")
+            st.text_input("Tushare 网关地址（可选）", key="ui_ds_tushare_base_url",
+                          placeholder="https://网关域名/tushare/pro",
+                          help="第三方 Tushare 中转网关；留空则走官方 api.tushare.pro。")
+            st.text_input("Tushare 备用网关（可选）", key="ui_ds_tushare_fallback_url",
+                          placeholder="主网关失败时自动改用",
+                          help="主网关不可用时的备用地址，留空则不使用备用。")
             st.text_input("NeoData 网关地址", key="ui_ds_neodata_base_url",
                           help="仅 source=neodata 时生效。")
             st.text_input("同花顺网关端点", key="ui_ds_ths_base_url",
@@ -553,6 +562,8 @@ def _collect_data_source_cfg():
         "primary_source": st.session_state.ui_ds_primary,
         "prefer_sina": bool(st.session_state.ui_ds_prefer_sina),
         "tushare_token": st.session_state.ui_ds_tushare_token or "",
+        "tushare_base_url": st.session_state.ui_ds_tushare_base_url or "",
+        "tushare_fallback_url": st.session_state.ui_ds_tushare_fallback_url or "",
         # 保留 neodata 段其余键（token_env / fallback_to_legacy），避免保存时被整块替换掉
         "neodata": {**(cur.get("neodata") or {}),
                     "base_url": st.session_state.ui_ds_neodata_base_url or ""},
@@ -593,6 +604,10 @@ def _save_data_source_to_config():
         st.success(msg)
     for msg in res.warned:
         st.warning(msg)
+    if res.env_vars:
+        # 说清 token 存到了哪：此前保存后界面毫无反馈，用户以为「填了没生效」。
+        st.info("密钥已写入 .env（不进 config.yaml）：" + "、".join(res.env_vars)
+                + "。已在本次会话生效，无需重启。")
     load_config.clear()
 
 
