@@ -132,10 +132,11 @@ def _image_brief(path: Path, ocr_enabled: bool = False,
 class UploadedItem:
     """一次上传的解析结果（可序列化，供 UI 展示与 prompt 注入）。"""
 
-    name: str
+    name: str                       # 落盘文件名（含时间戳前缀）
     path: str
     kind: str                       # image / text / table
     size: int
+    source_name: str = ""           # 用户看到的原始文件名（去重键：落盘名每次都不同）
     text: str = ""
     preview: str = ""
     meta: Dict[str, Any] = field(default_factory=dict)
@@ -240,7 +241,9 @@ class UploadIngestor:
         p = Path(path)
         ext = p.suffix.lower()
         if ext not in SUPPORTED_EXTS:
-            raise ValueError(f"不支持的文件类型：{ext}，支持 {sorted(SUPPORTED_EXTS)}")
+            raise ValueError(
+                f"不支持的文件类型：{ext or '(无扩展名)'}（{p.name}），"
+                f"支持 {sorted(SUPPORTED_EXTS)}")
         size = p.stat().st_size
         meta: Dict[str, Any] = {"ext": ext}
         df = pd.DataFrame()
@@ -297,7 +300,10 @@ class UploadIngestor:
         return item
 
     def ingest_bytes(self, name: str, data: bytes) -> UploadedItem:
-        return self.ingest_file(self.save(name, data))
+        item = self.ingest_file(self.save(name, data))
+        # 落盘名带时间戳+摘要，每次都不同；去重要用用户看到的原始名
+        item.source_name = str(name or "") or item.name
+        return item
 
     # ------------------------------------------------------------------
     def context_text(self, max_chars: int = 4000) -> str:

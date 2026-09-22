@@ -70,5 +70,12 @@ class TestIngestFile:
         # 报错要能看出是哪个类型（旧版连扩展名都是空的）
         assert "docx" in str(ei.value) or "(无扩展名)" in str(ei.value)
 
+    def test_source_name_is_the_dedupe_key(self, tmp_path):
+        """落盘名带时间戳+摘要，每次都不同；去重要靠原始文件名。"""
+        ing = self._ingestor(tmp_path)
+        item = ing.ingest_bytes(LONG_PDF, b"%PDF-1.4\n")
+        assert item.source_name == LONG_PDF
+        assert item.source_name != Path(item.path).name
+
     def test_supported_exts_are_known(self):
         assert ".pdf" in SUPPORTED_EXTS and ".png" in SUPPORTED_EXTS

@@ -440,12 +440,16 @@ def chat_answer(
     intent: Optional[IntentResult] = None,
     turns: int = 4,
     rag_context: Optional[str] = None,
+    material_context: Optional[str] = None,
 ) -> str:
     """非挖掘意图的直接作答（不跑回测、不生成因子代码）。
 
     Args:
         rag_context: 知识库参考文本。``None`` 表示「按配置自动检索」；传 ``""``
             表示本轮明确不检索（调用方已经检索过 / 不希望等待检索）。
+        material_context: 用户上传材料（图片/文本/PDF/表格）解析后的上下文。
+            不带它，问答分支就会说「我没收到你上传的文本」——材料此前只注入了
+            挖掘分支。
 
     LLM 不可用时返回一段解释性文本（含失败原因），**不**回退到因子报告——
     「连不上模型却输出一份完整回测报告」正是本模块要消灭的错觉。
@@ -464,12 +468,20 @@ def chat_answer(
             max_chars=int(ic.get("rag_max_chars", 1200) or 0),
         )
     rag_context = str(rag_context or "")
+    material_context = str(material_context or "")
 
     messages: List[Any] = []
     try:
         head = _CHAT_SYSTEM
         if rag_context:
             head += (f"\n\n【本地知识库参考】（检索自本仓库因子语料，仅供参考）\n{rag_context}\n")
+        if material_context:
+            # 材料必须摆在 system 里：用户问「概括这篇论文」时，正文只有一句指代，
+            # 不带材料模型就只能如实回答「没收到文本」。
+            head += (f"\n\n【用户已上传的材料】（已解析，可直接引用）\n{material_context}\n"
+                     "引用规则：涉及材料的提问（概括/翻译/找结论/提取指标/判断能否对齐 "
+                     "date×symbol）一律基于上述材料作答，并注明出自哪个文件；"
+                     "材料里没有的内容直接说没有，严禁编造。\n")
         if intent is not None and intent.intent == INTENT_CLARIFY:
             head += ("\n5. 本轮判定为「需要澄清」：先用一两句话说明你还缺什么信息，"
                      "再给出你认为用户最可能想要的那个方向。")

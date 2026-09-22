@@ -1207,12 +1207,15 @@ def _render_upload_panel():
             key="chat_uploader",
         )
         if files:
-            known = {it.name for it in ing.items}
+            # 去重键必须是**原始文件名**：落盘名带时间戳+摘要，每次 rerun 都不同，
+            # 用落盘名比对会导致同一份文件被反复解析（堆满 max_files 后被挤掉）。
+            known = {getattr(it, "source_name", "") or it.name for it in ing.items}
             fresh = [f for f in files if f.name not in known]
             for f in fresh:
                 try:
                     item = ing.ingest_bytes(f.name, f.getvalue())
-                    st.success(f"已解析 {item.name}（{item.kind}，"
+                    st.success(f"已解析 {getattr(item, 'source_name', '') or item.name}"
+                               f"（{item.kind}，"
                                f"{'已派生外部因子' if item.factor is not None else '仅上下文'}）")
                 except Exception as e:  # noqa: BLE001
                     st.error(f"{f.name} 处理失败：{e}")
@@ -1225,7 +1228,7 @@ def _render_upload_panel():
         for it in ing.items:
             j = it.jev or {}
             rows.append({
-                "文件": it.name, "类型": it.kind,
+                "文件": getattr(it, "source_name", "") or it.name, "类型": it.kind,
                 "JEV判定": j.get("data_type_label", "-"),
                 "情绪": j.get("sentiment_label", "-"),
                 "可因子化": j.get("factorizable", "-"),
@@ -1272,10 +1275,17 @@ def render_agent_chat():
         res = classify(prompt, config=cfg, history=st.session_state.chat_history[:-1]) \
             if auto_route else None
 
+        # 上传材料：判定摘要进 prompt，可对齐的表格直接并入面板当外部因子。
+        # 两个分支都要带——问答分支此前完全拿不到材料，才会答「没收到你上传的文本」。
+        ing = st.session_state.get("chat_ingestor")
+        up_ctx = ing.context_text() if ing else ""
+        up_factors = ing.external_factors() if ing else {}
+
         if res is not None and res.intent != "mining":
             with st.spinner("思考中..."):
                 reply = chat_answer(prompt, config=cfg,
-                                    history=st.session_state.chat_history[:-1], intent=res)
+                                    history=st.session_state.chat_history[:-1], intent=res,
+                                    material_context=up_ctx)
             st.session_state.chat_history.append(
                 {"role": "assistant", "answer": reply, "intent": res.as_dict()}
             )
@@ -1285,10 +1295,6 @@ def render_agent_chat():
             prompt = res.rewritten
         agent = get_agent()
         _apply_model(agent)
-        # 上传材料：判定摘要进 prompt，可对齐的表格直接并入面板当外部因子
-        ing = st.session_state.get("chat_ingestor")
-        up_ctx = ing.context_text() if ing else ""
-        up_factors = ing.external_factors() if ing else {}
         with st.spinner("Agent 正在挖掘因子..."):
             # 带上最近对话：第二轮「换个窗口再跑」这类跟进才有上一版因子可改。
             result = agent.run(prompt, max_iterations=None,

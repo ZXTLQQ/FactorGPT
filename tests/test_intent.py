@@ -288,6 +288,23 @@ def test_chat_answer_injects_rag_into_system(monkeypatch):
     assert "ICIR 定义文本" in _msg_content(llm.chat_calls[0][0][0])
 
 
+def test_chat_answer_injects_uploaded_material(monkeypatch):
+    """问答分支也必须带材料：否则「概括这篇论文」只能答「没收到文本」。"""
+    monkeypatch.setattr(IT, "retrieve_context", lambda *a, **k: "")
+    llm = _FakeLLM("这是一篇量化论文")
+    IT.chat_answer("概括这篇论文", llm=llm,
+                   material_context="【KL Lens.pdf 内容摘录】\nKL 散度用于量化敏感度")
+    system_msg = _msg_content(llm.chat_calls[0][0][0])
+    assert "KL 散度" in system_msg and "上传的材料" in system_msg
+
+
+def test_chat_answer_without_material_has_no_material_block(monkeypatch):
+    monkeypatch.setattr(IT, "retrieve_context", lambda *a, **k: "")
+    llm = _FakeLLM("好的")
+    IT.chat_answer("你好", llm=llm)
+    assert "上传的材料" not in _msg_content(llm.chat_calls[0][0][0])
+
+
 def test_chat_answer_rag_can_be_disabled(monkeypatch):
     def boom(*a, **k):  # 若真的去检索就会炸，说明配置生效
         raise AssertionError("不应触发检索")
