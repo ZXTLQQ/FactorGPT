@@ -437,6 +437,26 @@ For a **fully offline** environment (no internet, flaky akshare/sina feeds, or d
 
 ![Offline data source coverage](docs/assets/feature_offline_data.png)
 
+### High-Frequency Data Source (offline futures L2 order book, `data.source: hf`)
+
+A second offline source for **high-frequency work**: a full-market futures **L2 5-level snapshot** feed (500 ms polling, ~15.8M rows / 795 contracts / 82 products for a single day) plus your own **order blotter**, read through `HFDataSource` (`src/data/hf_adapter.py`) behind the same `get_data_source()` factory. Set `data.source: hf` to make it serve daily K-line like `offline`, and call the extra methods for order-book work:
+
+```yaml
+data:
+  source: hf
+  hf:
+    file: "C:/Users/HP/Desktop/20251208.pqt"      # L2 snapshot parquet
+    cache_dir: "data/hf/cache"                     # per-contract slice cache
+    orders_file: "C:/Users/HP/Desktop/附件3：20251208_orders.xlsx"
+    search_dirs: ["data/hf", "C:/Users/HP/Desktop"]
+    glob: "*2025*.pqt"
+```
+
+- **Beyond K-line**: `load_l2(contract, sessions=("M","E"))`, `load_symbol_l2(product)`, `get_minute_kline(freq=)`, `get_term_structure(product)`, `load_orders()` and `overlap_diagnostics()` (order-vs-quote second-level alignment check).
+- **Mining layer** (`src/mining/hf*.py`): ~50 order-book factors (OFI via price-matched queue change, micro-price, depth imbalance, realized vol, …), forward labels cut at session boundaries, direction model, fill-probability model (AUC 0.795, top-decile fill rate 11.5% vs 2.8% base) and the four strategy families — passive market making, short-term trend, event-driven, calendar (cross-month) arbitrage — all scored with explicit tick costs.
+- **Integrated into the typed research layer**: `register_hf_fields()` / `install_hf_features()` put these fields into the same `FieldRegistry` / `PanelData` / expression tree, tagged `ROLE_ALT` (pre-trade alternative info) so they can be combined with price-volume factors and still be caught by dimension checks. Demo: `python scripts/hf_mining_demo.py --freq 1min --symbol au`, `python scripts/hf_strategy_demo.py`.
+- **Read `docs/高频数据接入与因子挖掘.md` first.** It documents three traps that silently corrupt results (cross-midnight `SortTime`, session gaps 4 orders of magnitude larger than the sampling interval, and derived columns that are constant zero), plus honest negative results: book factors aggregated to ≥1 min bars carry RankIC of only 0.01–0.05, one order of magnitude below price momentum on the same data — so this layer belongs on the tick grid and must never be judged without transaction costs.
+
 ### EastMoney MX (妙想) Data Interface
 
 An official supplement to the NeoData channel: the EastMoney "Miaoxiang" (妙想) open API provides six data capabilities — market/fundamental queries (`data`), news & research search (`search`), smart stock screening (`xuangu`), watchlist management (`zixuan`), simulated portfolio (`moni`), and financial community content (`poster`). It is a reliable replacement for fragile self-crawled akshare/sina feeds.

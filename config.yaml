@@ -52,6 +52,7 @@ data:
   # 4. efinance: 免费，东方财富数据源，轻量快速
   # 数据源开关：legacy（默认，沿用 akshare/sina/tushare 自爬）| neodata（走平台 NeoData 技能，稳定）
   #               | offline（使用仓库内置的本地 parquet 离线数据，不触网）
+  #               | hf（离线的期货全市场 L2 五档快照，500ms；详见 src/data/hf_adapter.py）
   # 离线数据源使用：data/offline/ 数据随仓库分发，克隆即用；把本开关置为 offline
   # 即可全流水线离线取数（详见 src/data/offline_adapter.py）。
   source: offline
@@ -85,6 +86,15 @@ data:
   offline:                          # 仅当 source=offline 时生效（仓库内置本地离线数据，不触网）
     index: "csi800"                 # 指数池名，对应 data/offline/bars_csi800_part*.parquet
     dir: ""                         # 离线数据目录，留空默认 data/offline
+  hf:                               # 仅当 source=hf 时生效：期货全市场 L2 五档快照（离线 parquet）
+    # 单日全市场快照约 1580 万行 / 795 合约 / 82 品种，勿整份读进内存（loader 已做谓词下推）
+    file: "C:/Users/HP/Desktop/20251208.pqt"
+    cache_dir: "data/hf/cache"      # 按合约切片的二级缓存，二次读取秒开
+    orders_file: "C:/Users/HP/Desktop/附件3：20251208_orders.xlsx"  # 自身委托流水（成交概率建模）
+    search_dirs:                    # file 留空时按此顺序查找
+      - "data/hf"
+      - "C:/Users/HP/Desktop"
+    glob: "*2025*.pqt"
   primary_source: akshare          # 主力数据源（legacy 模式下的子优先级）：akshare / tushare / ths / sina
   # prefer_sina：部分网络下东方财富(push2his)的 HTTPS 连接会被对端重置
   # (RemoteDisconnected)，但新浪源可正常访问。置 true（或把 primary_source 改为 sina）

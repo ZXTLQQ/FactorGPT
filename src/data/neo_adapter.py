@@ -753,7 +753,10 @@ class DataSourceFactory:
     - ``data.source`` 缺省为 ``legacy``，即保留原有的本地运行数据源（akshare/sina/tushare 自爬）；
     - ``data.source: neodata`` 时走平台稳定数据源（未配置时仍安全回退 legacy）；
     - ``data.source: offline`` 时使用 ``OfflineDataSource``（仓库内置的本地 parquet，
-      完全离线、不触网；数据文件随仓库分发在 ``data/offline/``，克隆即用）。
+      完全离线、不触网；数据文件随仓库分发在 ``data/offline/``，克隆即用）；
+    - ``data.source: hf`` 时使用 ``HFDataSource``（离线的**期货 L2 五档快照**，
+      500ms 快照级数据；除日 K 聚合外还提供 load_l2/get_term_structure 等高频接口，
+      见 ``config.yaml`` 的 ``data.hf`` 段与 ``docs/高频数据接入与因子挖掘.md``）。
     """
 
     @staticmethod
@@ -765,6 +768,10 @@ class DataSourceFactory:
             from data.offline_adapter import OfflineDataSource
 
             return OfflineDataSource(config=cfg)
+        if source == "hf":
+            from data.hf_adapter import HFDataSource
+
+            return HFDataSource(config=cfg)
         if source == "neodata":
             return NeoDataSource(config=cfg, tushare_token=tushare_token)
         if DataFetcher is None:
