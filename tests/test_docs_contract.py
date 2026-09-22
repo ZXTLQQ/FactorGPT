@@ -80,6 +80,23 @@ def test_no_debug_residue_in_scripts():
         "scripts/_archive/ 归档目录不存在"
 
 
+def test_readme_images_exist():
+    """README 引用的每张图都必须真实存在。
+
+    文档里写了新的特性图、图文件却没生成（或路径写错）时，GitHub 上只会显示一个
+    裂图占位，读者看到的是「这个项目 README 都维护不好」——而这种漂移没有任何
+    其他地方会报错，只能靠这条断言拦住。
+    """
+    readme = _read("README.md")
+    refs = re.findall(r'<img\s+src="([^"]+)"', readme) + \
+        re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", readme)
+    refs = [r for r in refs if not r.startswith(("http://", "https://"))]
+    assert refs, "README 未引用任何本地图片，本断言失去意义"
+    missing = [r for r in refs
+               if not os.path.isfile(os.path.join(ROOT, *r.split("/")))]
+    assert not missing, f"README 引用了不存在的图片: {missing}"
+
+
 def test_no_debug_residue_in_root():
     """仓库根目录不得出现调试/临时脚本（含 ``_tmp_*.py`` 冒烟脚本）。
 

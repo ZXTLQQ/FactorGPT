@@ -1,12 +1,16 @@
 """为 README 各功能区块生成运行结果图例（调用真实引擎）。
 
 输出（docs/assets/）：
-    feature_factor_library.png      # 3. 61 内置因子库：五大类分布
+    feature_factor_library.png      # 3. 62 内置因子库：五大类分布
     feature_gp_evolution.png        # 4. 增强遗传编程：训练/测试 IC 演化
     feature_unstructured.png        # 5. 非结构化数据因子挖掘：文本情绪分布
     feature_transformer_coupling.png# 6. Transformer-Agent 深度耦合：因子检索相关度
     feature_offline_data.png        # 7. 本地部署与离线韧性：离线数据覆盖
     feature_ima_pipeline.png        # 8. 研报知识管线：关键词命中统计
+    feature_hf_pipeline.png         # 高频：L2 快照 → 压实产物 → 分钟面板
+    feature_multimodal_judging.png  # 材料三级判定链：本地训练模型实测准确率
+    feature_upload_context.png      # 上传长文：按预算的按页切片（首尾保留）
+    feature_intent_routing.png      # 意图分流与材料注入（流程示意）
 
 用法：
     python scripts/gen_feature_charts.py
@@ -624,6 +628,296 @@ def fig_ima_pipeline() -> None:
     print(f"  ✓ feature_ima_pipeline.png  (hits={total_hits})")
 
 
+# ---------------------------------------------------------------------------
+# 高频离线链路（真实压实产物：data/offline/hf_*）
+# ---------------------------------------------------------------------------
+# 原始 L2 快照的规模来自 scripts/hf_offline_build.py 的实际输入（15.8M 行 / 382MB），
+# 压实后的规模一律从磁盘与 hf_meta.json 现场读，不手写数字。
+HF_RAW_ROWS = 15_800_000
+HF_RAW_MB = 382.0
+HF_COLUMN_FAMILIES = [
+    ("价差/微观价格", ["hf_spread", "hf_spread_ticks", "hf_rel_spread", "hf_micro_dev_ticks"]),
+    ("盘口深度/失衡", ["hf_depth_ratio", "hf_obi_l1", "hf_obi_all", "hf_obi_w2", "hf_obi_w3",
+                       "hf_obi_w5", "hf_book_slope", "hf_best_share_bid", "hf_best_share_ask"]),
+    ("波动/趋势", ["hf_rvol_20", "hf_trend_20", "hf_reversal_5"]),
+    ("成交/流量", ["hf_trade_rate_20", "hf_signed_flow_20", "hf_volume_impulse_20", "hf_ofi",
+                   "hf_dq_b", "hf_dq_s", "hf_d_volume", "hf_d_turnover"]),
+    ("持仓变动", ["hf_oi_change"]),
+]
+
+
+def fig_hf_pipeline() -> None:
+    """高频：L2 快照 → 压实产物 → 分钟面板（行数/体积/列族/日内价差）。"""
+    meta_p = ROOT / "data" / "offline" / "hf_meta.json"
+    panel_p = ROOT / "data" / "offline" / "hf_panel_1min.parquet"
+    daily_p = ROOT / "data" / "offline" / "hf_daily.parquet"
+    orders_p = ROOT / "data" / "offline" / "hf_orders.parquet"
+    if not (meta_p.exists() and panel_p.exists()):
+        print("  ! feature_hf_pipeline.png 跳过（离线高频产物缺失，先跑 hf_offline_build.py）")
+        return
+
+    meta = json.loads(meta_p.read_text(encoding="utf-8"))
+    panel = pd.read_parquet(panel_p)
+    panel["date"] = pd.to_datetime(panel["date"])
+
+    fig, axes = plt.subplots(2, 2, figsize=(11.6, 7.2), dpi=130)
+
+    # (a) 压实前后：行数（对数）+ 体积标注
+    ax = axes[0][0]
+    labels = ["原始 L2 快照", "分钟面板", "合约日频", "委托流水"]
+    rows = [HF_RAW_ROWS, meta.get("panel_rows", len(panel)),
+            meta.get("daily_rows", 0), meta.get("orders_rows", 0)]
+    sizes = [HF_RAW_MB] + [p.stat().st_size / 1e6 for p in (panel_p, daily_p, orders_p)
+                           if p.exists()]
+    sizes += [0.0] * (len(rows) - len(sizes))
+    ypos = np.arange(len(labels))
+    ax.barh(ypos, rows, color=_PALETTE[: len(labels)], height=0.55)
+    ax.set_xscale("log")
+    for i, (r, s) in enumerate(zip(rows, sizes)):
+        ax.text(r * 1.15, i, f"{r:,} 行 · {s:.2f} MB" if s else f"{r:,} 行",
+                va="center", fontsize=8.5, color="#333333")
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(labels, fontsize=9.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("行数（对数轴）", fontsize=9.5)
+    ax.set_xlim(1e2, HF_RAW_ROWS * 40)
+    ax.set_title("(a) 压实前后：行数与体积", fontsize=11)
+    ax.grid(alpha=0.25, axis="x")
+
+    # (b) 每个合约的分钟覆盖
+    ax = axes[0][1]
+    per = panel.groupby("symbol")["date"].nunique().sort_values()
+    ax.bar(np.arange(len(per)), per.values, color=_PALETTE[0], width=0.72)
+    ax.set_xticks(np.arange(len(per)))
+    ax.set_xticklabels(per.index.astype(str), rotation=60, ha="right", fontsize=7.6)
+    ax.set_ylabel("覆盖分钟数", fontsize=9.5)
+    ax.set_title(f"(b) {len(per)} 个期货合约的分钟覆盖", fontsize=11)
+    ax.grid(alpha=0.25, axis="y")
+    ax.text(0.98, 0.04, f"合计 {meta.get('panel_minutes', 0)} 分钟 / {len(panel):,} 行",
+            transform=ax.transAxes, ha="right", fontsize=9, bbox=_CAPTION_BOX)
+
+    # (c) 高频列族
+    ax = axes[1][0]
+    cols = [c for c in panel.columns if str(c).startswith("hf_")]
+    fam_counts, fam_names = [], []
+    for name, members in HF_COLUMN_FAMILIES:
+        n = len([c for c in cols if c in members])
+        if n:
+            fam_names.append(name)
+            fam_counts.append(n)
+    other = len(cols) - sum(fam_counts)
+    if other:
+        fam_names.append("其他高频列")
+        fam_counts.append(other)
+    ypos = np.arange(len(fam_names))
+    ax.barh(ypos, fam_counts, color=_PALETTE[: len(fam_names)], height=0.58)
+    for i, c in enumerate(fam_counts):
+        ax.text(c + max(fam_counts) * 0.03, i, str(c), va="center", fontsize=9)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(fam_names, fontsize=9)
+    ax.invert_yaxis()
+    ax.set_xlabel("列数", fontsize=9.5)
+    ax.set_xlim(0, max(fam_counts) * 1.3)
+    ax.set_title(f"(c) 订单簿衍生列 {len(cols)} 个（按族）", fontsize=11)
+    ax.grid(alpha=0.25, axis="x")
+
+    # (d) 日内相对价差中位数
+    ax = axes[1][1]
+    if "hf_rel_spread" in panel.columns:
+        s = (panel.assign(t=panel["date"].dt.strftime("%H:%M"))
+             .groupby("t")["hf_rel_spread"].median())
+        ax.plot(np.arange(len(s)), s.values, color=_PALETTE[2], lw=1.6)
+        step = max(1, len(s) // 8)
+        ax.set_xticks(np.arange(0, len(s), step))
+        ax.set_xticklabels(s.index[::step], rotation=0, fontsize=8)
+        ax.set_ylabel("相对价差中位数", fontsize=9.5)
+        ax.set_title("(d) 日内相对价差（全合约中位数）", fontsize=11)
+        ax.grid(alpha=0.25)
+    else:
+        ax.axis("off")
+        ax.text(0.5, 0.5, "（面板缺少 hf_rel_spread 列）", ha="center", va="center")
+
+    fig.suptitle("High-Frequency Pipeline · L2 快照 → 分钟面板（离线压实，freq=%s）"
+                 % meta.get("freq", "-"), fontsize=12.5)
+    fig.tight_layout(rect=[0, 0.02, 1, 0.95])
+    fig.savefig(ASSETS / "feature_hf_pipeline.png")
+    plt.close(fig)
+    print(f"  ✓ feature_hf_pipeline.png  (rows={len(panel):,}, "
+          f"cols={len(cols)}, contracts={panel['symbol'].nunique()})")
+
+
+# ---------------------------------------------------------------------------
+# 材料三级判定链（真实训练报告：data/models/multimodal/training_report.json）
+# ---------------------------------------------------------------------------
+def fig_multimodal_judging() -> None:
+    rep_p = ROOT / "data" / "models" / "multimodal" / "training_report.json"
+    if not rep_p.exists():
+        print("  ! feature_multimodal_judging.png 跳过（未跑 scripts/train_multimodal.py）")
+        return
+    rep = json.loads(rep_p.read_text(encoding="utf-8"))
+    models = rep.get("models") or {}
+    hard = rep.get("hard_node_check") or {}
+    n_class = len((rep.get("dataset") or {}).get("labels", [])) or 7
+    random_acc = 1.0 / n_class
+
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11.4, 4.9), dpi=130)
+
+    names = list(models.keys())
+    accs = [float(models[n].get("acc", 0.0)) for n in names]
+    ypos = np.arange(len(names))[::-1]
+    colors = ["#55A868" if "torch" in str(models[n].get("engine", "")) else _PALETTE[0]
+              for n in names]
+    ax.barh(ypos, accs, color=colors, height=0.55)
+    for y, v in zip(ypos, accs):
+        ax.text(v + 0.012, y, f"{v:.3f}", va="center", fontsize=8.8, color="#333333")
+    ax.axvline(random_acc, color="#C44E52", ls="--", lw=1.1)
+    ax.text(random_acc + 0.01, -0.6, f"随机基线 {random_acc:.2f}", fontsize=8.5, color="#C44E52")
+    ax.set_yticks(ypos)
+    ax.set_yticklabels([n.replace("[", " · ").rstrip("]") for n in names], fontsize=9)
+    ax.set_xlim(0, 1.12)
+    ax.set_xlabel("准确率（留出集）", fontsize=9.5)
+    ax.set_title("(a) 本地训练模型实测准确率", fontsize=11)
+    ax.grid(alpha=0.25, axis="x")
+
+    gcn = float((hard.get("gcn") or {}).get("acc", 0.0))
+    nb = float((hard.get("naive_bayes") or {}).get("acc", 0.0))
+    bars = [("GCN（关系图传播）", gcn, _PALETTE[3]),
+            ("朴素贝叶斯（纯文本）", nb, _PALETTE[0]),
+            ("随机基线", random_acc, "#C44E52")]
+    x = np.arange(len(bars))
+    ax2.bar(x, [b[1] for b in bars], color=[b[2] for b in bars], width=0.55)
+    for i, (_, v, _) in enumerate(bars):
+        ax2.text(i, v + 0.012, f"{v:.3f}", ha="center", fontsize=9)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([b[0] for b in bars], fontsize=8.8)
+    ax2.set_ylim(0, max(gcn, nb, random_acc) * 1.35 + 0.05)
+    ax2.set_ylabel("准确率", fontsize=9.5)
+    ax2.set_title(f"(b) 硬样本对照（无类型关键词、无代码，n={hard.get('n', 0)}）", fontsize=11)
+    ax2.grid(alpha=0.25, axis="y")
+
+    fig.suptitle("Material Judgment Chain · JEV → 本地训练模型 → 本地规则", fontsize=12.5)
+    fig.tight_layout(rect=[0, 0.02, 1, 0.94])
+    fig.savefig(ASSETS / "feature_multimodal_judging.png")
+    plt.close(fig)
+    print(f"  ✓ feature_multimodal_judging.png  (models={len(names)}, hard_gcn={gcn:.3f})")
+
+
+# ---------------------------------------------------------------------------
+# 上传材料进上下文：按页切片（真实调用 _slice_pages）
+# ---------------------------------------------------------------------------
+def fig_upload_context() -> None:
+    """长文按预算保留「开头 + 结尾」，中间整段省略——用真实切片函数算，不画假图。"""
+    from engine.upload_ingest import _slice_pages  # noqa: PLC0415
+
+    rng = np.random.default_rng(20260922)
+    n_pages = 21
+    pages = ["量化论文正文内容占位" * int(rng.integers(150, 260)) for _ in range(n_pages)]
+    total_chars = sum(len(p) for p in pages)
+    budgets = [8000, 24000, 60000]
+
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11.8, 4.8), dpi=130,
+                                  gridspec_kw={"width_ratios": [1.55, 1]})
+
+    for row, b in enumerate(budgets):
+        chunks, note = _slice_pages(pages, b)
+        kept = sorted(no for no, _ in chunks)
+        ax.broken_barh([(0.5, n_pages)], (row - 0.34, 0.68), facecolors="#E6E9EF")
+        for no in kept:
+            ax.broken_barh([(no - 0.42, 0.84)], (row - 0.31, 0.62), facecolors=_PALETTE[row])
+    ax.set_yticks(range(len(budgets)))
+    ax.set_yticklabels([f"{b // 1000} 千字预算" for b in budgets], fontsize=9)
+    ax.set_xlim(0, n_pages + 1)
+    ax.set_xlabel("页码", fontsize=9.5)
+    ax.set_title(f"(a) {n_pages} 页论文在各预算下的保留页（灰 = 省略）", fontsize=11)
+    ax.grid(alpha=0.2, axis="x")
+
+    kept_chars, omitted_pages = [], []
+    for b in budgets:
+        chunks, _ = _slice_pages(pages, b)
+        kept_chars.append(sum(len(t) for _, t in chunks))
+        omitted_pages.append(n_pages - len(chunks))
+    x = np.arange(len(budgets))
+    ax2.bar(x, kept_chars, color=_PALETTE[2], width=0.55, label="进入上下文")
+    ax2.bar(x, [total_chars - k for k in kept_chars], bottom=kept_chars,
+            color="#E6E9EF", width=0.55, label="省略")
+    for i, (k, o) in enumerate(zip(kept_chars, omitted_pages)):
+        ax2.text(i, total_chars * 1.01, f"省 {o} 页", ha="center", fontsize=8.6)
+        ax2.text(i, k / 2, f"{k:,}", ha="center", fontsize=8.6, color="white")
+    ax2.axhline(total_chars, color="#333333", ls="--", lw=1.0)
+    ax2.text(len(budgets) - 0.45, total_chars * 1.045,
+             f"全文 {total_chars:,} 字", ha="right", fontsize=8.6, color="#333333")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([f"{b // 1000} 千字" for b in budgets], fontsize=9)
+    ax2.set_ylim(0, total_chars * 1.2)
+    ax2.set_ylabel("字数", fontsize=9.5)
+    ax2.set_title(f"(b) 全文 {total_chars:,} 字 vs 预算", fontsize=11)
+    ax2.legend(fontsize=8.6, loc="upper left", framealpha=0.9)
+    ax2.grid(alpha=0.25, axis="y")
+
+    fig.suptitle("Upload Context · 长文按页进 prompt（保留首尾，省略量如实标注）", fontsize=12.5)
+    fig.tight_layout(rect=[0, 0.02, 1, 0.94])
+    fig.savefig(ASSETS / "feature_upload_context.png")
+    plt.close(fig)
+    print(f"  ✓ feature_upload_context.png  (pages={n_pages}, chars={total_chars:,})")
+
+
+# ---------------------------------------------------------------------------
+# 意图分流与材料注入（流程示意，无数据）
+# ---------------------------------------------------------------------------
+def fig_intent_routing() -> None:
+    from matplotlib.patches import FancyBboxPatch  # noqa: PLC0415
+
+    fig, ax = plt.subplots(figsize=(11.0, 5.0), dpi=130)
+    ax.axis("off")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+
+    def box(x, y, w, h, text, fc="#FFFFFF", ec="#4C72B0", fs=9.2):
+        ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.02",
+                                    fc=fc, ec=ec, lw=1.3))
+        ax.text(x + w / 2, y + h / 2, text, ha="center", va="center",
+                fontsize=fs, color="#222222")
+
+    def arrow(x1, y1, x2, y2, label=""):
+        ax.annotate("", xy=(x2, y2), xytext=(x1, y1),
+                    arrowprops={"arrowstyle": "-|>", "color": "#4C72B0", "lw": 1.2})
+        if label:
+            ax.text((x1 + x2) / 2, (y1 + y2) / 2 + 0.018, label,
+                    fontsize=8.4, color="#555555", ha="center")
+
+    box(0.015, 0.60, 0.155, 0.30, "用户一句话\n+ 已上传材料", fc="#F2F6FC")
+    box(0.205, 0.60, 0.145, 0.30, "意图分类\nclassify()", fc="#FFF7E6", ec="#CCB974")
+    box(0.40, 0.72, 0.575, 0.20,
+        "mining → Agent 重流水线\n检索 → 生成 → 沙箱校验 → 回测 → 反思\n"
+        "注入 unstructured_context + external_factors", ec="#55A868")
+    box(0.40, 0.44, 0.575, 0.20,
+        "qa / chitchat → chat_answer\n注入 material_context（按页切片 + 目录 + 页码）",
+        ec="#4C72B0")
+    box(0.40, 0.16, 0.575, 0.20,
+        "clarify → 直答并说明缺什么信息\n不启动流水线（误启一次回测的代价远大于多问一句）",
+        ec="#C44E52")
+    arrow(0.17, 0.75, 0.205, 0.75)
+    arrow(0.35, 0.78, 0.40, 0.82)
+    arrow(0.35, 0.72, 0.40, 0.54)
+    arrow(0.35, 0.68, 0.40, 0.26)
+    arrow(0.09, 0.60, 0.09, 0.50, "材料在分流之前算好")
+    ax.annotate("", xy=(0.40, 0.82), xytext=(0.09, 0.44),
+                arrowprops={"arrowstyle": "-|>", "color": "#8172B2", "lw": 1.1,
+                            "connectionstyle": "arc3,rad=-0.25", "ls": "--"})
+    ax.annotate("", xy=(0.40, 0.54), xytext=(0.09, 0.42),
+                arrowprops={"arrowstyle": "-|>", "color": "#8172B2", "lw": 1.1,
+                            "connectionstyle": "arc3,rad=-0.18", "ls": "--"})
+    ax.text(0.5, 0.055,
+            "两条分支共用同一份材料上下文：问答分支拿不到材料时，模型会如实回答"
+            "「没收到你上传的文本」", fontsize=8.8, color="#555555", ha="center")
+
+    ax.set_title("Intent Routing · 一句话怎么分流，材料怎么进 prompt", fontsize=12.5)
+    fig.tight_layout()
+    fig.savefig(ASSETS / "feature_intent_routing.png")
+    plt.close(fig)
+    print("  ✓ feature_intent_routing.png")
+
+
 def main() -> None:
     print("[gen_feature_charts] 开始生成功能图例...")
     fig_factor_library()
@@ -632,6 +926,10 @@ def main() -> None:
     fig_transformer_coupling()
     fig_offline_data()
     fig_ima_pipeline()
+    fig_hf_pipeline()
+    fig_multimodal_judging()
+    fig_upload_context()
+    fig_intent_routing()
     print("[gen_feature_charts] 完成。")
 
 

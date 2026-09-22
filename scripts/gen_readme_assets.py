@@ -19,10 +19,12 @@ from __future__ import annotations
 import os
 import sys
 
-# 确保项目根目录可被导入（脚本位于 scripts/ 下）
+# 确保项目根目录可被导入（脚本位于 scripts/ 下）。
+# 注意 src/ 也要入 path：engine 包内部按顶层包名 `engine.*` 互相导入。
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+for _p in (_ROOT, os.path.join(_ROOT, "src")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import matplotlib
 import numpy as np

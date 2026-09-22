@@ -205,11 +205,13 @@ Introduces three enhancements over traditional GP: **Factor Clusters** (maintain
 
 *Panels: (a) per-cluster convergence, migration generations marked; (b) uniqueness vs. invalid-ratio; (c) real expression tree of the top factor; (d) per-cluster evolution gain; (e) OOS train-vs-test IC; (f) event-window weighted fitness. Rendered from the bundled offline data.
 
-### 5. Unstructured Data Factor Mining
+### 5. Unstructured Data & Uploaded Material Factor Mining
 
 Extracts Alpha signals from multi-modal text data: `TextAnalyzer` (tokenization, entity recognition, sentiment quantification), `AlternativeDataManager` (supply chain, sentiment, satellite text), and `UnstructuredFactorIntegrator` (fusion with structured factors, incremental information contribution evaluation).
 
 **Chat-based mining accepts your own uploads** (images / text / PDF / CSV-XLSX tables). Each file is parsed, then compressed by **JEV** (TypeSafe "System One") into typed judgments — data type, sentiment polarity, whether it aligns to (date, symbol), whether it contains forward-looking information, and the recommended factorisation path — before entering the mining prompt. Tables that align to (date, symbol) are additionally derived into external factor columns merged into the panel.
+
+**Uploaded material reaches both branches, and long documents go in whole-ish rather than truncated at the front.** The context budget is a choice on the page (8k / 24k / 60k characters, default 24k in `data.uploads.context_max_chars`); a PDF keeps its **per-page text**, so when the budget cannot hold it the pipeline retains **head 65% + tail 35% page-wise** — contributions, conclusions and limitations live at the end, so front-only truncation throws away exactly what "summarise this paper" needs. What was dropped is stated in the context itself (`省略中间 5 页 / 约 12,300 字`), never silently cut; every page carries a `— 第 3/21 页 —` marker so the model can cite pages, and an auto-detected table of contents (`1 Introduction(p1) ; 2 Method(p2) ; …`, marked "可能不全") is prepended so the model still sees the structure of the omitted middle. The material is computed **before** intent routing and shared by the mining branch and the Q&A branch — otherwise "summarise this paper" is classified as `qa` and can only answer "I did not receive your text".
 
 The judgment chain is three-tier and never blocks: **JEV** (needs `TYPESAFE_API_KEY`, online) → **locally trained models** (offline, millisecond) → **local rules** (last resort). Train the local tier yourself:
 
@@ -217,9 +219,16 @@ The judgment chain is three-tier and never blocks: **JEV** (needs `TYPESAFE_API_
 python scripts/train_multimodal.py      # -> data/models/multimodal/
 ```
 
-Four models, each with a distinct job: **Naive Bayes** (data type / sentiment / forward-looking; zero-dependency fallback, trains even without torch), **Transformer** (word order — the only model that catches cross-distance cues like "预计……将"), **CNN** (image layout: candlestick / table / text page / other — lets a wordless screenshot be classified at all), **GNN** (2-layer GCN propagating type labels across materials that share an instrument). On materials whose text carries **no** type keyword and **no** ticker, the GNN reaches 0.33 accuracy vs 0.21 for the text-only model (random = 0.14) — that gap is the evidence the relation graph adds information. Skip reasons and per-model metrics land in `training_report.json`; without torch only the Naive Bayes tier trains.
+Four models, each with a distinct job: **Naive Bayes** (data type / sentiment / forward-looking; zero-dependency fallback, trains even without torch), **Transformer** (word order — the only model that catches cross-distance cues like "预计……将"), **CNN** (image layout: candlestick / table / text page / other — lets a wordless screenshot be classified at all), **GNN** (2-layer GCN propagating type labels across materials that share an instrument). On materials whose text carries **no** type keyword and **no** ticker, the GCN reaches 0.375 accuracy vs 0.208 for the text-only model (random = 1/7 ≈ 0.14) — that gap is the evidence the relation graph adds information. Skip reasons and per-model metrics land in `training_report.json`; without torch only the Naive Bayes tier trains.
 
 ![Unstructured text sentiment](docs/assets/feature_unstructured.png)
+
+<p align="center">
+  <img src="docs/assets/feature_multimodal_judging.png" alt="Material judgment chain" width="49%">
+  <img src="docs/assets/feature_upload_context.png" alt="Upload context paging" width="49%">
+</p>
+
+*Left: measured accuracy of the locally trained tier (green = torch models) against the 1/7 random baseline, plus the hard-node control where the text carries no usable keyword. Right: which pages of a 21-page paper survive each budget, and how many characters that is. Both are rendered from real artifacts (`training_report.json`, `_slice_pages`), not hand-drawn.*
 
 ### 6. Transformer-Agent Deep Coupling
 
@@ -312,7 +321,7 @@ Anti-lookahead is enforced structurally rather than by convention:
 
 ```bash
 python -m pytest tests/test_mining.py -q            # 32 tests, ~15 s, fully offline
-python -m pytest tests/test_triage.py -q            # 26 tests — the acceptance gate (see below)
+python -m pytest tests/test_triage.py -q            # 37 tests — the acceptance gate (see below)
 python scripts/mining_report_demo.py                # one-command demo → demo_output/mining_report.md
 ```
 
@@ -348,7 +357,7 @@ The multi-scale search also supports **multi-fold refinement** (`n_folds >= 2`, 
 
 Two rendering/performance fixes ride along with this revision. First, the mining report's 「四、回测图表」 section embedded *local absolute paths* of the saved PNGs in its markdown; a browser cannot read `file:///e:/...`, so every chart rendered as a broken image — the UI now embeds existing local chart files as base64 data URIs at render time (missing files stay broken *and visible*, rather than being silently hidden), and the agent's `chart_paths` — previously looked up under a key that never existed — render through `st.image`. Second, `FactorBacktester.evaluate` spent ~90% of its wall clock in two per-day Python loops (the daily-IC series re-scanned the whole panel once per day, and quantile grouping called `pd.qcut` once per day through `transform`); both are now single vectorised passes (bincount-aggregated daily correlation, rank-based bucketing), verified equivalent to the per-day references to 1e-12 — on a 300-symbol × 500-day panel `evaluate` drops from 2.21 s to 0.245 s.
 
-Three conventions are load-bearing, and `tests/test_triage.py` (26 tests) pins them:
+Three conventions are load-bearing, and `tests/test_triage.py` (37 tests) pins them:
 
 - **The multiplicity denominator is the number of expressions *this* search evaluated** (`search.n_evaluated`), not the number of candidates. A single-trial threshold applied to the winner of several hundred tries is the same as deleting the "how many did I try?" term from the degrees of freedom.
 - **The universe tiers are cut on the panel's own turnover quantiles** (`min_history` 20 / 60 / 120), not the engine's absolute thresholds (5e6 / 2e7 / 1e8 CNY). On a synthetic or thin panel the absolute strict tier starves to zero tradable rows, which then reads as "the factor dies in liquid names" instead of "my threshold was wrong".
@@ -379,26 +388,32 @@ It is wired in where it can change an outcome, not only a number: `triage.specif
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  Streamlit Web UI (21 Pages)                  │
+│                 Streamlit Web UI (21 Pages)                 │
 ├─────────────────────────────────────────────────────────────┤
-│              Factor Mining Agent (LangGraph)                  │
-│        Retrieve → Generate → Validate → Evaluate → Reflect    │
+│       Intent Routing: mining / qa / chitchat / clarify      │
+│    uploads → JEV judgment + paged context (both branches)   │
 ├─────────────────────────────────────────────────────────────┤
-│              Six-Stage Factor Refinery Pipeline               │
-│       Ore → Mining → Grinding → Screening → Blending → Report │
+│               Factor Mining Agent (LangGraph)               │
+│     Retrieve → Generate → Validate → Evaluate → Reflect     │
+├─────────────────────────────────────────────────────────────┤
+│              Six-Stage Factor Refinery Pipeline             │
+│   Ore → Mining → Grinding → Screening → Blending → Report   │
 ├───────────────┬──────────────────┬───────────────────────────┤
-│   LLM Layer   │    Data Layer    │       Engine Layer         │
-│   DeepSeek    │    AKShare       │   Sandbox (Subprocess)     │
-│   OpenAI      │    Tushare       │   Backtester (IC/Quantile) │
-│   Ollama      │    Sina / THS    │   RPN Engine               │
-│   vLLM        │    Baostock      │   Genetic Programming      │
-│               │    MX Miaoxiang  │   Transformer / RL         │
-│               │    NeoData       │                            │
+│   LLM Layer   │    Data Layer    │        Engine Layer       │
+│    DeepSeek   │     AKShare      │    Sandbox (Subprocess)   │
+│     OpenAI    │     Tushare      │  Backtester (IC/Quantile) │
+│     Ollama    │    Sina / THS    │         RPN Engine        │
+│  Qwen / vLLM  │     Baostock     │    Genetic Programming    │
+│               │ Offline bundled  │  Spectral clean / Signif. │
+│               │ HF minute panel  │    Upload ingest / JEV    │
 ├───────────────┴──────────────────┴───────────────────────────┤
-│   Knowledge Base: ChromaDB + BGE Embeddings + 62 Factors     │
-│   Experiment Tracking: MLflow / Local JSONL                   │
+│    Knowledge Base: ChromaDB + BGE Embeddings + 62 Factors   │
+│      Typed Research Layer: DSL / PIT panel / grid miner     │
+│          Experiment Tracking: MLflow / Local JSONL          │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+Every layer is reachable offline: the Data Layer's `Offline bundled` / `HF minute panel` rows are the two built-in datasets under `data/offline/`, and the Engine Layer degrades to numpy/heuristic equivalents when torch, stable-baselines3 or ChromaDB are missing — nothing in the diagram is a hard dependency.
 
 ---
 
@@ -467,6 +482,23 @@ data:
 - **Mining layer** (`src/mining/hf*.py`): ~50 order-book factors (OFI via price-matched queue change, micro-price, depth imbalance, realized vol, …), forward labels cut at session boundaries, direction model, fill-probability model (AUC 0.795, top-decile fill rate 11.5% vs 2.8% base) and the four strategy families — passive market making, short-term trend, event-driven, calendar (cross-month) arbitrage — all scored with explicit tick costs.
 - **Integrated into the typed research layer**: `register_hf_fields()` / `install_hf_features()` put these fields into the same `FieldRegistry` / `PanelData` / expression tree, tagged `ROLE_ALT` (pre-trade alternative info) so they can be combined with price-volume factors and still be caught by dimension checks. Demo: `python scripts/hf_mining_demo.py --freq 1min --symbol au`, `python scripts/hf_strategy_demo.py`.
 - **Read `docs/高频数据接入与因子挖掘.md` first.** It documents three traps that silently corrupt results (cross-midnight `SortTime`, session gaps 4 orders of magnitude larger than the sampling interval, and derived columns that are constant zero), plus honest negative results: book factors aggregated to ≥1 min bars carry RankIC of only 0.01–0.05, one order of magnitude below price momentum on the same data — so this layer belongs on the tick grid and must never be judged without transaction costs.
+
+**This layer is also reachable from the chat window**, which is the switch people expect to exist but do not find: the Agent switches to it when `data.source: hf` **or** `data.offline.hf.agent_mode: true`, and `load_user_panel` lets you plug in your own minute table through `data.hf.user_table` (csv / parquet / xlsx — any table with a time, an instrument and a price column). With neither set, `_hf_mode()` silently falls back to the daily workflow — the chat mines normally, on daily bars, and nothing in the report says so. Turning it on changes the semantics of everything downstream, and the panel knows it:
+
+| | Daily panel (`offline`) | Minute panel (`hf`) |
+|---|---|---|
+| `date` | trading day | **minute timestamp** |
+| `symbol` | 6-digit A-share code | **futures contract** (`AU2601` — never `zfill(6)`) |
+| Neutralisation | industry + market cap | **skipped** (contracts have neither) |
+| Evaluation | daily cross-sectional IC | **minute cross-sectional IC** |
+| OOS split | by date | **by natural day** (minutes within a day are autocorrelated — splitting by minute is "reading the answer before the exam") |
+| Breadth | 1,977 symbols | **24 contracts** on the bundled slice — a narrow cross-section, not "whole market" |
+
+Naming is enforced, not advisory: a factor may only call itself HF/Intraday/Micro if it actually reads `hf_*` columns (ofi / obi / depth_ratio / rvol / spread / …) — an earlier `HighFreqVolumeMomentum` that used none of them is exactly the drift this rule exists to stop. The bundled compaction (`scripts/hf_offline_build.py`, `python scripts/hf_offline_build.py --help`) turns the raw 15.8M-row / 382 MB snapshot into `data/offline/hf_panel_1min.parquet` (9,072 rows × 24 contracts × 565 minutes, 25 `hf_*` columns), `hf_daily.parquet` (200 contract-days) and `hf_orders.parquet` (85,148 order rows) — a ~200× size reduction that is what makes the layer distributable at all.
+
+![High-frequency pipeline](docs/assets/feature_hf_pipeline.png)
+
+*Panels: (a) rows and on-disk size before/after compaction (log axis); (b) minute coverage per contract; (c) the 25 order-book-derived columns grouped by family; (d) median intraday relative spread across all contracts — the spikes at session boundaries are why the minute panel is stitched per session instead of as one continuous series. Rendered from the bundled `data/offline/hf_*` artifacts.*
 
 ### EastMoney MX (妙想) Data Interface
 
@@ -612,15 +644,15 @@ FactorGPT/
 │   ├── store/          # SQLite persistence (memory, chat, experiments)
 │   ├── forwardtest/    # Headline Arena forward-testing bridge (client/ledger/scorecard)
 │   └── kronos/         # Kronos financial forecasting model integration
-├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch, ha_forward_run)
-├── tests/              # Test suite (sandbox & lookahead, refinery, mining, forward test, advisor, specification RL, docs contract)
+├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch, ha_forward_run, hf_offline_build, train_multimodal)
+├── tests/              # Test suite (sandbox & lookahead, refinery, mining, forward test, advisor, specification RL, upload/HF/intent, docs contract)
 ├── factorgpt-skill/    # Agent skill packages (SKILL.md + official EastMoney MX skills)
 │   ├── skills/         # mx-data / mx-search / mx-xuangu / mx-zixuan / mx-moni / mx-poster
 │   └── references/     # Data contract (legacy / NeoData / offline field mapping)
 ├── third_party/        # Third-party integrations (kronos, ima client)
 ├── hf_space/           # HuggingFace Spaces static hosting files
 ├── .github/workflows/  # CI (pytest on Python 3.11 + 3.12, then compile check)
-├── docs/               # Ablation report + docs/assets screenshots and charts
+├── docs/               # Ablation report, HF guide, docs/assets screenshots and charts
 ├── data/               # Sample data, factor library, bundled offline dataset, forward-test ledger
 ├── ima_subscription/   # Research-report watchlist, baseline, and change log
 ├── demo_output/        # One-command demo backtest charts (python demo_sim.py)
@@ -637,10 +669,10 @@ FactorGPT/
 
 ## Testing & Quality Assurance
 
-FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge — 232 test functions across 14 files (253 cases after parametrisation), none of which require network access:
+FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge — 381 test functions across 25 files (416 cases after parametrisation; 415 pass, 1 skipped), none of which require network access:
 
 - **CI**: `.github/workflows/ci.yml` runs the full test suite on every push/PR (Python 3.11 + 3.12), then compile-checks all source modules. Status: [![CI](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml)
-- **Core tests**: sandbox security & lookahead-bias rejection (`test_sandbox.py`, 15 test functions / 24 cases including parametrized future-column names), the six-stage refinery pipeline end-to-end (`test_refinery.py`, 6), and documentation-contract drift guards (`test_docs_contract.py`, 6 — keeps README page/factor counts, the `instrument→symbol` data contract, and `kronos.fallback_to_stub` from silently drifting).
+- **Core tests**: sandbox security & lookahead-bias rejection (`test_sandbox.py`, 15 test functions / 24 cases including parametrized future-column names), the six-stage refinery pipeline end-to-end (`test_refinery.py`, 6), and documentation-contract drift guards (`test_docs_contract.py`, 7 — keeps README page/factor counts, the `instrument→symbol` data contract and `kronos.fallback_to_stub` from silently drifting, and fails when README references an image that does not exist: a missing chart renders as a broken placeholder on GitHub and nothing else would ever complain).
 - **Backtest math & engineering glue** (`test_backtest.py`, 8 / `test_engineering.py`, 5): IC and rank-IC sign conventions, turnover consistency, lookahead detection on unshifted or negatively-shifted prices, an AlphaLens cross-check, plus experiment tracking, GP mining, LLM routing, batch evaluation and HPO.
 - **Forward-testing bridge** (`test_forwardtest.py`, 29): the deterministic macro-theme → asset/direction/confidence translation, append-only ledger semantics with prediction fields frozen once settled, scorecard math (directional accuracy, Brier against the 1/3 random baseline, confidence-bucket calibration), and the guarantee that a missing network, missing credentials, or a theme without macro wording degrades to a local dry-run record rather than an exception.
 - **Ablation experiments**: `python scripts/ablation_study.py --seed 42 --n-symbols 20` quantifies each pipeline module's marginal contribution on out-of-sample data (ΔICIR per module); results and interpretation in [docs/ablation_report.md](docs/ablation_report.md).
@@ -648,6 +680,10 @@ FactorGPT's "production-grade" claim is backed by automated tests and reproducib
 - **AI advisor & system diagnostics** (`test_system_advisor.py`, 24 functions / 36 cases): builds a real factor system on a synthetic panel with spectral cleaning switched on, then pins the advisor contract — no `nan` can enter the fact table, every listed intent produces an answer, suggested questions must route to a *specific* intent (a suggestion that falls through to the generic one wastes a turn), actions stay ordered and capped, the prompt carries the fact table and forbids numbers outside it, and a model that raises **or** returns blank degrades to the rule answer with the reason attached. The same file covers the concentrated-risk branch of `factor_system.build_findings`, whose input is the risk decomposition above. Uncovered surface is stated rather than implied: three of the six modules in Highlight 10 (significance / universe / multi-scale GP) are covered by `tests/test_triage.py`, `specification_rl` has its own file (below), `param_ops` runs only inside the multi-scale miner (exercised by implication), and the spectral identities (`mp_bounds`, shrinkage) still have no dedicated numeric test — the chain is exercised end-to-end through this fixture instead.
 - **Multitask specification RL** (`test_specification_rl.py`, 14 tests): the three action masks, that a compiled specification is a valid GP expression tree (compiled with the same tuple grammar and evaluated by `eval_tree`), that the panel environment scores `|IC|` and fails a specification whose columns are missing, that the reward is bounded and returns `−1` on an unestimable specification, and — the falsifiable one — that the shared policy beats single-task training **and** an untrained policy on held-out tasks whose features were never seen in training (0.75 / 0.19 / 0.32, 8/8 seeds). Coverage is also pinned end-to-end: the report renders the specification section, and `multiscale_mine(spec_rl=True)` actually injects the RL seeds into the genetic initial population rather than carrying them alongside.
 - **LLM provenance & config persistence** (`test_llm_provenance.py`, 11 / `test_config_persistence.py`, 22 tests): the two failure modes that made "the model is connected but it keeps running offline" unexplainable. An unresolved `${VAR}` key must be rejected **at call time** (construction must survive it, or the whole Streamlit app dies on a missing env var) and `_build()`'s refusal must be visible in `available()`; the offline fallback must record `factor_source` / `llm_error` in state, merge the reflect-stage failure with the generate-stage one instead of overwriting it, and stamp the report header so a template product cannot pass as model output. On the persistence side: a plaintext key must never reach the git-tracked `config.yaml` (it goes to `.env`, and the placeholder must still interpolate back to the real value), saving must be a line-level patch that touches only the target section — including the same-named key one level deeper in `llm.router.critic` and the top-level `proxy` vs `data.proxy` pair — and a save that changes nothing must leave the file byte-identical.
+- **Upload pipeline & material context** (`test_upload_ingest.py`, 23): the regressions that made uploads feel broken. A long paper title must keep its `.pdf` through sanitisation (the bug that surfaced as `不支持的文件类型：` with an empty extension), the dedupe key must be the *original* filename and not the timestamped on-disk one, a PDF must keep **per-page** text (flattening it makes page-wise slicing impossible), page-wise context must keep head + tail and name the omitted pages, a table of contents must reach the context, and `pages` — a full-text copy — must never land in `index.json`. Plus the plain-text fallback and the "tail is empty because one page exceeds the tail budget" edge.
+- **Multimodal judgment tier** (`test_multimodal_train.py`, 11): the Naive Bayes tier must train **without torch** (it is the last tier standing on a bare install), every model's artifact must round-trip, and metrics/skip reasons must be recorded rather than printed.
+- **High-frequency offline layer** (`test_hf_offline_upload.py`, 14): the compaction path from raw L2 snapshot to minute panel, the session-boundary handling that the `docs/高频数据接入与因子挖掘.md` traps warn about, and the user-supplied-table loader.
+- **Intent routing & material injection** (`test_intent.py`, 37): that `mining` / `qa` / `clarify` are separated as claimed, that **uploaded material reaches the Q&A branch too** (without it "summarise this paper" can only answer "I did not receive your text"), that no material means no material block, and that each branch degrades to an answer rather than an exception.
 - **Warnings are errors** (`pytest.ini`): the failure mode this repo cares about is not a raised exception but an *exception silently swallowed into a plausible number* — `np.corrcoef` returning 0 for a degenerate cross-section, or `np.nanmean` warning on an empty slice and quietly yielding NaN. Every `RuntimeWarning` / `FutureWarning` / `DeprecationWarning` now fails the suite, so those substitutions cannot creep back in.
 
 ---
@@ -659,7 +695,11 @@ FactorGPT's "production-grade" claim is backed by automated tests and reproducib
 - [x] Spectral cleaning and risk decomposition of the factor correlation matrix (see Highlight 12)
 - [x] Wire the significance gates, the universe labels and the multi-scale GP into the mining flow, the report and the UI, and cover them with tests (see Highlight 10)
 - [x] Multitask RL specification search — shared DeepSet Q-policy, zero-shot transfer to unseen features, seeding the GP initial population (see Highlight 13)
+- [x] Uploaded material across both branches, with a tunable context budget, page-aware head/tail slicing and an auto-detected table of contents (see Highlight 5)
+- [x] High-frequency L2 layer reachable from the chat window — minute panel, agent-mode switch, contract semantics and a naming rule enforced in code (see "High-Frequency (L2) Data Source")
 - [ ] Surface the parameterised temporal-memory operator (`hwma`, Highlight 10) as a first-class operator in the expression DSL — today it runs only inside the multi-scale miner
+- [ ] Page-level retrieval over paged uploads: ask for a specific page or chapter instead of re-uploading a smaller file, so a 60-page paper no longer needs a 60k budget to be answerable
+- [ ] Move the high-frequency factor grid onto the tick grid — on ≥1 min bars the book factors carry RankIC of only 0.01–0.05; the layer is built for ticks and is currently measured where it is weakest
 - [ ] Multi-market support (US stocks, Hong Kong stocks, crypto)
 - [ ] Real-time factor monitoring dashboard with alerting
 - [ ] Factor decay analysis and lifecycle management
