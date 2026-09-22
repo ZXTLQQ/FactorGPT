@@ -50,9 +50,28 @@ _CNN_TO_DATA_TYPE = {"candlestick": "quote_screenshot", "table": "quote_screensh
                      "textpage": "research"}
 
 
+_NAME_LIMIT = 80
+
+
 def _safe_name(name: str) -> str:
-    keep = [c for c in str(name or "upload") if c.isalnum() or c in "._-"]
-    return "".join(keep)[:80] or "upload"
+    """清洗成可落盘的文件名——**必须先保住扩展名，再截主干**。
+
+    踩过的坑：旧实现是「整体清洗后统一截断到 80 字符」，论文类 PDF 的标题动辄
+    90+ 字符，`.pdf` 正好落在截断线之外被切掉；落盘后 ``Path.suffix`` 为空，
+    后面按扩展名分派时抛「不支持的文件类型：」——连扩展名都空着，完全看不懂。
+    所以这里只截主干，扩展名永远原样保留。
+    """
+    raw = str(name or "upload")
+    p = Path(raw)
+    ext = p.suffix.lower()
+    if not (len(ext) > 1 and all(c.isalnum() or c == "." for c in ext)):
+        ext = ""
+        stem = raw
+    else:
+        stem = p.stem
+    stem = "".join(c for c in stem if c.isalnum() or c in "._-")
+    keep = max(8, _NAME_LIMIT - len(ext))
+    return (stem[:keep] or "upload") + ext
 
 
 def _image_brief(path: Path, ocr_enabled: bool = False,
