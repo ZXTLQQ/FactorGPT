@@ -7,14 +7,32 @@ import os
 import sys
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from engine.upload_ingest import SUPPORTED_EXTS, UploadIngestor, _safe_name  # noqa: E402
+from engine.upload_ingest import (  # noqa: E402
+    DEFAULT_CONTEXT_CHARS,
+    SUPPORTED_EXTS,
+    UploadedItem,
+    UploadIngestor,
+    _safe_name,
+    _slice_pages,
+    detect_chapters,
+)
 
 LONG_PDF = ("A KL Lens on Quantization Fast, Forward-Only Sensitivity "
             "for Mixed-Precision SSM-Transformer Models.pdf")
+
+
+def _pdf_item(tmp_path, pages, chapters=None) -> UploadedItem:
+    """造一份"已解析好的 PDF"：只测上下文切片，不真去解析 PDF。"""
+    it = UploadedItem(name="p.pdf", path=str(tmp_path / "p.pdf"), kind="text",
+                      size=1, text="\n".join(pages), pages=list(pages))
+    if chapters is not None:
+        it.meta["chapters"] = chapters
+    return it
 
 
 class TestSafeName:
@@ -79,3 +97,92 @@ class TestIngestFile:
 
     def test_supported_exts_are_known(self):
         assert ".pdf" in SUPPORTED_EXTS and ".png" in SUPPORTED_EXTS
+
+    def test_pdf_keeps_pages_and_toc(self, tmp_path, monkeypatch):
+        """PDF 必须逐页保留：全文概括要按页切片，压成一个字符串就切不动了。"""
+        ing = self._ingestor(tmp_path)
+        pages = ["1 Introduction\n正文", "2 Method\n正文", "3 Conclusion\n结论"]
+        monkeypatch.setattr(
+            ing._parser, "parse_file",
+            lambda _p: (pd.DataFrame({"text": pages, "page": range(1, len(pages) + 1)}), {}))
+        item = ing.ingest_bytes("paper.pdf", b"%PDF-1.4")
+        assert item.pages == pages and item.meta["pages_n"] == 3
+        assert "pages" not in item.meta          # 全文副本不能进 meta（会落 index.json）
+        assert item.meta["chapters"][0][0] == "1 Introduction"
+        ctx = ing.context_text(per_item=10 ** 6)
+        assert "— 第 1/3 页 —" in ctx and "— 第 3/3 页 —" in ctx
+
+
+# ----------------------------------------------------------------------
+# 长文上下文：预算 + 按页切片（"全文概括" 之前只有开头 4000 字）
+# ----------------------------------------------------------------------
+class TestPageSlicing:
+    def _ing(self, tmp_path, items) -> UploadIngestor:
+        ing = TestIngestFile()._ingestor(tmp_path)
+        ing.items = list(items)
+        return ing
+
+    def test_budget_enough_keeps_every_page(self, tmp_path):
+        pages = [f"第{i}页正文" * 10 for i in range(1, 11)]
+        ing = self._ing(tmp_path, [_pdf_item(tmp_path, pages)])
+        ctx = ing.context_text(per_item=10 ** 6)
+        assert "第1页正文" in ctx and "第10页正文" in ctx
+        assert "省略中间" not in ctx
+
+    def test_over_budget_keeps_head_and_tail_and_says_so(self, tmp_path):
+        pages = [f"P{i}-" + "字" * 200 for i in range(1, 13)]
+        ing = self._ing(tmp_path, [_pdf_item(tmp_path, pages)])
+        ctx = ing.context_text(per_item=1200)
+        assert "P1-" in ctx                      # 开头保留
+        assert "P12-" in ctx                     # 结尾保留（结论常在这）
+        assert "P7-" not in ctx                  # 中段真的被省掉了
+        assert "省略中间" in ctx and "/12 页" in ctx   # 页码标记与省略说明都在
+
+    def test_slice_pages_reports_omitted_pages(self):
+        pages = ["a" * 100 for _ in range(10)]
+        chunks, note = _slice_pages(pages, 600)
+        assert [no for no, _ in chunks] == [1, 2, 3, 9, 10]
+        assert "省略中间 5 页" in note
+
+    def test_slice_pages_single_huge_page_still_keeps_last(self):
+        # 单页就超过尾部预算：宁可略微超一点也要留住最后一页
+        pages = ["a" * 5000 for _ in range(3)]
+        chunks, note = _slice_pages(pages, 1000)
+        assert 3 in [no for no, _ in chunks]
+        assert "省略中间" in note
+
+    def test_plain_text_head_tail(self, tmp_path):
+        it = UploadedItem(name="n.txt", path="n.txt", kind="text", size=1,
+                          text="开头" + "中" * 5000 + "结尾")
+        ing = self._ing(tmp_path, [it])
+        body, note = ing.fit_text(it, 600)
+        assert body.startswith("开头") and body.rstrip().endswith("结尾")
+        assert "省略中间" in note
+
+    def test_default_budget_is_raised(self, tmp_path):
+        # 旧默认 4000 字 = 长论文只看开头，必须已经调大
+        assert DEFAULT_CONTEXT_CHARS >= 20000
+        ing = TestIngestFile()._ingestor(tmp_path)
+        assert ing.context_max_chars == DEFAULT_CONTEXT_CHARS
+
+
+class TestChapters:
+    def test_detects_numbered_and_chinese_titles(self):
+        pages = ["Abstract\nblah", "1 Introduction\nblah",
+                 "第2章 方法\nblah", "正文里不该被当成标题的一句话"]
+        got = detect_chapters(pages)
+        assert ("Abstract", 1) in got
+        assert ("1 Introduction", 2) in got
+        assert any(t.startswith("第2章") and p == 3 for t, p in got)
+
+    def test_toc_goes_into_context(self, tmp_path):
+        pages = ["1 Introduction\n正文"] + ["内容"] * 8
+        it = _pdf_item(tmp_path, pages, chapters=[["1 Introduction", 1]])
+        ing = TestIngestFile()._ingestor(tmp_path)
+        ing.items = [it]
+        assert "1 Introduction(p1)" in ing.context_text(per_item=10 ** 6)
+
+    def test_pages_not_written_to_index_json(self, tmp_path):
+        it = _pdf_item(tmp_path, ["x" * 1000])
+        d = it.to_json()
+        assert "pages" not in d and d["n_pages"] == 1

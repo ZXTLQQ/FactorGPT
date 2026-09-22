@@ -49,7 +49,7 @@ from agent.vibe_trading import VibeTradingSession
 from engine import factor_system as FS
 from engine.genetic_enhanced import EnhancedFactorEvolver
 from engine.jev import JEVClient
-from engine.upload_ingest import SUPPORTED_EXTS, UploadIngestor
+from engine.upload_ingest import DEFAULT_CONTEXT_CHARS, SUPPORTED_EXTS, UploadIngestor
 from rag.chroma_store import ensure_chroma
 from rag.retriever import rag_vector_enabled
 from store import database as db
@@ -1224,11 +1224,24 @@ def _render_upload_panel():
         if not ing.items:
             st.info("尚未上传材料。")
             return
+        budget = st.radio(
+            "材料上下文预算（长文概括请调大）",
+            options=[8000, DEFAULT_CONTEXT_CHARS, 60000], index=1, horizontal=True,
+            key="chat_upload_budget",
+            format_func=lambda v: {8000: "8 千字·快速摘要",
+                                   DEFAULT_CONTEXT_CHARS: "24 千字·标准",
+                                   60000: "60 千字·长文全文"}.get(v, f"{v:,} 字"),
+            help="每份材料能进 prompt 的字数上限（多份材料均分）。装不下时按页保留"
+                 "开头 + 结尾（结论常在结尾），中间省略多少页会如实写明。",
+        )
+        each = max(2000, budget // max(1, len(ing.items)))
         rows = []
         for it in ing.items:
             j = it.jev or {}
             rows.append({
                 "文件": getattr(it, "source_name", "") or it.name, "类型": it.kind,
+                "页数": len(it.pages) or "-", "字数": f"{len(it.text):,}",
+                "进上下文": "全文" if not ing.fit_text(it, each)[1] else "首尾（中间省略）",
                 "JEV判定": j.get("data_type_label", "-"),
                 "情绪": j.get("sentiment_label", "-"),
                 "可因子化": j.get("factorizable", "-"),
@@ -1238,6 +1251,9 @@ def _render_upload_panel():
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         for it in ing.items:
+            _, note = ing.fit_text(it, each)
+            if note:
+                st.caption(f"{getattr(it, 'source_name', '') or it.name}：{note}")
             if it.jev and it.jev.get("summary"):
                 st.caption(it.jev["summary"])
         if st.button("🧹 清空上传材料", key="chat_upload_clear"):
@@ -1278,7 +1294,8 @@ def render_agent_chat():
         # 上传材料：判定摘要进 prompt，可对齐的表格直接并入面板当外部因子。
         # 两个分支都要带——问答分支此前完全拿不到材料，才会答「没收到你上传的文本」。
         ing = st.session_state.get("chat_ingestor")
-        up_ctx = ing.context_text() if ing else ""
+        budget = int(st.session_state.get("chat_upload_budget") or DEFAULT_CONTEXT_CHARS)
+        up_ctx = ing.context_text(max_chars=budget) if ing else ""
         up_factors = ing.external_factors() if ing else {}
 
         if res is not None and res.intent != "mining":

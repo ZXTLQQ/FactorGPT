@@ -26,10 +26,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -72,6 +73,110 @@ def _safe_name(name: str) -> str:
     stem = "".join(c for c in stem if c.isalnum() or c in "._-")
     keep = max(8, _NAME_LIMIT - len(ext))
     return (stem[:keep] or "upload") + ext
+
+
+# ----------------------------------------------------------------------
+# 长文上下文：预算 + 按页切片
+# ----------------------------------------------------------------------
+# 一篇论文正文常在 3~8 万字，早先固定 4000 字的摘录等于"只看开头"，
+# 所以这里给出可调预算，并让「装不下」这件事**可见**（首页/末页保留，
+# 中间省略多少页如实写明），而不是悄悄截断。
+DEFAULT_CONTEXT_CHARS = 24000      # 单份材料的默认上下文预算（界面可调）
+_MIN_PER_ITEM_CHARS = 2000         # 多份材料均分时的下限
+_HEAD_FRAC = 0.65                  # 装不下时留给「开头」的比例，其余给结尾
+
+# 章节标题启发式：PDF 里没有可靠的章节标记（outline 常缺失），只能从页首文本抓。
+# 宁可漏，不可假——抓出来的目录会标注「自动识别，可能不全」。
+_CHAPTER_RE = re.compile(
+    r"^(?:"
+    r"第\s*[0-9一二三四五六七八九十百]+\s*[章节篇部分讲]"
+    r"|[0-9]+(?:\.[0-9]+){0,2}[\s、.]+[^\s0-9]"
+    r"|[一二三四五六七八九十]+\s*[、.]\s*\S"
+    r"|(?:abstract|introduction|related\s+work|background|method(?:ology)?|"
+    r"experiment(?:s|al\s+setup)?|result(?:s)?|discussion|conclusion|"
+    r"references|appendix)\b"
+    r")", re.IGNORECASE)
+
+
+def detect_chapters(pages: Sequence[str], max_titles: int = 40) \
+        -> List[Tuple[str, int]]:
+    """从页文本里抓章节标题 → ``[(标题, 页码1起), ...]``（启发式，可能不全）。
+
+    只扫每页前若干行：真正的标题通常就在页首，扫全文会把正文里的
+    "3.2 式" 之类误当成章节。
+    """
+    out: List[Tuple[str, int]] = []
+    seen = set()
+    for no, page in enumerate(pages, start=1):
+        for line in str(page or "").splitlines()[:12]:
+            s = line.strip()
+            if not (2 <= len(s) <= 60):
+                continue
+            if not _CHAPTER_RE.match(s):
+                continue
+            key = s.lower()[:40]
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((s[:60], no))
+            break
+        if len(out) >= max_titles:
+            break
+    return out
+
+
+def _render_pages(chunks: Sequence[Tuple[int, str]], n_pages: int) -> str:
+    """给每页正文加页码标记：模型引用「第几页」时才有依据。"""
+    return "\n".join(f"— 第 {no}/{n_pages} 页 —\n{txt}" for no, txt in chunks)
+
+
+def _slice_pages(pages: Sequence[str], budget: int) \
+        -> Tuple[List[Tuple[int, str]], str]:
+    """预算装不下时按页保留「开头 + 结尾」，中间整段省略并如实标注。
+
+    为什么是首尾而不是前 N 页：论文的贡献/结论/局限在结尾，只留开头等于
+    把最该看的部分扔掉。省略的页数与字数必须写出来，否则模型会以为看到了全文。
+    """
+    n = len(pages)
+    if sum(len(p) for p in pages) <= budget:
+        return [(i, p) for i, p in enumerate(pages, 1)], ""
+
+    head_budget = int(budget * _HEAD_FRAC)
+    tail_budget = budget - head_budget
+    hi, used = 0, 0
+    while hi < n and used + len(pages[hi]) <= head_budget:
+        used += len(pages[hi])
+        hi += 1
+    hi = max(1, hi)          # 至少给第一页，否则预算太小时一片空白
+    ti, used_t = n, 0
+    while ti > hi and used_t + len(pages[ti - 1]) <= tail_budget:
+        ti -= 1
+        used_t += len(pages[ti])
+    ti = max(ti, hi + 1)     # 至少跳过一页，不然"省略了 0 页"等于没做切片
+    if ti >= n and n - 1 > hi:
+        # 单页就超过尾部预算时，宁可略微超一点也要留最后一页：结尾常有结论/贡献
+        ti = n - 1
+
+    head = [(i, p) for i, p in enumerate(pages[:hi], 1)]
+    tail = [(i, p) for i, p in enumerate(pages[ti:], ti + 1)]
+    skipped = ti - hi
+    omitted = sum(len(p) for p in pages[hi:ti])
+    note = (f"（上下文预算 {budget:,} 字装不下全文：按页保留开头 {hi} 页 + "
+            f"结尾 {n - ti} 页，省略中间 {skipped} 页 / 约 {omitted:,} 字；"
+            f"需要这部分请指定页码或章节再问一次）")
+    return head + tail, note
+
+
+def _fit_plain(text: str, budget: int) -> Tuple[str, str]:
+    """无页结构（txt/md/json）时按字符首尾截断，同样标注省略量。"""
+    if len(text) <= budget:
+        return text, ""
+    head = text[:int(budget * _HEAD_FRAC)]
+    tail = text[-max(0, budget - len(head)):]
+    omitted = len(text) - len(head) - len(tail)
+    note = (f"（上下文预算 {budget:,} 字装不下全文：保留开头与结尾，"
+            f"省略中间约 {omitted:,} 字）")
+    return head + f"\n…（省略中间约 {omitted:,} 字）…\n" + tail, note
 
 
 def _image_brief(path: Path, ocr_enabled: bool = False,
@@ -139,14 +244,18 @@ class UploadedItem:
     source_name: str = ""           # 用户看到的原始文件名（去重键：落盘名每次都不同）
     text: str = ""
     preview: str = ""
+    # PDF 按页正文：分页切片 / 页码引用 / 章节目录都靠它；不落 index.json（太大）
+    pages: List[str] = field(default_factory=list)
     meta: Dict[str, Any] = field(default_factory=dict)
     jev: Dict[str, Any] = field(default_factory=dict)
     factor_name: Optional[str] = None
     factor: Optional[pd.Series] = None   # index=(date, symbol)
 
     def to_json(self) -> Dict[str, Any]:
-        d = {k: v for k, v in self.__dict__.items() if k != "factor"}
+        # pages 是全文副本，落盘会把 index.json 撑成几 MB，审计索引里不需要它
+        d = {k: v for k, v in self.__dict__.items() if k not in ("factor", "pages")}
         d["has_factor"] = self.factor is not None
+        d["n_pages"] = len(self.pages)
         return d
 
 
@@ -165,6 +274,8 @@ class UploadIngestor:
         self.index_file = Path(str(up.get("index_file") or "data/uploads/index.json"))
         if not self.index_file.is_absolute():
             self.index_file = Path.cwd() / self.index_file
+        self.context_max_chars = int(
+            up.get("context_max_chars") or DEFAULT_CONTEXT_CHARS)
         self.max_files = int(up.get("max_files") or 12)
         self.max_bytes = int(up.get("max_bytes") or 20 * 1024 * 1024)
         self.ocr_enabled = bool(up.get("ocr_enabled"))
@@ -228,10 +339,13 @@ class UploadIngestor:
             except Exception:  # noqa: BLE001
                 return path.read_text(encoding="utf-8", errors="ignore"), {}
         # pdf / 其他：复用已有解析器（PyPDF2 可用时走正文抽取）
+        # 逐页保留：全文概括要按页切片，压成一个字符串就没法再切了。
         try:
             df, meta = self._parser.parse_file(path)
             if "text" in df.columns:
-                return "\n".join(str(t) for t in df["text"].tolist()), meta
+                pages = [str(t) for t in df["text"].tolist()]
+                meta = {**meta, "pages": pages}
+                return "\n".join(pages), meta
         except Exception as e:  # noqa: BLE001
             logger.warning("[upload] %s 解析失败：%s", path.name, e)
         return "", {"parse_error": True}
@@ -248,6 +362,7 @@ class UploadIngestor:
         meta: Dict[str, Any] = {"ext": ext}
         df = pd.DataFrame()
         mapping: Dict[str, Any] = {}
+        pages: List[str] = []
 
         if ext in IMAGE_EXTS:
             kind = "image"
@@ -263,12 +378,20 @@ class UploadIngestor:
         else:
             kind = "text"
             text, tmeta = self._parse_text(p)
+            # pages 挂到 item.pages（不入 meta：meta 会随 index.json 落盘）
+            pages = [str(x) for x in (tmeta.pop("pages", None) or []) if str(x).strip()]
             meta.update(tmeta)
 
         item = UploadedItem(
             name=p.name, path=str(p), kind=kind, size=size,
             text=str(text or ""), preview=str(text or "")[:400], meta=meta,
         )
+        if pages:
+            item.pages = pages
+            meta["pages_n"] = len(pages)
+            chapters = detect_chapters(pages)
+            if chapters:
+                meta["chapters"] = [[t, n] for t, n in chapters]
         # JEV 结构化判定（无 Key 时自动本地规则降级，不阻塞）
         try:
             item.jev = self.jev.analyze(item.text, filename=p.name)
@@ -306,15 +429,50 @@ class UploadIngestor:
         return item
 
     # ------------------------------------------------------------------
-    def context_text(self, max_chars: int = 4000) -> str:
-        """给挖掘 prompt 的上下文：JEV 判定 + 少量原文证据。"""
+    def context_text(self, max_chars: Optional[int] = None,
+                     per_item: Optional[int] = None) -> str:
+        """给挖掘 / 问答 prompt 的材料上下文：JEV 判定 + 原文（超预算按页保留首尾）。
+
+        ``max_chars`` 是**总预算**（默认 :data:`DEFAULT_CONTEXT_CHARS`，界面可调），
+        多份材料均分；``per_item`` 显式给定单份预算时优先。
+
+        早先固定每份 4000 字，长论文只能看到开头，"全文概括"必然答不全。现在：
+        - 有页结构（PDF）走 :func:`_slice_pages`——开头 + 结尾，中间整段省略并写明页数；
+        - 无页结构（txt/md/json）走 :func:`_fit_plain`，按字符首尾截断并写明字数；
+        - 附页码标记与自动识别的目录，模型引用"第几页"才有依据。
+        """
         if not self.items:
             return ""
+        total = int(max_chars or self.context_max_chars)
+        each = int(per_item or max(_MIN_PER_ITEM_CHARS, total // len(self.items)))
         blocks = [self.jev.render_many({it.name: it.jev for it in self.items})]
         for it in self.items:
-            if it.text:
-                blocks.append(f"【{it.name} 内容摘录】\n{it.text[:max_chars]}")
+            if not it.text:
+                continue
+            blocks.append(self.item_block(it, each))
         return "\n".join(b for b in blocks if b).strip()
+
+    def item_block(self, it: UploadedItem, budget: int) -> str:
+        """单份材料的上下文块（头部说明 + 正文），UI 与 prompt 共用。"""
+        name = it.source_name or it.name
+        size = f"{len(it.text):,} 字" + (f" / {len(it.pages)} 页" if it.pages else "")
+        head = f"【{name} 材料正文（{size}）】"
+        chapters = it.meta.get("chapters") or []
+        if chapters:
+            toc = "；".join(f"{t}(p{n})" for t, n in chapters[:24])
+            head += f"\n目录（自动识别，可能不全）：{toc}"
+        body, note = self.fit_text(it, budget)
+        if note:
+            head += f"\n{note}"
+        return f"{head}\n{body}"
+
+    @staticmethod
+    def fit_text(it: UploadedItem, budget: int) -> Tuple[str, str]:
+        """按预算取出正文，返回 ``(正文, 省略说明)``；没省略时说明为空串。"""
+        if it.pages:
+            chunks, note = _slice_pages(it.pages, budget)
+            return _render_pages(chunks, len(it.pages)), note
+        return _fit_plain(it.text, budget)
 
     def external_factors(self) -> Dict[str, pd.Series]:
         """可并入面板的外部因子（只有成功派生的表格才有）。"""
@@ -337,4 +495,5 @@ class UploadIngestor:
         return self.index_file
 
 
-__all__ = ["IMAGE_EXTS", "SUPPORTED_EXTS", "UploadIngestor", "UploadedItem"]
+__all__ = ["DEFAULT_CONTEXT_CHARS", "IMAGE_EXTS", "SUPPORTED_EXTS",
+           "UploadIngestor", "UploadedItem", "detect_chapters"]

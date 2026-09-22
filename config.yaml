@@ -137,6 +137,8 @@ data:
     max_bytes: 20971520        # 单文件上限（20MB）
     parse_images: true         # 图片：抽取尺寸/主色等结构化描述；装了 OCR 依赖则额外识别文字
     ocr_enabled: false         # 需要 pytesseract + tesseract 本体，未装则自动跳过
+    context_max_chars: 24000   # 单份材料进 prompt 的字数预算（界面可调 8k/24k/60k）；
+                               # 装不下时按页保留开头+结尾，中间省略多少页会如实写明
   hf:                               # 仅当 source=hf 时生效：期货全市场 L2 五档快照（离线 parquet）
     # ── 用户接入自有高频表（优先于 L2 快照）──
     # 只要表里有「时间 + 标的 + 价格」三列即可（csv/parquet/xlsx），列名中英文都认；
