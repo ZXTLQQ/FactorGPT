@@ -63,6 +63,11 @@ class FactorAgent:
             commission=self.config.get("backtest", {}).get("commission", 0.001),
             risk_free_rate=self.config.get("backtest", {}).get("risk_free_rate", 0.03),
         )
+        # 数据模态：daily=日频股票面板（默认）；intraday=高频分钟面板（symbol 为期货合约）
+        self.data_modality = "daily"
+        # 高频分支的取数来源/回退原因（供 UI 与日志说明「为什么没走高频」）
+        self.hf_source = ""
+        self.hf_fallback_reason = ""
         # 数据准备
         self.kline, self.industry, self.mkt_cap = self._load_data()
         # 样本外（OOS）切分：训练集用于生成-反思闭环，测试集仅做独立验证，
@@ -74,6 +79,7 @@ class FactorAgent:
                 self.kline,
                 test_frac=float(oos_cfg.get("test_frac", 0.2)),
                 min_test_days=int(oos_cfg.get("min_test_days", 60)),
+                modality=self.data_modality,
             )
         else:
             self.train_kline, self.test_kline = self.kline, None
@@ -89,6 +95,7 @@ class FactorAgent:
             learned=self.learned,
             train_kline=self.train_kline,
             test_kline=self.test_kline,
+            data_modality=self.data_modality,
         )
         self.max_iterations = int(self.config.get("agent", {}).get("max_iterations", 3))
         self.metrics_threshold = float(
@@ -168,6 +175,22 @@ class FactorAgent:
             if force_synthetic:
                 raise RuntimeError("已配置强制使用合成数据")
 
+            # —— 高频 L2 分支：分钟面板 + 期货合约（无行业/市值语义）——
+            # 高频是「增强」不是「替换」：拿不到面板时**回落到常规日频工作流**
+            # （离线/akshare/neodata/ths 照常取数），而不是直接掉进合成数据——
+            # 用户接入数据源后常规链路本就该能跑，高频只是它之上的一种模态。
+            if self._hf_mode(cfg):
+                try:
+                    panel = self._load_data_hf(cfg, universe_size)
+                    if panel is not None and not panel.empty:
+                        return panel, None, None
+                    self.hf_fallback_reason = "高频面板为空"
+                except Exception as e:  # noqa: BLE001
+                    self.hf_fallback_reason = f"{type(e).__name__}: {e}"
+                print(f"[FactorAgent] 高频面板不可用（{self.hf_fallback_reason}），"
+                      f"已回退常规日频工作流（接入数据源后高频开关会自动重新生效）")
+                self.data_modality = "daily"
+
             # —— 同花顺 MCP 网关数据源 ——
             if primary_source == "ths":
                 kline = self._load_data_ths(cfg, universe_size, start, end, index_code)
@@ -235,26 +258,165 @@ class FactorAgent:
         return kline
 
     @staticmethod
-    def _split_oos(kline, test_frac: float = 0.2, min_test_days: int = 60):
+    def _split_oos(kline, test_frac: float = 0.2, min_test_days: int = 60,
+                   modality: str = "daily"):
         """将行情按时间切分为训练集与样本外（OOS）测试集。
 
         训练集用于因子生成-反思闭环，测试集仅用于最终独立验证，
         以避免 Agent 在回测窗口内反复调参导致过拟合。
+
+        ``modality="intraday"`` 时按**自然日**切而不是按分钟切：同一天的分钟
+        之间高度自相关，若按分钟数切会把同一天的前后两半分别塞进训练/测试，
+        等于让因子「看过答案再考试」，样本外指标会虚高。
         """
         if kline is None or kline.empty or "date" not in kline.columns:
             return kline, None
-        dates = np.sort(pd.to_datetime(kline["date"]).unique())
-        n_test = max(min_test_days, round(len(dates) * test_frac))
-        if n_test >= len(dates) - 1:
-            # 数据量不足以切分，退回全量（不报 OOS）
-            return kline, None
-        split = dates[-n_test]
-        mask = pd.to_datetime(kline["date"]) >= split
+        dt = pd.to_datetime(kline["date"])
+        if modality == "intraday":
+            days = np.sort(pd.Series(dt).dt.normalize().unique())
+            if len(days) <= 1:
+                # 只有一个交易日：无法在时间上切出独立段，不如老实不报 OOS
+                print("[FactorAgent] 高频面板仅含 1 个交易日，跳过样本外切分"
+                      "（同日分钟不能拆成训练/测试，否则指标虚高）")
+                return kline, None
+            n_test = min(max(1, round(len(days) * test_frac)), len(days) - 1)
+            split = days[-n_test]
+            mask = dt.dt.normalize() >= split
+            unit = "日"
+        else:
+            dates = np.sort(dt.unique())
+            n_test = max(min_test_days, round(len(dates) * test_frac))
+            if n_test >= len(dates) - 1:
+                # 数据量不足以切分，退回全量（不报 OOS）
+                return kline, None
+            split = dates[-n_test]
+            mask = dt >= split
+            unit = "日"
         test = kline[mask].copy()
         train = kline[~mask].copy()
-        print(f"[FactorAgent] 样本外切分：训练 {train['date'].nunique()} 日 / "
-              f"样本外 {test['date'].nunique()} 日（切分日 {pd.Timestamp(split).date()}）")
+        if train.empty or test.empty:
+            return kline, None
+        print(f"[FactorAgent] 样本外切分（{'分钟面板按日切' if modality == 'intraday' else '日频'}）："
+              f"训练 {train['date'].nunique()} {unit} / "
+              f"样本外 {test['date'].nunique()} {unit}（切分点 {pd.Timestamp(split)}）")
         return train, test
+
+    # ------------------------------------------------------------------
+    # 高频数据分支
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _hf_mode(cfg: Dict[str, Any]) -> bool:
+        """是否走高频分支：``data.source=hf``，或离线高频 ``agent_mode=true``。"""
+        if str(cfg.get("source", "") or "").lower() == "hf":
+            return True
+        off = (cfg.get("offline", {}) or {}).get("hf", {}) or {}
+        return bool(off.get("agent_mode")) and bool(off.get("enabled", True))
+
+    def _load_data_hf(self, cfg: Dict[str, Any], universe_size: int):
+        """加载高频分钟面板。
+
+        面板的 ``date`` 是**分钟时间戳**（不是日期），``symbol`` 是**期货合约**
+        （不是 6 位股票码），因此：
+
+        - 不做 ``zfill(6)``，不做行业/市值中性化（合约无行业、无市值）；
+        - 截面 = 同一分钟的所有合约，评估器/回测器无需改动即可算出日内 IC。
+
+        来源优先级：
+
+        1. ``data.hf.user_table`` / ``data.offline.hf.user_table``：用户**自己接进来的**
+           分钟或高频表（csv/parquet/xlsx，只要有「时间+标的+价格」三列即可）；
+        2. ``source=hf``：用 L2 快照现场构建分钟面板；
+        3. 离线压实产物（``data/offline/hf_panel_1min.parquet``）。
+
+        三条路都取不到数据时**抛异常**，由 :meth:`_load_data` 回落到常规日频工作流
+        ——高频是增强而不是替换，常规链路任何情况下都能跑。
+        """
+        from data.neo_adapter import get_data_source
+
+        source = str(cfg.get("source", "") or "").lower()
+        fetcher = get_data_source(self.config, tushare_token=cfg.get("tushare_token"))
+        hf_cfg = cfg.get("hf", {}) or {}
+        off_hf = (cfg.get("offline", {}) or {}).get("hf", {}) or {}
+        user_table = str(hf_cfg.get("user_table") or off_hf.get("user_table") or "").strip()
+
+        if user_table:
+            from data.hf_panel import load_user_panel
+
+            panel = load_user_panel(user_table)
+            self.hf_source = f"user_table:{user_table}"
+        elif source == "hf":
+            from data.hf_adapter import HFDataSource
+            from data.hf_panel import build_minute_panel
+
+            hf = HFDataSource(config=self.config)
+            if not hf.enabled:
+                raise RuntimeError(
+                    "L2 快照不可用（config.yaml → data.hf.file）且未配置 "
+                    "data.hf.user_table；接入自有高频表即可走高频分支")
+            panel = build_minute_panel(
+                hf,
+                freq=str(hf_cfg.get("freq") or off_hf.get("freq") or "1min"),
+                max_contracts=int(hf_cfg.get("max_contracts")
+                                  or off_hf.get("max_contracts") or 24),
+            )
+            self.hf_source = f"l2:{hf.file}"
+        else:
+            panel = fetcher.get_hf_panel()
+            self.hf_source = "offline:hf_panel_1min.parquet"
+        if panel is None or panel.empty:
+            raise RuntimeError("高频面板为空（先跑 python scripts/hf_offline_build.py 压实数据，"
+                               "或在 config.yaml 的 data.hf.user_table 指向自有高频表）")
+        if universe_size and universe_size < panel["symbol"].nunique():
+            keep = list(dict.fromkeys(panel["symbol"].tolist()))[:universe_size]
+            panel = panel[panel["symbol"].isin(keep)]
+        self.data_modality = "intraday"
+        print(f"[FactorAgent] 使用高频分钟面板（来源 {self.hf_source}）："
+              f"{panel['symbol'].nunique()} 个标的 / "
+              f"{panel['date'].nunique()} 分钟 / {len(panel)} 行，"
+              f"高频列 {len([c for c in panel.columns if c.startswith('hf_')])} 个")
+        return panel.reset_index(drop=True)
+
+    def attach_external_factors(self, factors: Dict[str, pd.Series]) -> List[str]:
+        """把上传表格解析出的外部因子并到主面板（按 date+symbol 对齐）。
+
+        ``factors`` 形如 ``{"新闻情绪": Series(index=(date, symbol))}``。
+        合并用左连接 + 0 填充：外部数据天然稀疏（只有少数标的/日期有覆盖），
+        留 NaN 会让 LLM 生成的因子整列失效，填 0 = "无信号"。
+        """
+        added: List[str] = []
+        if not factors:
+            return added
+        for raw_name, s in factors.items():
+            if s is None or len(s) == 0:
+                continue
+            col = f"ext_{''.join(ch if ch.isalnum() else '_' for ch in str(raw_name))[:24]}"
+            try:
+                ser = pd.Series(s).copy()
+                if not isinstance(ser.index, pd.MultiIndex):
+                    continue
+                ser.index = pd.MultiIndex.from_tuples(
+                    [(str(a), str(b)) for a, b in ser.index], names=["date", "symbol"])
+                ser = ser.groupby(level=["date", "symbol"]).last()
+                for attr in ("kline", "train_kline", "test_kline"):
+                    df = getattr(self, attr, None)
+                    if df is None or df.empty or "symbol" not in df.columns:
+                        continue
+                    key = pd.MultiIndex.from_arrays(
+                        [df["date"].astype(str), df["symbol"].astype(str)])
+                    vals = pd.to_numeric(
+                        pd.Series(ser.reindex(key).to_numpy()), errors="coerce")
+                    # 覆盖不到的 (date,symbol) 视为"无信号"填 0，避免整列 NaN 让因子失效
+                    new_df = df.copy()
+                    new_df[col] = vals.fillna(0.0).to_numpy()
+                    setattr(self, attr, new_df)
+                if hasattr(self, "nodes") and self.nodes is not None:
+                    self.nodes.kline = self.kline
+                added.append(col)
+            except Exception as e:  # noqa: BLE001
+                print(f"[FactorAgent] 外部因子 {raw_name} 并入失败：{e}")
+        if added:
+            print(f"[FactorAgent] 已并入上传数据派生的外部因子列：{added}")
+        return added
 
     @staticmethod
     def _synthetic_data(n_symbols: int, start: str, end: str):
@@ -428,6 +590,8 @@ class FactorAgent:
         max_iterations: Optional[int] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         dialogue_context: str = "",
+        unstructured_context: str = "",
+        external_factors: Optional[Dict[str, pd.Series]] = None,
     ) -> Dict[str, Any]:
         """运行因子挖掘工作流。
 
@@ -438,6 +602,10 @@ class FactorAgent:
                 「换个窗口再跑」这类指代，带进来才能在上文那版因子上改，而不是
                 每轮从零重挖。传了它就不必再手动拼 ``dialogue_context``。
             dialogue_context: 已渲染好的上下文文本；给定时优先于 ``history``。
+            unstructured_context: 用户上传材料经 JEV 结构化后的摘要文本，
+                会作为「另类数据」约束注入生成提示词（见 nodes._unstructured_block）。
+            external_factors: 上传表格解析出的外部因子 ``{因子名: Series(index=(date,symbol))}``，
+                由 :meth:`attach_external_factors` 并到主面板后参与计算。
 
         Returns:
             {"report": str, "state": dict, "metrics": dict}
@@ -451,6 +619,8 @@ class FactorAgent:
             )
         else:
             ctx = dialogue_context
+        if external_factors:
+            self.attach_external_factors(external_factors)
         if self._graph is None:
             self._graph = self._build_graph()
         if max_iterations is not None:
@@ -460,6 +630,7 @@ class FactorAgent:
             "user_input": user_input,
             "factor_description": user_input,
             "dialogue_context": ctx,
+            "unstructured_context": str(unstructured_context or ""),
             "max_iterations": self.max_iterations,
             "iteration": 0,
             "reflections": [],

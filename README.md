@@ -209,6 +209,16 @@ Introduces three enhancements over traditional GP: **Factor Clusters** (maintain
 
 Extracts Alpha signals from multi-modal text data: `TextAnalyzer` (tokenization, entity recognition, sentiment quantification), `AlternativeDataManager` (supply chain, sentiment, satellite text), and `UnstructuredFactorIntegrator` (fusion with structured factors, incremental information contribution evaluation).
 
+**Chat-based mining accepts your own uploads** (images / text / PDF / CSV-XLSX tables). Each file is parsed, then compressed by **JEV** (TypeSafe "System One") into typed judgments — data type, sentiment polarity, whether it aligns to (date, symbol), whether it contains forward-looking information, and the recommended factorisation path — before entering the mining prompt. Tables that align to (date, symbol) are additionally derived into external factor columns merged into the panel.
+
+The judgment chain is three-tier and never blocks: **JEV** (needs `TYPESAFE_API_KEY`, online) → **locally trained models** (offline, millisecond) → **local rules** (last resort). Train the local tier yourself:
+
+```bash
+python scripts/train_multimodal.py      # -> data/models/multimodal/
+```
+
+Four models, each with a distinct job: **Naive Bayes** (data type / sentiment / forward-looking; zero-dependency fallback, trains even without torch), **Transformer** (word order — the only model that catches cross-distance cues like "预计……将"), **CNN** (image layout: candlestick / table / text page / other — lets a wordless screenshot be classified at all), **GNN** (2-layer GCN propagating type labels across materials that share an instrument). On materials whose text carries **no** type keyword and **no** ticker, the GNN reaches 0.33 accuracy vs 0.21 for the text-only model (random = 0.14) — that gap is the evidence the relation graph adds information. Skip reasons and per-model metrics land in `training_report.json`; without torch only the Naive Bayes tier trains.
+
 ![Unstructured text sentiment](docs/assets/feature_unstructured.png)
 
 ### 6. Transformer-Agent Deep Coupling
@@ -224,6 +234,7 @@ Deeply couples Transformer vector representations with the Agent's cognitive loo
 - **Graceful Degradation**: All heavy dependencies (Transformer, RL, ChromaDB) auto-degrade to numpy/heuristic/keyword fallbacks, ensuring zero-dependency-offline operation
 - **Preflight Check**: Built-in health check script for conference presentation readiness
 - **Data Caching**: Multi-source auto-fallback (EastMoney → Sina → Tushare → THS → Synthetic), with local cache for complete offline operation
+- **High-Frequency (L2) in the offline layer**: `scripts/hf_offline_build.py` compacts the raw 15.8M-row L2 snapshot (382 MB) into distributable `data/offline/hf_panel_1min.parquet` / `hf_daily.parquet` / `hf_orders.parquet`; the chat-based mining Agent can switch to this minute panel via `data.source: hf` or `data.offline.hf.agent_mode: true`
 
 See [Offline Data Source](#offline-data-source-built-in-no-network) for the bundled offline dataset.
 

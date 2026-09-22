@@ -29,6 +29,35 @@ llm:
       api_key: "${DEEPSEEK_API_KEY}"
       temperature: 0.3
 
+# ============ JEV 结构化决策模型（TypeSafe "System One"）============
+# JEV 不写长文、只做「判断题」：输入非结构化内容 + 一组问题，返回类型化判定与
+# 校准概率（端到端 70~500ms）。这里用它把用户上传的图片/文本/PDF 压成可落库的
+# 结构化标签（数据类型 / 情绪极性 / 是否含前瞻信息 / 能否对齐到标的-时间 /
+# 建议的因子化路径），再交给挖掘流水线，避免把整篇原文塞进 prompt。
+# 未配置 TYPESAFE_API_KEY 时自动降级为本地规则判定，永不阻塞挖掘。
+jev:
+  enabled: true
+  base_url: "https://api.typesafe.ai/v1/systemone"
+  api_key_env: "TYPESAFE_API_KEY"   # 写在 .env（已 gitignore）
+  model: "jev-latest"
+  timeout: 15.0                     # 单次调用超时（秒）
+  max_chars: 6000                   # 送给 JEV 的内容字符上限（超出截断）
+  fallback_to_heuristic: true       # 调用失败/未配置时回退本地规则
+
+# ── 本地图文识别模型（CNN / GNN / Transformer / 朴素贝叶斯）──
+# 由 `python scripts/train_multimodal.py` 训练，产物落在本段 model_dir。
+# 判定链：JEV（需 Key）→ 本地模型（离线，毫秒级）→ 本地正则（兜底）。
+# 产物不存在时中间那级自动跳过，不会报错；torch 未安装时只训朴素贝叶斯。
+multimodal:
+  enabled: true
+  model_dir: "data/models/multimodal"
+  # 训练超参（脚本默认值，命令行 --epochs 等可覆盖）
+  text_per_class: 150        # 每类合成文本条数（7 类 × 150）
+  image_per_class: 80        # 每类合成图片张数（4 类 × 80）
+  epochs: 12                 # Transformer / CNN 训练轮数
+  gcn_epochs: 200            # GCN 全批量训练，收敛更慢，单独给轮数
+  seed: 7
+
 # Kronos 金融时序预测基础模型 (morrisluo/kronos, HuggingFace: NeoQuasar/Kronos-*)
 # 该模型为 decoder-only 的 K 线序列预测模型, 非聊天 LLM, 因此作为"预测因子"集成:
 # 用其未来 OHLCV 预测构造选股因子, 不参与代码生成(代码生成仍由上面的 LLM 负责)。
@@ -86,7 +115,34 @@ data:
   offline:                          # 仅当 source=offline 时生效（仓库内置本地离线数据，不触网）
     index: "csi800"                 # 指数池名，对应 data/offline/bars_csi800_part*.parquet
     dir: ""                         # 离线数据目录，留空默认 data/offline
+    # ── 高频 L2 快照并入离线数据源 ──
+    # 原始快照 382MB / 1580 万行，不适合直接进挖掘面板；由
+    # `python scripts/hf_offline_build.py` 预先压实为可分发的小表落进 data/offline，
+    # 之后 source=offline 也能直接取高频（无需把原始 .pqt 拷进仓库）。
+    hf:
+      enabled: true
+      file: "C:/Users/HP/Desktop/20251208.pqt"        # 原始 L2 快照（仅构建脚本使用）
+      orders_file: "C:/Users/HP/Desktop/附件3：20251208_orders.xlsx"
+      panel_file: "data/offline/hf_panel_1min.parquet"  # 分钟级横截面面板（Agent 挖掘用）
+      daily_file: "data/offline/hf_daily.parquet"       # 合约日频 + 日内高频统计
+      orders_parquet: "data/offline/hf_orders.parquet"  # 自身委托流水（成交概率建模）
+      meta_file: "data/offline/hf_meta.json"
+      agent_mode: false        # true = 对话式挖掘直接吃高频分钟面板（symbol 为期货合约）
+      max_contracts: 24        # 面板最多纳入多少个合约（按快照数=活跃度取前 N）
+      freq: "1min"             # 面板重采样频率
+  uploads:                     # 对话式挖掘的文件上传（图片/文本/PDF/表格）
+    dir: "data/uploads"
+    index_file: "data/uploads/index.json"
+    max_files: 12              # 单次会话最多保留的上传文件数
+    max_bytes: 20971520        # 单文件上限（20MB）
+    parse_images: true         # 图片：抽取尺寸/主色等结构化描述；装了 OCR 依赖则额外识别文字
+    ocr_enabled: false         # 需要 pytesseract + tesseract 本体，未装则自动跳过
   hf:                               # 仅当 source=hf 时生效：期货全市场 L2 五档快照（离线 parquet）
+    # ── 用户接入自有高频表（优先于 L2 快照）──
+    # 只要表里有「时间 + 标的 + 价格」三列即可（csv/parquet/xlsx），列名中英文都认；
+    # 其余数值列自动挂 hf_ 前缀进入面板。留空则用下面的 L2 快照现场构建。
+    # 三条路（user_table / L2 快照 / 离线压实产物）都取不到时，Agent 自动回退常规日频工作流。
+    user_table: ""
     # 单日全市场快照约 1580 万行 / 795 合约 / 82 品种，勿整份读进内存（loader 已做谓词下推）
     file: "C:/Users/HP/Desktop/20251208.pqt"
     cache_dir: "data/hf/cache"      # 按合约切片的二级缓存，二次读取秒开

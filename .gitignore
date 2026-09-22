@@ -101,3 +101,9 @@ data/failure_memory.json
 # 高频 L2 快照：源文件与二级切片缓存都不入库（单日 15.8M 行），
 # 由 config.yaml 的 data.hf.file / search_dirs 在本机指向真实路径
 data/hf/
+
+# 对话式挖掘的用户上传材料（可能含私密数据），只留运行时目录
+data/uploads/
+
+# 本地图文模型的训练产物（由 scripts/train_multimodal.py 可复现生成）
+data/models/

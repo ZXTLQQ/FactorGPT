@@ -325,7 +325,14 @@ def save_data_settings(config_path: Any, env_path: Any, values: Dict[str, Any]) 
     if scalars:
         text = patch_yaml(text, ["data"], scalars)
     for sub, upd in nested.items():
-        text = patch_yaml(text, ["data", sub], upd)
+        # 二层嵌套（如 offline.hf）不能塞进一层补丁：yaml_scalar 会把 dict 序列化成
+        # Python repr，写回 config.yaml 就变成一行非法 YAML，整个文件直接读不出来。
+        plain = {k: v for k, v in upd.items() if not isinstance(v, dict)}
+        deep = {k: v for k, v in upd.items() if isinstance(v, dict) and v}
+        if plain:
+            text = patch_yaml(text, ["data", sub], plain)
+        for k2, v2 in deep.items():
+            text = patch_yaml(text, ["data", sub, k2], v2)
     write_text_atomic(config_path, text)
     res.saved.append("`config.yaml` 的 data 段已原地更新（其余段落与注释保持不变）。")
     return res

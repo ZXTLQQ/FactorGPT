@@ -20,6 +20,11 @@ class AgentState(TypedDict, total=False):
     # 最近若干轮对话压成的上下文（src/agent/context.py）。多轮工作里第二句往往
     # 是「换个窗口」「再激进一点」这类指代，没有它每轮都只能从零重挖。
     dialogue_context: str
+    # 用户上传的非结构化材料（图片/文本/PDF）经 JEV 结构化后的摘要，
+    # 作为另类数据约束注入生成提示词；空字符串表示本轮无上传。
+    unstructured_context: str
+    # 上传表格解析出的外部因子名 -> 已并入主面板的列名（供报告与审计追溯）
+    external_factor_names: List[str]
 
     # —— RAG ——
     knowledge_context: str               # 检索到的因子知识上下文

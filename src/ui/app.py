@@ -48,6 +48,8 @@ from agent.intent import chat_answer, classify
 from agent.vibe_trading import VibeTradingSession
 from engine import factor_system as FS
 from engine.genetic_enhanced import EnhancedFactorEvolver
+from engine.jev import JEVClient
+from engine.upload_ingest import SUPPORTED_EXTS, UploadIngestor
 from rag.chroma_store import ensure_chroma
 from rag.retriever import rag_vector_enabled
 from store import database as db
@@ -397,6 +399,8 @@ def _init_data_source_session():
         "ui_ds_ths_token": "",
         "ui_ds_offline_index": "csi800",
         "ui_ds_offline_dir": "",
+        "ui_ds_offline_hf_agent_mode": False,
+        "ui_ds_hf_user_table": "",
         "ui_ds_synthetic_on_fail": False,
         "ui_ds_force_synthetic": False,
         "ui_ds_proxy_enabled": False,
@@ -406,6 +410,14 @@ def _init_data_source_session():
     for key, default in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = data.get(key.replace("ui_ds_", ""), default)
+    # 嵌套项：offline.hf.agent_mode / hf.user_table（扁平规则取不到，单独回显）
+    if "ui_ds_offline_hf_agent_mode" not in st.session_state:
+        st.session_state.ui_ds_offline_hf_agent_mode = bool(
+            ((data.get("offline") or {}).get("hf") or {}).get("agent_mode", False))
+    if "ui_ds_hf_user_table" not in st.session_state:
+        st.session_state.ui_ds_hf_user_table = str(
+            (data.get("hf") or {}).get("user_table")
+            or ((data.get("offline") or {}).get("hf") or {}).get("user_table") or "")
 
 
 def _render_offline_status(index: str):
@@ -452,6 +464,31 @@ def _render_offline_status(index: str):
     )
 
 
+def _render_hf_status():
+    """展示离线高频压实产物的状态（面板行数 / 合约数 / 分钟数）。"""
+    try:
+        from data.offline_adapter import OfflineDataSource
+
+        src = OfflineDataSource(config=load_config())
+        meta = src.hf_meta()
+    except Exception as e:  # noqa: BLE001
+        st.warning(f"高频状态读取失败：{e}")
+        return
+    if not meta:
+        st.warning(
+            "离线高频表缺失：data/offline/hf_panel_1min.parquet 不存在。"
+            " 先跑 `python scripts/hf_offline_build.py` 把 L2 快照压实进离线目录。"
+        )
+        return
+    st.success(
+        f"离线高频表就绪（freq={meta.get('freq', '-')}）：\n"
+        f"- 分钟面板：{meta.get('panel_rows', 0):,} 行 / "
+        f"{meta.get('panel_contracts', 0)} 合约 / {meta.get('panel_minutes', 0)} 分钟\n"
+        f"- 日频聚合：{meta.get('daily_rows', 0):,} 行；委托流水：{meta.get('orders_rows', 0):,} 行\n"
+        f"- 高频列：{len([c for c in meta.get('panel_columns', []) if str(c).startswith('hf_')])} 个"
+    )
+
+
 def _render_data_source_panel():
     """侧边栏「数据源设置」面板：允许用户自行调整数据源接口。
 
@@ -464,20 +501,36 @@ def _render_data_source_panel():
         ds_source = st.session_state.ui_ds_source
         st.selectbox(
             "数据源开关",
-            ["legacy", "neodata", "offline"],
-            index={"legacy": 0, "neodata": 1, "offline": 2}.get(ds_source, 0),
+            ["legacy", "neodata", "offline", "hf"],
+            index={"legacy": 0, "neodata": 1, "offline": 2, "hf": 3}.get(ds_source, 0),
             key="ui_ds_source",
             help=(
                 "legacy=沿用 akshare/sina/tushare 本地自爬（需联网）；"
                 "neodata=走平台稳定源（需可用网关）；"
-                "offline=使用仓库内置的本地 parquet 离线数据（不触网）。"
+                "offline=使用仓库内置的本地 parquet 离线数据（不触网，含已压实的高频表）；"
+                "hf=期货 L2 五档快照高频源（离线 parquet，现场构建分钟面板）。"
             ),
         )
 
-        if st.session_state.ui_ds_source == "offline":
+        if st.session_state.ui_ds_source == "hf":
+            st.info(
+                "高频数据源：优先读「自有高频表」（下方路径），未配置时才用 L2 五档快照"
+                "（config → data.hf.file）现场重采样成分钟横截面面板"
+                "（date=分钟时间戳，symbol=期货合约）。"
+            )
+            st.text_input(
+                "自有高频表路径（可选）",
+                key="ui_ds_hf_user_table",
+                placeholder="如 D:/data/my_1min.csv",
+                help="csv/parquet/xlsx 均可，只要有『时间 + 标的 + 价格』三列；"
+                     "列名中英文都认（date/datetime/时间、symbol/code/合约、close/收盘价…），"
+                     "其余数值列自动挂 hf_ 前缀进入面板。取不到时自动回退常规日频工作流。",
+            )
+        elif st.session_state.ui_ds_source == "offline":
             st.info(
                 "离线数据源：读取仓库内置的 data/offline/ 本地 parquet，完全离线不触网。"
-                " 数据随仓库分发，克隆/更新后即可直接使用。"
+                " 高频 L2 已压实为 hf_panel_1min.parquet / hf_daily.parquet / hf_orders.parquet，"
+                "开启下方开关即可让对话式挖掘直接吃高频面板。"
             )
             st.text_input(
                 "离线指数池",
@@ -491,6 +544,14 @@ def _render_data_source_panel():
                 help="自定义 offline 数据目录（含 bars_*.parquet / meta.json）。",
             )
             _render_offline_status(st.session_state.ui_ds_offline_index)
+            st.checkbox(
+                "对话式挖掘使用高频分钟面板（offline.hf.agent_mode）",
+                key="ui_ds_offline_hf_agent_mode",
+                help="开启后 Agent 的数据面板换成 hf_panel_1min.parquet：date 为分钟时间戳、"
+                     "symbol 为期货合约，可用 hf_* 订单簿列；同时自动跳过行业/市值中性化"
+                     "（合约无行业、无市值）。",
+            )
+            _render_hf_status()
         else:
             st.selectbox(
                 "主力数据源（legacy）",
@@ -551,13 +612,23 @@ def _render_data_source_panel():
 def _collect_data_source_cfg():
     """从会话状态收集 data 段字段（仅覆盖用户可调项，保留其余默认项）。"""
     cur = load_config().get("data") or {}
-    offline = {}
+    # offline 段含嵌套的 hf 子配置（高频压实产物路径 + agent_mode），
+    # 必须并回原值再覆盖可调项，否则「保存配置」会把 hf 段整块抹掉。
+    offline = dict(cur.get("offline") or {})
+    user_table = str(st.session_state.get("ui_ds_hf_user_table") or "").strip()
     if st.session_state.ui_ds_source == "offline":
-        offline = {
+        offline.update({
             "index": st.session_state.ui_ds_offline_index or "csi800",
             "dir": st.session_state.ui_ds_offline_dir or "",
-        }
+        })
+        hf = dict(offline.get("hf") or {})
+        hf["agent_mode"] = bool(st.session_state.ui_ds_offline_hf_agent_mode)
+        if user_table:
+            hf["user_table"] = user_table
+        offline["hf"] = hf
     return {
+        # 用户接入的自有高频表：source=hf 与 offline.hf.agent_mode 两条路都认
+        "hf": {**(cur.get("hf") or {}), "user_table": user_table},
         "source": st.session_state.ui_ds_source,
         "primary_source": st.session_state.ui_ds_primary,
         "prefer_sina": bool(st.session_state.ui_ds_prefer_sina),
@@ -1106,6 +1177,72 @@ def render_factor_agent():
 
 
 # ----------------------------------------------------------------------
+# 对话式挖掘：文件上传（图片 / 文本 / PDF / 表格）→ JEV 结构化 → 挖掘上下文
+# ----------------------------------------------------------------------
+def _upload_ingestor() -> UploadIngestor:
+    """会话级上传管道（缓存在 session_state，刷新不丢）。"""
+    ing = st.session_state.get("chat_ingestor")
+    if ing is None:
+        ing = UploadIngestor(load_config())
+        st.session_state.chat_ingestor = ing
+    return ing
+
+
+def _render_upload_panel():
+    """上传区：解析 → JEV 判定 → 摘要展示；材料会随下一句需求一起送进挖掘。"""
+    ing = _upload_ingestor()
+    jev_ok = JEVClient(load_config()).callable
+    with st.expander(
+        f"📎 上传材料（图片/文本/PDF/表格）· JEV 判定{'已就绪' if jev_ok else '本地规则降级'}",
+        expanded=False,
+    ):
+        st.caption(
+            "材料先经 JEV 压成结构化判定（类型/情绪/能否对齐 date×symbol/是否含前瞻信息），"
+            "再把结论与摘录并入挖掘提示词；表格若能对齐则直接派生外部因子列并入面板。"
+        )
+        files = st.file_uploader(
+            "选择文件（可多选）",
+            type=[e.lstrip(".") for e in sorted(SUPPORTED_EXTS)],
+            accept_multiple_files=True,
+            key="chat_uploader",
+        )
+        if files:
+            known = {it.name for it in ing.items}
+            fresh = [f for f in files if f.name not in known]
+            for f in fresh:
+                try:
+                    item = ing.ingest_bytes(f.name, f.getvalue())
+                    st.success(f"已解析 {item.name}（{item.kind}，"
+                               f"{'已派生外部因子' if item.factor is not None else '仅上下文'}）")
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"{f.name} 处理失败：{e}")
+            if fresh:
+                ing.persist_index()
+        if not ing.items:
+            st.info("尚未上传材料。")
+            return
+        rows = []
+        for it in ing.items:
+            j = it.jev or {}
+            rows.append({
+                "文件": it.name, "类型": it.kind,
+                "JEV判定": j.get("data_type_label", "-"),
+                "情绪": j.get("sentiment_label", "-"),
+                "可因子化": j.get("factorizable", "-"),
+                "前瞻风险": j.get("forward_looking", "-"),
+                "引擎": j.get("engine", "-"),
+                "外部因子": it.factor_name or "-",
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        for it in ing.items:
+            if it.jev and it.jev.get("summary"):
+                st.caption(it.jev["summary"])
+        if st.button("🧹 清空上传材料", key="chat_upload_clear"):
+            st.session_state.pop("chat_ingestor", None)
+            st.rerun()
+
+
+# ----------------------------------------------------------------------
 # 页面：Agent 对话（多轮）
 # ----------------------------------------------------------------------
 def render_agent_chat():
@@ -1116,6 +1253,8 @@ def render_agent_chat():
     if st.button("🧹 清空对话"):
         st.session_state.chat_history = []
         st.rerun()
+
+    _render_upload_panel()
 
     auto_method = st.checkbox("每条回复自动附方法学解读", value=True, key="chat_method")
     auto_route = st.checkbox(
@@ -1146,10 +1285,16 @@ def render_agent_chat():
             prompt = res.rewritten
         agent = get_agent()
         _apply_model(agent)
+        # 上传材料：判定摘要进 prompt，可对齐的表格直接并入面板当外部因子
+        ing = st.session_state.get("chat_ingestor")
+        up_ctx = ing.context_text() if ing else ""
+        up_factors = ing.external_factors() if ing else {}
         with st.spinner("Agent 正在挖掘因子..."):
             # 带上最近对话：第二轮「换个窗口再跑」这类跟进才有上一版因子可改。
             result = agent.run(prompt, max_iterations=None,
-                               history=st.session_state.chat_history[:-1])
+                               history=st.session_state.chat_history[:-1],
+                               unstructured_context=up_ctx,
+                               external_factors=up_factors)
         d = _build_agent_dict(result, with_method=auto_method)
         if res is not None:
             d["intent"] = res.as_dict()

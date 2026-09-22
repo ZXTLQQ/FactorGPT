@@ -62,11 +62,14 @@ class FactorAgentNodes:
         learned=None,
         train_kline: Optional[pd.DataFrame] = None,
         test_kline: Optional[pd.DataFrame] = None,
+        data_modality: str = "daily",
     ) -> None:
         self.llm = llm
         self.retriever = retriever
         self.backtester = backtester
         self.kline = kline
+        # daily=日频股票面板；intraday=高频分钟面板（symbol 为期货合约）
+        self.data_modality = data_modality or "daily"
         self.train_kline = train_kline if train_kline is not None else kline
         self.test_kline = test_kline  # 样本外测试集（None 表示未切分）
         self.industry = industry
@@ -115,8 +118,47 @@ class FactorAgentNodes:
     # ------------------------------------------------------------------
     # 2) 因子代码生成
     # ------------------------------------------------------------------
+    def _data_block(self) -> str:
+        """按数据模态注入列契约与命名约束。
+
+        高频分支下 ``date`` 是分钟时间戳、``symbol`` 是期货合约，若不讲清楚，
+        LLM 会按日频股票的习惯写 ``zfill(6)`` / 用日频语义解释"高频"因子——
+        正是上一版 `HighFreqVolumeMomentum` 名实不符的成因。
+        """
+        if self.data_modality != "intraday":
+            return ""
+        hf_cols = [str(c) for c in self.kline.columns if str(c).startswith("hf_")]
+        shown = ", ".join(hf_cols[:18]) + (" …" if len(hf_cols) > 18 else "")
+        return (
+            "\n【当前数据是高频分钟面板（务必按此理解）】\n"
+            "1. date 为分钟时间戳（'YYYY-MM-DD HH:MM:SS'），横截面 = 同一分钟的所有合约；\n"
+            "2. symbol 为期货合约代码（如 AU2601），不是 6 位股票代码，不要 zfill；\n"
+            f"3. 除 OHLCV 外还有 {len(hf_cols)} 个订单簿衍生列可用：{shown}\n"
+            "   其中 hf_ofi=该分钟订单流净额（区间累计量）、hf_obi_l1/hf_depth_ratio="
+            "一档/多档买卖压力失衡、hf_rvol_20=短窗已实现波动、hf_spread/hf_rel_spread=价差水平；\n"
+            "4. 现金流量（hf_ofi/hf_d_volume）与状态量（价差/失衡）的口径不同："
+            "前者是本分钟的净额，后者是本分钟的均值；\n"
+            "5. 命名必须名实相符：只有真正用到了 hf_* 列或分钟级信息，因子名才可含 "
+            "HF/Intraday/Micro 字样；仅用 close/volume 的日频信息时禁止自称高频，"
+            "并在 rationale 里写明实际频率。\n"
+        )
+
+    @staticmethod
+    def _unstructured_block(text: str) -> str:
+        """用户上传材料（经 JEV 结构化）的注入块。"""
+        text = str(text or "").strip()
+        if not text:
+            return ""
+        return (
+            "\n【用户上传的非结构化材料（已结构化）】\n"
+            f"{text[:4000]}\n"
+            "若材料能映射到 date×symbol，可据此构造事件/情绪/文本因子，并在 rationale 中说明对齐方式；\n"
+            "若无法对齐（如无时间戳、无标的），不要硬凑成因子，应在 description 中说明不可用原因。\n"
+        )
+
     def _build_generate_prompt(self, description: str, knowledge: str,
-                               dialogue_context: str = "") -> str:
+                               dialogue_context: str = "",
+                               unstructured_context: str = "") -> str:
         return (
             "你是一名资深的量化金融因子工程师。请根据用户需求与检索到的因子知识，"
             "编写一个用于计算选股因子的 Python 函数。\n\n"
@@ -153,6 +195,8 @@ class FactorAgentNodes:
                "若上文已挖出过因子且本轮是改进意见（换窗口/改参数/换标的池等），"
                "请在上文那版因子的基础上改，而不是另起炉灶写一个无关的因子。\n"
                if dialogue_context else "")
+            + self._data_block()
+            + self._unstructured_block(unstructured_context)
             + self._failure_block()
         )
 
@@ -206,7 +250,9 @@ class FactorAgentNodes:
         try:
             raw = self.llm.complete(
                 system="你是量化因子工程专家，输出严格符合约定的 JSON。",
-                user=self._build_generate_prompt(description, knowledge, dialogue_context),
+                user=self._build_generate_prompt(
+                    description, knowledge, dialogue_context,
+                    state.get("unstructured_context", "") or ""),
                 temperature=0.4,
             )
             parsed = extract_json(raw)

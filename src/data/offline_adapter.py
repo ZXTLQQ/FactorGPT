@@ -96,6 +96,14 @@ class OfflineDataSource:
         self._index_daily: Optional[pd.DataFrame] = None
         self._calendar: Optional[List[str]] = None
         self._micro: Optional[pd.DataFrame] = None
+        # ── 高频 L2（并入离线层）──
+        # 原始快照 382MB 不入库，预先压实成 data/offline/hf_*.parquet；
+        # 配置见 config.yaml → data.offline.hf。没有压实产物时仍可按
+        # hf.file 现场构建（较慢，仅构建脚本/体检使用）。
+        self._hf_cfg: Dict[str, Any] = offline_cfg.get("hf", {}) or {}
+        self._hf_panel: Optional[pd.DataFrame] = None
+        self._hf_daily: Optional[pd.DataFrame] = None
+        self._hf_orders: Optional[pd.DataFrame] = None
 
         # 启动时预检查数据文件，缺失时给出明确指引
         if not self._bars_paths:
@@ -498,6 +506,99 @@ class OfflineDataSource:
     def get_minute_kline(self, *args: Any, **kwargs: Any) -> pd.DataFrame:
         self.last_fetch_info = {"source": "offline", "message": "离线数据无分钟K，返回空"}
         return pd.DataFrame()
+
+    # ------------------------------------------------------------------
+    # 高频 L2（已压实进 data/offline/hf_*.parquet）
+    # ------------------------------------------------------------------
+    @property
+    def hf_enabled(self) -> bool:
+        """离线层是否已有高频压实产物。"""
+        return bool(self._hf_cfg.get("enabled", True)) and self._hf_panel_path().is_file()
+
+    def _hf_panel_path(self) -> Path:
+        p = Path(str(self._hf_cfg.get("panel_file") or "data/offline/hf_panel_1min.parquet"))
+        return p if p.is_absolute() else Path.cwd() / p
+
+    def _hf_daily_path(self) -> Path:
+        p = Path(str(self._hf_cfg.get("daily_file") or "data/offline/hf_daily.parquet"))
+        return p if p.is_absolute() else Path.cwd() / p
+
+    def _hf_orders_path(self) -> Path:
+        p = Path(str(self._hf_cfg.get("orders_parquet") or "data/offline/hf_orders.parquet"))
+        return p if p.is_absolute() else Path.cwd() / p
+
+    def _hf_meta_path(self) -> Path:
+        p = Path(str(self._hf_cfg.get("meta_file") or "data/offline/hf_meta.json"))
+        return p if p.is_absolute() else Path.cwd() / p
+
+    def hf_meta(self) -> Dict[str, Any]:
+        """高频压实产物的元信息（行数/合约数/频率/来源文件）。"""
+        from data.hf_panel import read_offline_meta
+
+        return read_offline_meta(self._hf_meta_path())
+
+    def get_hf_panel(self, symbols: Optional[List[str]] = None,
+                     start: Optional[str] = None,
+                     end: Optional[str] = None) -> pd.DataFrame:
+        """分钟级横截面面板（高频挖掘用）。
+
+        ``date`` 为分钟时间戳字符串，``symbol`` 为**期货合约**（不是 6 位股票码），
+        除 OHLCV 外还带 ``hf_*`` 订单簿列（ofi/obi_l1/depth_ratio/rvol_20 …）。
+        未压实过时返回空表，绝不去读 382MB 原始快照。
+        """
+        from data.hf_panel import read_offline_table
+
+        if self._hf_panel is None:
+            self._hf_panel = read_offline_table(self._hf_panel_path())
+        panel = self._hf_panel
+        if panel.empty:
+            self.last_fetch_info = {
+                "source": "none",
+                "message": "离线高频面板缺失，先跑 python scripts/hf_offline_build.py",
+            }
+            return panel
+        out = panel
+        if symbols:
+            keys = {str(s).strip().lower() for s in symbols}
+            out = out[out["symbol"].astype(str).str.lower().isin(keys)]
+        if start:
+            out = out[out["date"] >= str(start)]
+        if end:
+            out = out[out["date"] <= str(end)]
+        self.last_fetch_info = {
+            "source": "offline-hf",
+            "message": (f"高频分钟面板 {len(out)} 行 / {out['symbol'].nunique()} 合约"
+                        f" / {out['date'].nunique()} 分钟"),
+        }
+        return out.reset_index(drop=True)
+
+    def get_hf_daily(self, symbols: Optional[List[str]] = None) -> pd.DataFrame:
+        """合约日 K + 日内高频统计（``hf_*_day`` 列）。"""
+        from data.hf_panel import read_offline_table
+
+        if self._hf_daily is None:
+            self._hf_daily = read_offline_table(self._hf_daily_path())
+        out = self._hf_daily
+        if not out.empty and symbols:
+            keys = {str(s).strip().lower() for s in symbols}
+            out = out[out["symbol"].astype(str).str.lower().isin(keys)]
+        return out.reset_index(drop=True)
+
+    def get_hf_orders(self) -> pd.DataFrame:
+        """自身委托流水（成交概率建模用）。"""
+        from data.hf_panel import read_offline_table
+
+        if self._hf_orders is None:
+            self._hf_orders = read_offline_table(self._hf_orders_path())
+        return self._hf_orders
+
+    def get_hf_constituents(self, top: int = 0) -> List[str]:
+        """高频标的池等价物：面板里出现过的合约（按快照活跃度已预先截断）。"""
+        panel = self.get_hf_panel()
+        if panel.empty:
+            return []
+        syms = list(dict.fromkeys(panel["symbol"].astype(str).tolist()))
+        return syms[:top] if top else syms
 
 
 if __name__ == "__main__":

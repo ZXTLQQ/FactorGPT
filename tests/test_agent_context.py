@@ -89,7 +89,38 @@ def test_generate_prompt_includes_context_only_when_present():
     from agent.nodes import FactorAgentNodes
 
     node = object.__new__(FactorAgentNodes)  # 跳过 __init__：只测 prompt 拼接
+    node.data_modality = "daily"
     base = node._build_generate_prompt("动量因子", "知识", "")
     assert "上文对话" not in base
     with_ctx = node._build_generate_prompt("动量因子", "知识", "助手：挖出因子 mom_60d")
     assert "mom_60d" in with_ctx and "另起炉灶" in with_ctx
+
+
+def test_intraday_prompt_states_minute_and_contract_conventions():
+    """高频分支必须讲清 date=分钟、symbol=合约、禁止 zfill，否则名实不符会重演。"""
+    import pandas as pd
+
+    from agent.nodes import FactorAgentNodes
+
+    node = object.__new__(FactorAgentNodes)
+    node.data_modality = "intraday"
+    node.kline = pd.DataFrame({"date": [], "symbol": [], "close": [],
+                               "hf_ofi": [], "hf_spread": []})
+    out = node._build_generate_prompt("订单流失衡因子", "知识", "")
+    assert "分钟时间戳" in out and "不要 zfill" in out
+    assert "hf_ofi" in out and "名实相符" in out
+
+
+def test_unstructured_context_only_when_uploaded():
+    """上传材料的结构化摘要只在有上传时出现，且带「对不齐就别硬凑」的约束。"""
+    import pandas as pd
+
+    from agent.nodes import FactorAgentNodes
+
+    node = object.__new__(FactorAgentNodes)
+    node.data_modality = "daily"
+    node.kline = pd.DataFrame({"date": [], "symbol": [], "close": []})
+    base = node._build_generate_prompt("动量因子", "知识", "")
+    assert "非结构化材料" not in base
+    up = node._build_generate_prompt("动量因子", "知识", "", "研报：预计需求回暖")
+    assert "非结构化材料" in up and "预计需求回暖" in up

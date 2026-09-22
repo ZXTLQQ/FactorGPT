@@ -35,3 +35,8 @@ optuna>=3.5.0           # 超参搜索（src/engine/hpo.py）；不装则提示�
 # peft>=0.10.0         # LoRA 微调（scripts/distill_factors.py 蒸馏用）
 # transformers>=4.40.0 # 微调基座（蒸馏用，体积大）
 # datasets>=2.18.0     # 训练数据集加载（蒸馏用）
+
+# ---- 对话式挖掘：上传材料解析（可选依赖，按需安装）----
+# Pillow>=10.0.0        # 图片结构化描述（尺寸/主色）；不装则图片仅记录元信息
+# pytesseract>=0.3.10   # 图片 OCR（还需本机 tesseract 本体）；不装则跳过，不臆测图中文字
+# PyPDF2>=3.0.0         # PDF 正文抽取；不装则 PDF 解析降级为空
