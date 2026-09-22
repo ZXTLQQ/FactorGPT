@@ -266,10 +266,15 @@ class FactorSandbox:
             env = os.environ.copy()
             if self.memory_limit_mb > 0:
                 env["SANDBOX_MEMORY_LIMIT_MB"] = str(self.memory_limit_mb)
+            # 子进程的错误信息是中文的：强制它用 UTF-8 写、父进程用 UTF-8 读，
+            # 否则在 GBK 默认编码的 Windows 上父进程解码 stderr 会抛
+            # UnicodeDecodeError，真正的报错反而被吞成一个空消息。
+            env["PYTHONIOENCODING"] = "utf-8"
             try:
                 proc = subprocess.run(
                     [sys.executable, runner, code_path, in_path, out_path],
-                    capture_output=True, text=True, timeout=self.timeout,
+                    capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=self.timeout,
                     cwd=os.path.dirname(os.path.abspath(__file__)),
                     env=env,
                 )

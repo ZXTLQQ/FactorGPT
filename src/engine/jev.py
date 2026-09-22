@@ -42,8 +42,6 @@ import os
 import re
 from typing import Any, Dict, Optional
 
-import requests
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.typesafe.ai/v1/systemone"
@@ -159,6 +157,12 @@ class JEVClient:
             "state": str(state)[: self.max_chars],
             "questions": questions or QUESTIONS,
         }
+        # requests 只在真要联网时才导入：它是可选项，没装不能让 `import engine.jev`
+        # 直接崩掉——那样会把离线的本地模型与规则降级一起拖下水。
+        try:
+            import requests  # noqa: PLC0415
+        except ImportError as e:  # pragma: no cover - 环境缺失
+            raise RuntimeError(f"JEV 联网判定需要 requests：pip install requests（{e}）") from e
         r = requests.post(
             self.base_url,
             headers={"Authorization": f"Bearer {self.api_key}",

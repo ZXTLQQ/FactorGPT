@@ -171,3 +171,28 @@ def test_jev_falls_back_to_local_model_then_rules(tmp_path, monkeypatch):
     assert over["data_type"] == "quote_screenshot"
     assert "行情" in over["data_type_label"] or "数值" in over["data_type_label"]
     assert override_data_type(dict(res2), "not_a_label")["data_type"] == res2["data_type"]
+
+
+def test_jev_imports_without_optional_requests(monkeypatch):
+    """CI 只装核心依赖（无 requests）：jev 必须仍可导入，否则整条判定链在收集阶段就塌。
+
+    曾经的回归：requests 写在模块顶层，CI 未安装 → 两个测试模块 ImportError → 红灯。
+    联网是可选能力，导入是必需能力，两者不能绑在一起。
+    """
+    import builtins
+    import importlib
+
+    import engine.jev as jev
+
+    real_import = builtins.__import__
+
+    def _blocked(name, *args, **kwargs):
+        if name == "requests" or name.startswith("requests."):
+            raise ImportError("simulated: requests not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked)
+    importlib.reload(jev)
+    assert not hasattr(jev, "requests"), "requests 必须改为按需导入，不能留在模块顶层"
+    monkeypatch.undo()
+    importlib.reload(jev)

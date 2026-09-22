@@ -98,6 +98,18 @@ class TestSandboxIsolation:
         with pytest.raises(ValueError):
             _sandbox().run("", _make_df())
 
+    def test_subprocess_failure_carries_child_message(self):
+        """子进程失败必须带回子进程的报错，不能只剩一句空的「执行失败」。
+
+        踩过的坑：父进程读 stderr 时不指定编码，Windows 默认用 GBK 去解 UTF-8 的
+        中文 traceback，直接抛 UnicodeDecodeError，错误信息被吞成空字符串——
+        用户看到的是「沙箱子进程执行失败：」后面什么都没有。
+        """
+        code = 'def alpha_factor(df):\n    import os\n    return df["close"]\n'
+        with pytest.raises(ValueError, match=r"执行失败：\n\S") as ei:
+            _sandbox().run(code, _make_df())
+        assert "os" in str(ei.value), f"报错应指出是哪个导入被拒：{ei.value}"
+
 
 # ---------------------------------------------------------------- 前视检测 #
 class TestLookaheadDetection:
