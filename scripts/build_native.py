@@ -104,8 +104,9 @@ def build_python_module(dry: bool = False) -> int:
     except Exception as e:  # noqa: BLE001
         raise SystemExit(f"缺少 pybind11：{e}（pip install pybind11）")
     setup = ROOT / "native" / "setup_native.py"
-    cmd = [sys.executable, str(setup), "build_ext", "--inplace",
-           f"--build-lib={OUT_DIR}"]
+    # 只给 --inplace：产物要落在仓库根，loader 才能 ``import fg_native``。
+    # 不再给 --build-lib（那会把产物留在 build/ 里，两个 --inplace 语义还可能打架）
+    cmd = [sys.executable, str(setup), "build_ext", "--inplace"]
     env = os.environ.copy()
     inc = str(Path(pybind11.get_include()))
     env.setdefault("FG_PYBIND_INCLUDE", inc)
@@ -115,17 +116,30 @@ def build_python_module(dry: bool = False) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="构建 FactorGPT 原生热核")
-    ap.add_argument("--python", action="store_true", help="额外构建 pybind11 扩展")
+    ap.add_argument("--python", action="store_true", help="构建 pybind11 扩展")
+    ap.add_argument("--dll", action="store_true", help="构建可被 ctypes 加载的动态库")
     ap.add_argument("--print-cmd", action="store_true", help="只打印命令不执行")
     args = ap.parse_args()
     if not SRC.exists():  # pragma: no cover
         raise SystemExit(f"源码不存在：{SRC}")
-    out = build_dll(dry=args.print_cmd)
+    if not (args.python or args.dll):
+        # 默认值是有讲究的：本机（往往没有 MSVC）默认编动态库，走 ctypes 那条
+        # 不依赖 CPython ABI 的路；CI 里显式写 --python。默认不做两件事，是为了
+        # 让"没装工具链"只影响这一件产物。
+        args.dll = True
+
+    # 顺序同样是刻意的：编扩展**不能**依赖前面的动态库成功。setuptools 会自己
+    # 去找 MSVC/gcc（不需要 cl 在 PATH 里），而动态库这条路必须显式找到编译器——
+    # 把两者串成一条链，会让"机器上没有 PATH 可见的编译器"连带把本来能成功的
+    # 扩展构建也拖垮（Windows CI 正是这个情况）。
     if args.python:
         rc = build_python_module(dry=args.print_cmd)
         if rc != 0:
             return rc
-    print(f"[done] {out}；运行期用 mining.native_kernels.backend() 查看是否生效")
+    if args.dll:
+        out = build_dll(dry=args.print_cmd)
+        print(f"[done] {out}")
+    print("[hint] 运行期用 mining.native_kernels.backend() 查看当前生效的后端")
     return 0
 
 

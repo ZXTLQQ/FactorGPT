@@ -34,13 +34,27 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install numpy pandas pytest pybind11
+          pip install numpy pandas scipy pytest pytest-timeout pybind11 setuptools wheel
+
+      - name: Toolchain diagnostics (informational)
+        # 这一条**故意不参与成败判定**：它的作用是当"Verify backend"变红时，日志里
+        # 已经写明这台机器到底有什么编译器，省掉一轮"再加个 print 重跑"的往返。
+        # 用脚本而不是 heredoc：Windows runner 的默认 shell 是 pwsh，不支持 <<PY。
+        continue-on-error: true
+        run: python scripts/native_diag.py
 
       - name: Build extension in place
-        # 产物落在仓库根，mining.native_kernels 会优先加载它
+        # 只用 --python：产物由 setuptools 自己找工具链（不需要 cl 在 PATH 上）。
+        # 不要顺手加 --dll——那条路要求 PATH 里能找到编译器，Windows runner 默认没有。
         run: python scripts/build_native.py --python
 
+      - name: Report why the backend is what it is (informational)
+        continue-on-error: true
+        run: python scripts/native_diag.py
+
       - name: Verify backend is native
+        # 硬门禁：这一步红了，说明"C++ 加速"这条能力事实上不存在（可能是没编出来、
+        # 也可能编出来了但 import 失败被静默降级到 pandas）。
         run: python -c "import sys; sys.path.insert(0,'src'); import mining.native_kernels as NK; b=NK.backend(); print('backend =', b); sys.exit(0 if b.startswith('pybind11') else 1)"
 
       - name: Parity tests (native vs pandas)

@@ -84,13 +84,14 @@ def test_batch_is_faster_than_rowwise():
     g0 = CR.fit_cs(yv, xsv, min_stocks=20)
     assert np.allclose(r0.resid, g0.resid, rtol=1e-7, atol=1e-8, equal_nan=True)
 
-    def timed(fn, repeat: int = 3) -> float:
+    def timed(fn, repeat: int = 5) -> float:
+        fn()                      # 预热：首次调用要付 import/JIT/分配器的冷启动成本
         best = float("inf")
         for _ in range(repeat):
             t = time.perf_counter()
             fn()
             best = min(best, time.perf_counter() - t)
-        return best
+        return best               # 取最优而不是均值：CI 是共享机器，噪声围不住均值
 
     t_ref = timed(lambda: CR.fit_cs_rowwise(yv, xsv, min_stocks=20))
     t_fast = timed(lambda: CR.fit_cs(yv, xsv, min_stocks=20))
