@@ -370,11 +370,33 @@ def _time_grid(like: pd.DataFrame) -> pd.DataFrame:
 
 # ---- 横截面算子 -----------------------------------------------------------
 def cs_rank(df: pd.DataFrame) -> pd.DataFrame:
-    """横截面分位排名（0~1，忽略 NaN）。"""
-    return df.rank(axis=1, pct=True)
+    """横截面分位排名（0~1，忽略 NaN）。
+
+    热点榜里它自己就占掉约 2.2s（一次搜索上千次调用）。有原生动态库时走
+    ``native_kernels``（同一套语义，见其单元测试）；没有就退回 pandas，行为
+    与今天完全一致——编译产物是**可选加速**，不是依赖。
+    """
+    from .native_kernels import native as _native
+    from .native_kernels import rank_pct
+
+    if _native() is None:
+        return df.rank(axis=1, pct=True)
+    arr = df.to_numpy(dtype=np.float64, copy=False)
+    return pd.DataFrame(rank_pct(arr), index=df.index, columns=df.columns)
 
 
 def cs_zscore(df: pd.DataFrame) -> pd.DataFrame:
+    from .native_kernels import native as _native
+    from .native_kernels import zscore
+
+    if _native() is None:
+        return _pandas_cs_zscore(df)
+    arr = df.to_numpy(dtype=np.float64, copy=False)
+    return pd.DataFrame(zscore(arr), index=df.index, columns=df.columns)
+
+
+def _pandas_cs_zscore(df: pd.DataFrame) -> pd.DataFrame:
+    """pandas 基准路径（也是原生实现的语义参照）。"""
     mu = df.mean(axis=1)
     sd = df.std(axis=1, ddof=1)
     return df.sub(mu, axis=0).div(sd.replace(0.0, np.nan), axis=0)
@@ -456,6 +478,15 @@ def cs_corr(a: pd.DataFrame, b: pd.DataFrame, rank: bool = False,
     （pandas 默认 ddof=1）与我们的空值判断错位，从而漏出告警。这里统一用
     一次矩阵内积算完，退化行直接给 NaN。
     """
+    from .native_kernels import corr as _corr_native
+    from .native_kernels import native as _native
+
+    n = _native()
+    if n is not None and n.has_corr and not rank:
+        # 融合内核：一次调用扫两遍内存，没有中间 DataFrame/临时矩阵
+        out = _corr_native(a.to_numpy(dtype=np.float64),
+                           b.to_numpy(dtype=np.float64), min_stocks)
+        return pd.Series(out, index=a.index, name="cs_corr")
     if rank:
         a, b = cs_rank(a), cs_rank(b)
     av = a.to_numpy(dtype=np.float64)

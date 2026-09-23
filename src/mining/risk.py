@@ -115,42 +115,33 @@ def cross_sectional_ols(y: pd.DataFrame, xs: Sequence[pd.DataFrame],
     返回 ``(params, resid, r2, tstat)``：系数、残差面板、每日 R²、系数 t 值。
     样本不足或退化的交易日返回 NaN（不参与后续均值），绝不外推。
     """
+    from .csreg import fit_cs
+
     names = [f"x{i}" for i in range(len(xs))]
-    params = pd.DataFrame(index=y.index, columns=([] if not add_const else ["const"]) + names,
-                          dtype=float)
-    tstats = pd.DataFrame(index=y.index, columns=params.columns, dtype=float)
-    resid = y.copy().astype(float)
+    cols = (["const"] if add_const else []) + names
+    params = pd.DataFrame(np.nan, index=y.index, columns=cols, dtype=float)
+    tstats = pd.DataFrame(np.nan, index=y.index, columns=cols, dtype=float)
     r2 = pd.Series(np.nan, index=y.index, dtype=float)
-    y_np = y.to_numpy(dtype=np.float64)
+    # 未通过样本门槛的日子保持原始值（历史行为：不产出残差，但也不填 NaN）
+    resid = y.copy().astype(float)
     x_np = [x.reindex_like(y).to_numpy(dtype=np.float64) for x in xs]
-    for i, dt in enumerate(y.index):
-        yy = y_np[i]
-        cols = [x[i] for x in x_np]
-        X, yv = _design(yy, cols, add_const)
-        n, k = X.shape
-        if n < max(min_stocks, k + 2):
-            continue
-        try:
-            xtx_inv = np.linalg.pinv(X.T @ X)
-            beta = xtx_inv @ (X.T @ yv)
-        except np.linalg.LinAlgError:  # pragma: no cover - 极端退化
-            continue
-        fitted = X @ beta
-        err = yv - fitted
-        ss_res = float(err @ err)
-        ss_tot = float(((yv - yv.mean()) ** 2).sum())
-        dof = max(n - k, 1)
-        sigma2 = ss_res / dof
-        se = np.sqrt(np.maximum(np.diag(xtx_inv) * sigma2, 1e-300))
-        params.loc[dt] = beta
-        tstats.loc[dt] = beta / se
-        if ss_tot > 0:
-            r2.loc[dt] = 1.0 - ss_res / ss_tot
-        # 残差写回（未参与回归的样本保持 NaN）
-        mask = np.isfinite(yy) & np.all(np.isfinite(np.column_stack(cols)), axis=1)
-        row = np.full(len(yy), np.nan)
-        row[mask] = err
-        resid.iloc[i] = row
+    res = fit_cs(y.to_numpy(dtype=np.float64), x_np,
+                 add_const=add_const, min_stocks=min_stocks)
+    if res.ok.any():
+        resid_np = resid.to_numpy(dtype=np.float64, copy=True)
+        resid_np[res.ok] = res.resid[res.ok]
+        resid = pd.DataFrame(resid_np, index=y.index, columns=y.columns)
+        k = res.beta.shape[1]
+        dof = np.maximum(res.n_valid - k, 1)
+        sigma2 = res.ss_res / dof
+        diag_inv = np.einsum("tkk->tk", res.xtx_inv)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            se = np.sqrt(np.maximum(diag_inv * sigma2[:, None], 1e-300))
+            t_beta = res.beta / se
+        t_beta = np.where(np.isfinite(t_beta), t_beta, np.nan)
+        params.loc[res.ok] = np.where(np.isfinite(res.beta), res.beta, np.nan)[res.ok]
+        tstats.loc[res.ok] = t_beta[res.ok]
+        r2.loc[res.ok] = res.r2[res.ok]
     return params, resid, r2, tstats
 
 

@@ -722,7 +722,12 @@ class Evaluator:
                                  standardize=node.standardize)
         else:  # pragma: no cover
             raise ExprTypeError(f"未知节点: {node!r}")
-        out = out.reindex(index=self.panel.dates, columns=self.panel.symbols)
+        # 每个节点都做一次 reindex 曾是热点之一：多数情况下索引与列本来就是面板
+        # 自身的顺序（算子按同顺序处理），直接跳过即可——reindex 是一次哈希对齐
+        # 加可能的整帧拷贝，网格搜索里会被调用上万次。
+        if not (out.index.equals(self.panel.dates)
+                and out.columns.equals(self.panel.symbols)):
+            out = out.reindex(index=self.panel.dates, columns=self.panel.symbols)
         if k is not None:
             self._remember(k, out)
         return out

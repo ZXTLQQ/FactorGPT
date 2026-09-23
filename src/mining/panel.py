@@ -250,24 +250,14 @@ def residualize_cs(target: pd.DataFrame, controls: Sequence[pd.DataFrame],
     y = (ops.cs_zscore(target) if standardize else target).astype(float)
     xs = [(ops.cs_zscore(c.reindex_like(target)) if standardize
            else c.reindex_like(target)).astype(float) for c in controls]
-    y_np = y.to_numpy(dtype=np.float64)
-    x_np = [x.to_numpy(dtype=np.float64) for x in xs]
-    out = np.full_like(y_np, np.nan, dtype=np.float64)
-    for i in range(y_np.shape[0]):
-        yy = y_np[i]
-        cols = [x[i] for x in x_np]
-        parts = ([np.ones_like(yy)] if add_const else []) + cols
-        X = np.column_stack(parts)
-        mask = np.isfinite(yy) & np.all(np.isfinite(X), axis=1)
-        if int(mask.sum()) < max(min_stocks, X.shape[1] + 2):
-            continue
-        Xm, ym = X[mask], yy[mask]
-        try:
-            beta, *_ = np.linalg.lstsq(Xm, ym, rcond=None)
-        except np.linalg.LinAlgError:  # pragma: no cover
-            continue
-        out[i, mask] = ym - Xm @ beta
-    return pd.DataFrame(out, index=y.index, columns=y.columns)
+    # 批量求解：逐日循环 + 每天一次 lstsq 曾是挖掘层的主要热点，
+    # 现在沿交易日维一次算完（语义基准见 csreg.fit_cs_rowwise）。
+    from .csreg import fit_cs
+
+    res = fit_cs(y.to_numpy(dtype=np.float64),
+                 [x.to_numpy(dtype=np.float64) for x in xs],
+                 add_const=add_const, min_stocks=min_stocks)
+    return pd.DataFrame(res.resid, index=y.index, columns=y.columns)
 
 
 # --------------------------------------------------------------------------

@@ -107,3 +107,9 @@ data/uploads/
 
 # 本地图文模型的训练产物（由 scripts/train_multimodal.py 可复现生成）
 data/models/
+
+# 原生热核构建产物（由 scripts/build_native.py 生成）
+# DLL/SO 含本机绝对路径与 PDB，入库只会造成平台冲突
+build/
+fg_native*.pyd
+fg_native*.so
