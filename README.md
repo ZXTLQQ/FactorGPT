@@ -652,7 +652,7 @@ FactorGPT/
 │   └── references/     # Data contract (legacy / NeoData / offline field mapping)
 ├── third_party/        # Third-party integrations (kronos, ima client)
 ├── hf_space/           # HuggingFace Spaces static hosting files
-├── .github/workflows/  # CI (pytest on Python 3.11 + 3.12, then compile check)
+├── .github/workflows/  # CI (pytest on Python 3.11 + 3.12, then compile check) + native.yml (原生 C++ 核在 ubuntu/windows 上编译，并与 pandas 结果比对)
 ├── docs/               # Ablation report, HF guide, docs/assets screenshots and charts
 ├── data/               # Sample data, factor library, bundled offline dataset, forward-test ledger
 ├── ima_subscription/   # Research-report watchlist, baseline, and change log

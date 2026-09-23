@@ -32,9 +32,11 @@ jobs:
           cache: pip
 
       - name: Prepare MSVC environment (Windows only)
-        # Windows runner 默认**不把 MSVC 放进 PATH**（cl / link 都不在），这是 Windows
-        # 腿唯一失败的那一步最可能的根因：没有 MSVC 环境就编不出 Python 扩展。
-        # 显式注入 dev-cmd 的环境变量，比指望 setuptools 自己去找更可靠。
+        # runner 默认**不把 MSVC 放进 PATH**（cl / link 都不在）。setuptools 通常能自己
+        # 去 vcvarsall 里找，但那是"通常"——这里显式注入，把工具链是否可用变成一件
+        # 由 workflow 决定、而不是由 setuptools 版本决定的事。
+        # （历史注记：Windows 腿当初的红并不是缺 MSVC，扩展其实编成功了，见
+        #  scripts/cli_utf8.py。这一步保留下来是因为它让依赖更少，不是为了那个 bug。）
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
@@ -53,14 +55,7 @@ jobs:
       - name: Build extension in place
         # 只用 --python：产物由 setuptools 自己找工具链（不需要 cl 在 PATH 上）。
         # 不要顺手加 --dll——那条路要求 PATH 里能找到编译器，Windows runner 默认没有。
-        # 输出重定向到文件：日志托管需要鉴权才能下载，这里留一份给下面的自检步骤。
-        id: build_ext
-        run: python scripts/build_native.py --python > build_ext.log 2>&1
-
-      - name: Echo build log
-        if: always()
-        continue-on-error: true
-        run: python -c "print(open('build_ext.log', encoding='utf-8', errors='replace').read())"
+        run: python scripts/build_native.py --python
 
       - name: Report why the backend is what it is (informational)
         continue-on-error: true

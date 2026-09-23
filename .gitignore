@@ -113,6 +113,3 @@ data/models/
 build/
 fg_native*.pyd
 fg_native*.so
-
-# CI 构建日志（失败时由 ci_report_failure.py 取用）
-build_ext.log
