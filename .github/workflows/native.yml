@@ -12,6 +12,9 @@ on:
 
 permissions:
   contents: read
+  # 只为了让失败排障能把现场发成 issue：job 日志要鉴权才能下载，
+  # 没有这条就没有别的办法把 Windows 腿的编译错误取回来
+  issues: write
 
 jobs:
   verify:
@@ -53,7 +56,26 @@ jobs:
       - name: Build extension in place
         # 只用 --python：产物由 setuptools 自己找工具链（不需要 cl 在 PATH 上）。
         # 不要顺手加 --dll——那条路要求 PATH 里能找到编译器，Windows runner 默认没有。
-        run: python scripts/build_native.py --python
+        # 输出重定向到文件：日志托管需要鉴权才能下载，这里留一份给下面的自检步骤。
+        id: build_ext
+        run: python scripts/build_native.py --python > build_ext.log 2>&1
+
+      - name: Echo build log
+        if: always()
+        continue-on-error: true
+        run: python -c "print(open('build_ext.log', encoding='utf-8', errors='replace').read())"
+
+      - name: Publish failure diagnostics as an issue
+        # Actions 的 job 日志要鉴权才能下载，REST API 匿名只能看到"哪一步红"、
+        # 看不到为什么。Windows 两条腿的失败原因只能这样取回来——见脚本内注释。
+        # 标题后缀直接内联表达式而不是读环境变量：pwsh 里取环境变量得写 $env:X，
+        # bash 里写 $X，写成任何一种都会让另一边的 shell 传进去个空串。
+        if: failure() && steps.build_ext.outcome == 'failure'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python scripts/ci_report_failure.py --log build_ext.log --title-suffix "${{ matrix.os }}/py${{ matrix.python-version }}"
 
       - name: Report why the backend is what it is (informational)
         continue-on-error: true
