@@ -31,6 +31,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      - name: Prepare MSVC environment (Windows only)
+        # Windows runner 默认**不把 MSVC 放进 PATH**（cl / link 都不在），这是 Windows
+        # 腿唯一失败的那一步最可能的根因：没有 MSVC 环境就编不出 Python 扩展。
+        # 显式注入 dev-cmd 的环境变量，比指望 setuptools 自己去找更可靠。
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
