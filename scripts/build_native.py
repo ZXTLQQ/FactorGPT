@@ -27,6 +27,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    from cli_utf8 import force_utf8_stdio
+except ImportError:  # pragma: no cover - 直接从别处调用时应有的容错
+    def force_utf8_stdio() -> None:  # type: ignore[misc]
+        return None
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "native" / "fg_kernels.cpp"
 BINDINGS = ROOT / "native" / "fg_bindings.cpp"
@@ -115,6 +121,9 @@ def build_python_module(dry: bool = False) -> int:
 
 
 def main() -> int:
+    # 必须最先做：Windows 控制台默认 cp1252，下面任何一句中文 print 都会抛
+    # UnicodeEncodeError 让进程“看似失败”——而此时扩展其实已经编好了
+    force_utf8_stdio()
     ap = argparse.ArgumentParser(description="构建 FactorGPT 原生热核")
     ap.add_argument("--python", action="store_true", help="构建 pybind11 扩展")
     ap.add_argument("--dll", action="store_true", help="构建可被 ctypes 加载的动态库")

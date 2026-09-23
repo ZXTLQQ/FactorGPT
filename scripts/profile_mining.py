@@ -26,6 +26,13 @@ from typing import Any, Callable, Dict, List, Tuple
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+
+try:
+    from cli_utf8 import force_utf8_stdio
+except ImportError:  # pragma: no cover
+    def force_utf8_stdio() -> None:  # type: ignore[misc]
+        return None
 
 from mining import evaluator as EV  # noqa: E402
 from mining import fundamental as FD  # noqa: E402
@@ -87,6 +94,7 @@ def _stage(name: str, fn: Callable[[], Any], acc: List[Tuple[str, float]]) -> An
 
 
 def main() -> int:
+    force_utf8_stdio()   # Windows 控制台默认 cp1252，中文 print 会直接崩进程
     ap = argparse.ArgumentParser(description="挖掘层性能剖析（分期计时 + 热点排行）")
     ap.add_argument("--symbols", type=int, default=120)
     ap.add_argument("--days", type=int, default=1050)

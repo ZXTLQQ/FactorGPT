@@ -17,6 +17,12 @@ import sys
 import traceback
 from pathlib import Path
 
+try:
+    from cli_utf8 import force_utf8_stdio
+except ImportError:  # pragma: no cover
+    def force_utf8_stdio() -> None:  # type: ignore[misc]
+        return None
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -41,6 +47,7 @@ def _probe_artifacts() -> None:
 
 
 def main() -> int:
+    force_utf8_stdio()   # 同 build_native.py：Windows 控制台默认 cp1252
     print("== 工具链 / 环境变量 ==")
     _probe_toolchain()
     print("== 构建产物 ==")
