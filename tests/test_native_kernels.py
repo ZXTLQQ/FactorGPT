@@ -12,6 +12,7 @@
 """
 import os
 import sys
+import warnings
 
 import numpy as np
 import pytest
@@ -27,6 +28,23 @@ REQUIRE_NATIVE = str(os.environ.get("FG_REQUIRE_NATIVE") or "").strip() in {"1",
 def _native_available() -> bool:
     NK.reset_cache()
     return NK.native() is not None
+
+
+def _ref(fn, *args, **kw):
+    """取 pandas 基准值时静默 pandas 自己的告警，且**只**这里静默。
+
+    必要性：``_tricky_frame`` 故意放了一行 ``inf``，用来锁住"含 inf 的截面两侧都
+    给 NaN"这条语义。而 pandas 求标准差的**两遍**算法会先算出含 inf 的均值再做
+    ``inf - x``，于是自己抛 ``invalid value encountered in subtract``——它发生在
+    pandas 内部，是参考实现的实现细节，与被测的 C++ 核无关（pytest 的告警闸门
+    依然覆盖被测路径）。
+
+    为什么不放松 pytest.ini：``filterwarnings = error`` 是仓库的核心闸门，为了写
+    测试方便放松它，等于连 C++ 侧真正的告警也一起放过。
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return fn(*args, **kw)
 
 
 def _require_or_skip() -> None:
@@ -81,7 +99,7 @@ def test_rank_matches_pandas_bitwise():
     _require_or_skip()
     a = _tricky_frame()
     got = NK.rank_pct(a)
-    exp = NK.pandas_rank_pct(a)
+    exp = _ref(NK.pandas_rank_pct, a)
     assert np.array_equal(np.isnan(got), np.isnan(exp)), "NaN 位置必须与 pandas 一致"
     assert np.nanmax(np.abs(got - exp)) <= 1e-12
 
@@ -90,7 +108,7 @@ def test_zscore_matches_pandas_bitwise():
     _require_or_skip()
     a = _tricky_frame()
     got = NK.zscore(a)
-    exp = NK.pandas_zscore(a)
+    exp = _ref(NK.pandas_zscore, a)
     assert np.array_equal(np.isnan(got), np.isnan(exp))
     assert np.nanmax(np.abs(got - exp)) <= 1e-10
 
