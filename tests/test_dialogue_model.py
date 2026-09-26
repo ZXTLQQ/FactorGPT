@@ -22,6 +22,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from agent import dialogue_model as DM  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _clean_classifier_cache():
+    """每条用例前后清掉分类器缓存。
+
+    ``load_classifier`` 按目录缓存实例，不清的话前一条用例（乃至别的测试文件）
+    留下的实例会串到后面的用例上，于是"换个目录重训"这类用例测的就不是自己了。
+    """
+    DM.reset_cache()
+    yield
+    DM.reset_cache()
+
+
 # --------------------------------------------------------------------------
 # 1. 语料
 # --------------------------------------------------------------------------
@@ -133,8 +145,10 @@ def test_is_followup_false_when_no_bindable_state():
 # --------------------------------------------------------------------------
 @pytest.fixture()
 def _trained(tmp_path):
+    # 种子与样本量都写死：下面第 5 节比的是"模型 vs 正则"的准确率差，
+    # 语料一旦随环境漂移，这个差值就不再是测量而是运气。
     rep = DM.train_all({"dialogue": {"model_dir": str(tmp_path)}},
-                       out_dir=str(tmp_path), per_template=10)
+                       out_dir=str(tmp_path), per_template=10, seed=20260926)
     DM.reset_cache()
     return tmp_path, rep
 

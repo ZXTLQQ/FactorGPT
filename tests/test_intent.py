@@ -220,7 +220,7 @@ def _trained(tmp_path, monkeypatch):
     from agent.dialogue_model import train_all
 
     rep = train_all({"dialogue": {"model_dir": str(tmp_path)}},
-                    out_dir=str(tmp_path), per_template=12)
+                    out_dir=str(tmp_path), per_template=12, seed=20260926)
     import agent.dialogue_model as DM
 
     DM.reset_cache()

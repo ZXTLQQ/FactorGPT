@@ -10,12 +10,39 @@
 import json
 import os
 import sys
+import types
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 from rag import retriever as RAG  # noqa: E402
+
+
+class _EmptyLearned:
+    """替身「已学习因子库」：把 ``data/learned_factors.jsonl`` 挡在用例之外。
+
+    真实库读的是仓库外的本机产物——CI 上没有这份文件，每台开发机上内容也不同。
+    语料一变，检索结果的条数与内容就跟着变，于是用例在这台机器上绿、在另一台上红，
+    而它本来要测的是"索引什么时候建"这件跟语料毫无关系的事。
+    """
+
+    def all(self):
+        return []
+
+
+@pytest.fixture(autouse=True)
+def _isolated_corpus(monkeypatch, tmp_path):
+    """把检索语料钉死成「只有仓库内置的 SEED_FACTORS」。
+
+    三处污染一并挡掉：已学习因子库（本机文件）、离线知识语料（本机 OCR 产物）、
+    以及离线语料的进程内缓存（上一条用例可能已经填过）。钉死后，本文件里任何
+    关于"检索结果"的断言在任何机器上都是同一个答案。
+    """
+    monkeypatch.setattr(RAG, "LearnedFactorLibrary", lambda: _EmptyLearned())
+    monkeypatch.setattr(RAG, "_KNOWLEDGE_DIR", tmp_path / "no_such_knowledge")
+    monkeypatch.setattr(RAG, "_OFFLINE_CACHE", None)
+    monkeypatch.setattr(RAG, "_OFFLINE_FINGERPRINT", "")
 
 
 # --------------------------------------------------------------------------
@@ -79,7 +106,11 @@ def test_vector_failure_degrades_to_keyword_search():
 
     idx.build_from_seed = _boom  # type: ignore[assignment]
     r = RAG.FactorRetriever(index=idx, use_vector_store=True)
-    assert r.retrieve("动量因子")  # 不能是空结果，更不能抛异常
+    out = r.retrieve("动量因子")
+    # 不能是空结果，更不能抛异常；且命中的必须是关键词检索出的内置语料
+    # （SEED_FACTORS 的格式化文本自带书名号），而不是向量库那条路。
+    assert out and "VECTOR-HIT" not in out
+    assert any("【" in x for x in out)
     assert r._use_vector is False
     assert "chromadb" in r._vector_error
 
@@ -127,13 +158,26 @@ def test_offline_knowledge_missing_dir_is_empty(_knowledge_dir):
 # --------------------------------------------------------------------------
 # JEV 本地模型：进程内共享，但按配置分片
 # --------------------------------------------------------------------------
+def _fake_multimodal_module(calls):
+    """``engine.multimodal_train`` 的替身模块。
+
+    不去 monkeypatch 真实模块的属性：那条路要求"该模块必须能 import"，而它
+    import 时会 try 一下 torch——本机有 torch、CI 上没有，于是同一条用例在两台
+    机器上测的其实是两件事。塞一个替身模块进 ``sys.modules``，把这条环境差异
+    整个绕开，剩下的才是要测的东西：缓存是否生效、是否按配置分片。
+    """
+    mod = types.ModuleType("engine.multimodal_train")
+    mod.load_local_classifier = lambda cfg: calls.append(cfg) or object()
+    return mod
+
+
 def test_jev_local_model_shared_across_clients(monkeypatch):
     """加载一次要 4 秒（torch 权重 + 词表），不该每建一个 JEVClient 就付一次。"""
     from engine import jev
 
     calls = []
-    monkeypatch.setattr("engine.multimodal_train.load_local_classifier",
-                        lambda cfg: calls.append(cfg) or object())
+    monkeypatch.setitem(sys.modules, "engine.multimodal_train",
+                        _fake_multimodal_module(calls))
     jev.reset_local_cache()
     a = jev.JEVClient({"multimodal": {"model_dir": "m1"}})._ensure_local()
     b = jev.JEVClient({"multimodal": {"model_dir": "m1"}})._ensure_local()
@@ -145,8 +189,8 @@ def test_jev_local_model_cache_keyed_by_config(monkeypatch):
     from engine import jev
 
     calls = []
-    monkeypatch.setattr("engine.multimodal_train.load_local_classifier",
-                        lambda cfg: calls.append(cfg) or object())
+    monkeypatch.setitem(sys.modules, "engine.multimodal_train",
+                        _fake_multimodal_module(calls))
     jev.reset_local_cache()
     jev.JEVClient({"multimodal": {"model_dir": "m1"}})._ensure_local()
     jev.JEVClient({"multimodal": {"model_dir": "m2"}})._ensure_local()

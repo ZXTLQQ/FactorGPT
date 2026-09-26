@@ -41,7 +41,20 @@ jobs:
 
       - name: Run test suite
         # 不设 --maxfail，让所有失败都可见（避免早期失败掩盖后续缺陷）
-        run: python -m pytest tests/ -q --timeout=180
+        # 日志 tee 到文件：默认 pytest 会为每个失败打印完整 traceback，几十个失败
+        # 就是几百行，真正的原因被淹在里面。下面那一步只把 FAILED 清单挑出来。
+        run: |
+          set -o pipefail
+          python -m pytest tests/ -q --timeout=180 2>&1 | tee pytest.log
+
+      - name: 失败用例清单
+        if: failure()
+        run: |
+          {
+            echo "### 失败用例清单"
+            echo
+            grep -E "^(FAILED|ERROR)" pytest.log || echo "（日志里没有 FAILED/ERROR 行，可能是前面的步骤失败）"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Compile-check all source modules
         run: |
