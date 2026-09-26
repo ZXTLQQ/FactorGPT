@@ -111,6 +111,17 @@ _HINT_LABELS = {
 }
 
 
+#: 进程内共享的本地训练模型（见 :meth:`JEVClient._ensure_local`）。
+#: **按 multimodal 配置分片**：缓存不带 key 的话，第一个调用方的配置就定了终身——
+#: 测试里换个 ``model_dir`` 训一份迷你模型，拿到的仍是别人那份（或那个人的 None）。
+_SHARED_LOCAL: Dict[str, Any] = {}
+
+
+def reset_local_cache() -> None:
+    """清掉共享的本地模型缓存（重新训练后立刻生效、测试隔离用）。"""
+    _SHARED_LOCAL.clear()
+
+
 class JEVClient:
     """JEV 判定客户端（带本地规则降级）。"""
 
@@ -135,17 +146,27 @@ class JEVClient:
         return self.enabled and bool(self.api_key)
 
     def _ensure_local(self) -> Any:
-        """惰性加载本地训练模型：产物不存在/未启用时返回 None，绝不抛到调用方。"""
+        """惰性加载本地训练模型：产物不存在/未启用时返回 None，绝不抛到调用方。
+
+        模型在**进程内共享**：加载一次要 4 秒（torch 权重 + 词表），而 UploadIngestor
+        会随 UI 每次交互重建——不共享的话，用户多传一个文件就多付一次 4 秒，
+        而且这个开销完全与"这次上传了什么"无关。
+        """
         if self._local_loaded:
             return self._local
         self._local_loaded = True
+        key = str((self._config or {}).get("multimodal") or "default")
+        if key in _SHARED_LOCAL:
+            self._local = _SHARED_LOCAL[key]
+            return self._local
         try:
             from engine.multimodal_train import load_local_classifier
 
-            self._local = load_local_classifier(self._config)
+            _SHARED_LOCAL[key] = load_local_classifier(self._config)
         except Exception as e:  # noqa: BLE001
             logger.debug("[jev] 本地模型不可用，按规则降级: %s", e)
-            self._local = None
+            _SHARED_LOCAL[key] = None
+        self._local = _SHARED_LOCAL[key]
         return self._local
 
     def ask(self, state: str, questions: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

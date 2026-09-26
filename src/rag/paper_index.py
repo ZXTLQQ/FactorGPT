@@ -182,9 +182,19 @@ class FactorPaperIndex:
         self._client = None
         self._collection = None
         self._available = False
-        self._init_vector_store()
+        self._initialized = False
 
     def _init_vector_store(self) -> None:
+        """真正连接 ChromaDB（惰性）。
+
+        ``import chromadb`` 加上建一个 PersistentClient 实测要 10 秒左右，而
+        ``FactorPaperIndex()`` 的构造点很多（检索器、个股页、挖掘图），其中不少
+        从头到尾都不会发一次向量查询——在构造时就把这 10 秒收掉，等于让"打开页面"
+        替"检索一次"付账。所以改成首次真正要用时才连。
+        """
+        if self._initialized:
+            return
+        self._initialized = True
         try:
             _apply_hf_env(_rag_config())
             import chromadb
@@ -230,6 +240,7 @@ class FactorPaperIndex:
         """
         if self._collection is not None:
             return self._collection
+        self._init_vector_store()
         if not self._available:
             return None
         ef = self._embedding_function()
@@ -268,6 +279,7 @@ class FactorPaperIndex:
 
     @property
     def available(self) -> bool:
+        self._init_vector_store()
         return self._available
 
     def _doc_text(self, item: Dict[str, str]) -> str:

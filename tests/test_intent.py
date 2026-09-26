@@ -61,6 +61,18 @@ def _rag_off_by_default(monkeypatch):
                         lambda: type("R", (), {"retrieve": lambda self, q, top_k=3: []})())
 
 
+@pytest.fixture(autouse=True)
+def _local_dialogue_off(monkeypatch):
+    """默认关掉第二级（本地训练模型），让本文件继续精确地测**正则兜底**那一层。
+
+    判定链是 LLM → 本地模型 → 正则三层；本机若已跑过 ``train_dialogue.py``，
+    中间那层会接管，本文件里所有 ``source == "rule"`` 的断言就都测不到想测的东西了。
+    本地模型层自己的契约（含它在困难集上相对正则的增量）在
+    ``tests/test_dialogue_model.py`` 里单独钉住。
+    """
+    monkeypatch.setattr(IT, "load_classifier", lambda config=None: None)
+
+
 def _json_reply(intent_name, confidence=0.9, reason="测试", rewritten=""):
     """模拟模型常见输出：带代码围栏的 JSON。"""
     payload = {"intent": intent_name, "confidence": confidence,
@@ -193,6 +205,52 @@ def test_classify_result_is_serialisable():
     payload = res.as_dict()
     assert json.dumps(payload, ensure_ascii=False)
     assert payload["label"] in IT.INTENT_LABELS.values()
+
+
+# --------------------------------------------------------------------------
+# 第二级：本地训练模型（LLM 不可用时的接管者）
+# --------------------------------------------------------------------------
+@pytest.fixture()
+def _trained(tmp_path, monkeypatch):
+    """在临时目录训一个真模型，并把 ``load_classifier`` 指向它。
+
+    不用仓库里 ``data/models/dialogue`` 的产物：那份是本机跑出来的，CI 上不一定有，
+    而这里要钉的是"训练 → 落盘 → 加载 → 接管"这条链路本身。
+    """
+    from agent.dialogue_model import train_all
+
+    rep = train_all({"dialogue": {"model_dir": str(tmp_path)}},
+                    out_dir=str(tmp_path), per_template=12)
+    import agent.dialogue_model as DM
+
+    DM.reset_cache()
+    monkeypatch.setattr(IT, "load_classifier",
+                        lambda config=None: DM.LocalDialogueClassifier(str(tmp_path)))
+    return rep
+
+
+def test_local_tier_takes_over_when_llm_fails(_trained):
+    res = IT.classify("换个窗口试试", llm=_FakeLLM(raise_on="complete"))
+    assert res.source == "local-model"
+    assert res.error  # LLM 失败原因仍要留下，不能因为换了层级就抹掉
+    assert res.intent == IT.INTENT_MINING
+
+
+def test_local_tier_resolves_reference_into_standalone_need(_trained):
+    # 离线时最关键的一条：跟进句必须被补全成流水线读得懂的独立需求。
+    history = [{"role": "user", "content": "构建一个20日动量因子，股票池沪深300"},
+               {"role": "assistant", "agent": {"factor_name": "mom20",
+                                               "metrics": {"ic": 0.05}}}]
+    res = IT.classify("窗口改成60天", history=history, llm=_FakeLLM(raise_on="complete"))
+    assert res.intent == IT.INTENT_MINING
+    assert "60天" in res.rewritten and "动量" in res.rewritten
+    assert res.rewritten != "窗口改成60天"  # 原样返回 == 没消解，等于没做
+
+
+def test_local_tier_unavailable_falls_through_to_rule(_trained, monkeypatch):
+    monkeypatch.setattr(IT, "load_classifier", lambda config=None: None)
+    res = IT.classify("什么是 ICIR？", llm=_FakeLLM(raise_on="complete"))
+    assert res.source == "rule"
 
 
 # --------------------------------------------------------------------------

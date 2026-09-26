@@ -23,13 +23,51 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _KNOWLEDGE_DIR = _PROJECT_ROOT / "data" / "knowledge"
 
 
+_OFFLINE_CACHE: Optional[List[Dict]] = None
+_OFFLINE_FINGERPRINT: str = ""
+
+
+def _knowledge_fingerprint() -> str:
+    """语料目录的内容指纹（路径 + 大小 + 修改时间）。
+
+    用它做缓存失效判据而不是"永不失效"：OCR 知识语料是增量追加的，缓存成一次
+    终身有效会让新导入的 PDF 永远检索不到，而且这种 bug 极难发现——检索不会报错，
+    只是安静地少给你几条参考。
+    """
+    if not _KNOWLEDGE_DIR.exists():
+        return ""
+    parts = []
+    for f in sorted(_KNOWLEDGE_DIR.rglob("chunks*.jsonl")):
+        try:
+            st = f.stat()
+            parts.append(f"{f}|{st.st_size}|{int(st.st_mtime)}")
+        except OSError:
+            continue
+    return "|".join(parts)
+
+
 def _load_offline_knowledge() -> List[Dict]:
     """加载离线知识语料（data/knowledge/**/chunks*.jsonl）。
 
     这些条目通常由图片型 PDF 经 OCR 后分块落地（见 scripts/ingest_knowledge.py），
     用于在无向量库/向量模型不可用时，仍能被 SimpleRetriever（jieba）检索到。
     条目不含 ``code``，因此不会污染 retrieve_template 的可调用因子模板。
+
+    结果按目录指纹缓存：每构造一次 ``FactorRetriever`` 就重扫一遍目录、逐行解析
+    全部 jsonl，是这个模块此前最大的一笔固定开销（对话页每轮交互都要付一次）。
     """
+    global _OFFLINE_CACHE, _OFFLINE_FINGERPRINT
+    fp = _knowledge_fingerprint()
+    if _OFFLINE_CACHE is not None and fp == _OFFLINE_FINGERPRINT:
+        return _OFFLINE_CACHE
+    items = _read_offline_knowledge()
+    _OFFLINE_CACHE = items
+    _OFFLINE_FINGERPRINT = fp
+    return items
+
+
+def _read_offline_knowledge() -> List[Dict]:
+    """真正的读盘逻辑（与缓存层分离，便于单独测试与绕过缓存）。"""
     items: List[Dict] = []
     if not _KNOWLEDGE_DIR.exists():
         return items
@@ -190,26 +228,49 @@ class FactorRetriever:
         self.simple = SimpleRetriever(corpus=combined)
         # 默认使用离线关键词检索（jieba）；当配置允许且依赖就绪时自动启用向量检索
         # （首次会自动下载嵌入模型，无需手动编辑配置）。
-        if use_vector_store is False:
+        # 向量索引**惰性构建**：构造时不建，首次真正检索时才建。
+        # 原因很直接——建索引要加载/下载嵌入模型，实测一次 77 秒；而构造检索器的
+        # 地方（对话页、个股页）未必马上发查询，把这笔钱在构造时强收，就是让
+        # "打开页面"替"检索一次"付账。
+        self._vector_flag = use_vector_store
+        self._use_vector = False
+        self._vector_built = False
+        self._vector_error = ""
+
+    def _vector_wanted(self) -> bool:
+        """是否应当尝试向量检索（依赖探测也在这里，同样不在构造时做）。"""
+        if self._vector_flag is False:
+            return False
+        return bool(self._vector_flag or rag_deps_available()) and self.index.available
+
+    def _ensure_vector(self) -> bool:
+        """首次检索前把向量索引建起来；失败则永久退到关键词检索。
+
+        失败是**允许的**：向量检索是增强项，不是前提。模型下不下来、ChromaDB 起不来，
+        都不该让"检索知识"这件事本身挂掉——退化原因留在 ``_vector_error`` 里，
+        供调用方如实展示，而不是静默少给几条参考。
+        """
+        if self._vector_built:
+            return self._use_vector
+        self._vector_built = True
+        if not self._vector_wanted():
+            return False
+        try:
+            self.index.build_from_seed()
+            for it in self.learned.all():
+                try:
+                    self.index.add_document(it)
+                except Exception:
+                    pass
+            self._use_vector = True
+        except Exception as e:  # noqa: BLE001
+            self._vector_error = str(e)[:200]
             self._use_vector = False
-        else:
-            # use_vector_store 为 True 或 None（自动）：依赖就绪时启用向量检索
-            self._use_vector = bool(use_vector_store or rag_deps_available()) and self.index.available
-        if self._use_vector:
-            try:
-                self.index.build_from_seed()
-                for it in self.learned.all():
-                    try:
-                        self.index.add_document(it)
-                    except Exception:
-                        pass
-                self._use_vector = True
-            except Exception:
-                self._use_vector = False
+        return self._use_vector
 
     def retrieve(self, query: str, top_k: Optional[int] = None) -> List[str]:
         k = top_k or self.top_k
-        if self._use_vector:
+        if self._ensure_vector():
             try:
                 res = self.index.query(query, top_k=k)
                 if res:

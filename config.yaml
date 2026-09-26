@@ -58,6 +58,16 @@ multimodal:
   gcn_epochs: 200            # GCN 全批量训练，收敛更慢，单独给轮数
   seed: 7
 
+# ── 本地对话能力模型（意图头 + 跟进头，词袋朴素贝叶斯）──
+# 由 `python scripts/train_dialogue.py` 训练，产物落在本段 model_dir。
+# 判定链：LLM 语义分类 → 本地模型（离线，毫秒级）→ 本地正则（兜底）。
+# 产物不存在时中间那级自动跳过。零依赖（只用 numpy），torch 缺失也能训。
+dialogue:
+  enabled: true
+  model_dir: "data/models/dialogue"
+  per_template: 40           # 合成语料：每条模板生成的样本数
+  seed: 20260926             # 语料随机种子（固定 → 结果可复现）
+
 # Kronos 金融时序预测基础模型 (morrisluo/kronos, HuggingFace: NeoQuasar/Kronos-*)
 # 该模型为 decoder-only 的 K 线序列预测模型, 非聊天 LLM, 因此作为"预测因子"集成:
 # 用其未来 OHLCV 预测构造选股因子, 不参与代码生成(代码生成仍由上面的 LLM 负责)。

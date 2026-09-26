@@ -219,6 +219,14 @@ The judgment chain is three-tier and never blocks: **JEV** (needs `TYPESAFE_API_
 python scripts/train_multimodal.py      # -> data/models/multimodal/
 ```
 
+**"Is JEV actually wired up?" is a question you can answer, not a claim you take on faith.** `jev.enabled: true` with a missing key does not fail — it silently runs on tier 2, and the only symptom is that judgments feel vaguely imprecise. So the chain reports which tier answered (`engine`: `jev` / `local-model` / `heuristic` on every result), and two commands make the current state explicit:
+
+```bash
+python scripts/check_jev.py            # which tier is actually answering, and why; exit 1 if none
+python scripts/check_jev.py --probe    # additionally send one real request (needs the key)
+python scripts/preflight_check.py      # now includes the JEV tier in its report
+```
+
 Four models, each with a distinct job: **Naive Bayes** (data type / sentiment / forward-looking; zero-dependency fallback, trains even without torch), **Transformer** (word order — the only model that catches cross-distance cues like "预计……将"), **CNN** (image layout: candlestick / table / text page / other — lets a wordless screenshot be classified at all), **GNN** (2-layer GCN propagating type labels across materials that share an instrument). On materials whose text carries **no** type keyword and **no** ticker, the GCN reaches 0.375 accuracy vs 0.208 for the text-only model (random = 1/7 ≈ 0.14) — that gap is the evidence the relation graph adds information. Skip reasons and per-model metrics land in `training_report.json`; without torch only the Naive Bayes tier trains.
 
 ![Unstructured text sentiment](docs/assets/feature_unstructured.png)
@@ -382,6 +390,29 @@ Three deliberate departures from the paper are documented in the module docstrin
 
 It is wired in where it can change an outcome, not only a number: `triage.specification_search(...)` / `acceptance(...)` run it, the mining page renders it under 因子挖掘 → 「🧠 规范搜索」 (per-task candidate table with fit, |IC|, complexity and Pareto membership), the report adds a 「多任务规范搜索（强化学习）」 section, and — most usefully — `multiscale_mine(..., spec_rl=True)` feeds `spec_seeds()` into `HierarchicalFactorMiner(seed_exprs=...)`: the RL proposals are compiled through `compile_expr` into the *same* expression-tree tuples the GP evolves, so the policy seeds the genetic initial population instead of sitting beside it.
 
+### 14. Offline Conversation Ability & Context Linking (`src/agent/dialogue_model.py`)
+
+Multi-turn work sounds like this: *"mine a momentum factor"* → *"change the window to 60 days and run it again"*. The second sentence is nonsense without the first, and intent routing used to have only two tiers — **LLM semantic classification** and **regex fallback**. With the LLM reachable, routing resolved the reference fine (`rewritten` came back as a standalone requirement); with the LLM down, regex could still guess the intent but **could not resolve the reference**, so `rewritten` was echoed back verbatim. The pipeline received "change the window to 60 days" — no subject, no factor — and re-mined from scratch. Offline, multi-turn was simply broken.
+
+The missing middle tier is now trainable, in the same shape as the multimodal layer (synthetic corpus → train locally → persist → prefer at inference):
+
+```bash
+python scripts/train_dialogue.py                    # -> data/models/dialogue/
+```
+
+Two heads, and the split is deliberate:
+
+| Head | Job | Why it is not merged into the other |
+|------|-----|-------------------------------------|
+| Intent (4-class) | `mining` / `qa` / `chitchat` / `clarify` | first-order routing |
+| Follow-up (binary) | *does this sentence need the previous turn to make sense?* | "再来一个" / "换个方向" / "帮我看看" carry **no** keyword at all, so regex cannot see them; and knowing "this is a follow-up" is a different question from "which slot does 60 天 fill" |
+
+Context linking then splits the same way, and the split is enforced rather than stylistic: **the model decides *whether* to look back; regex fills *which slot*** — slot extraction ("60 天" is a window, "中证500" is a universe) is exact pattern matching, and a bag-of-words model assigning high probability to "60 → window" is still strictly worse than one regex that says so. `resolve_reference` binds only the slots the current sentence does *not* name, and returns the text unchanged when there is no prior state to bind — it never invents a direction or a universe.
+
+The value of the tier is measured where it is falsifiable. On a **hard-node slice** — test inputs carrying no intent keyword at all, i.e. exactly the inputs regex is blind to — the local model reaches **0.98** accuracy against **0.24** for the regex fallback (random = 1/4), with follow-up detection at 0.88 precision / 0.81 recall. Both arms are written into `training_report.json`, so "the model is better" is a measurement, not an assertion.
+
+The chain is now **LLM → local model → regex**, never blocking, with `IntentResult.source` naming who answered. Two engineering constraints fell out of building it: the classifier is **zero-dependency and self-contained** (`TextVectorizer` + `MultinomialNB` reimplemented on numpy rather than reusing `engine.multimodal_train`, whose module import drags in torch — measured at 2.7 s, which would have made "offline, millisecond" a lie for a bag-of-words model), and it is cached per model directory so a Streamlit rerun does not re-read the artifacts.
+
 ---
 
 ## Architecture Overview
@@ -401,6 +432,7 @@ It is wired in where it can change an outcome, not only a number: `triage.specif
 ├───────────────┬──────────────────┬───────────────────────────┤
 │   LLM Layer   │    Data Layer    │        Engine Layer       │
 │    DeepSeek   │     AKShare      │    Sandbox (Subprocess)   │
+│               │                  │  Dialogue model (offline) │
 │     OpenAI    │     Tushare      │  Backtester (IC/Quantile) │
 │     Ollama    │    Sina / THS    │         RPN Engine        │
 │  Qwen / vLLM  │     Baostock     │    Genetic Programming    │
@@ -633,7 +665,8 @@ These are exactly the names the sidebar's **保存配置** button writes into `.
 ```
 FactorGPT/
 ├── src/
-│   ├── agent/          # LangGraph Agent (graph, nodes, state, integration)
+│   ├── agent/          # LangGraph Agent (graph, nodes, state, intent routing,
+│   │                   #   dialogue context, offline dialogue model)
 │   ├── engine/         # Factor builder, backtester, optimizer, traditional factors, spectral cleaning / significance / universe / multiscale GP / multitask specification RL
 │   ├── data/           # Data fetcher, cleaner, feature forge, offline/neo adapters
 │   ├── pipeline/       # Six-stage refinery pipeline
@@ -645,7 +678,9 @@ FactorGPT/
 │   ├── forwardtest/    # Headline Arena forward-testing bridge (client/ledger/scorecard)
 │   └── kronos/         # Kronos financial forecasting model integration
 ├── native/             # Optional C++ hot kernels (pybind11 bindings + pure-C core) — see "Why part of this is in C++"
-├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch, ha_forward_run, hf_offline_build, train_multimodal, profile_mining, build_native)
+├── scripts/            # Utilities (data prefetch, health check, mx_query, ima sync/watch,
+│                       #   ha_forward_run, hf_offline_build, train_multimodal,
+│                       #   train_dialogue, check_jev, profile_mining, build_native)
 ├── tests/              # Test suite (sandbox & lookahead, refinery, mining, forward test, advisor, specification RL, upload/HF/intent, docs contract)
 ├── factorgpt-skill/    # Agent skill packages (SKILL.md + official EastMoney MX skills)
 │   ├── skills/         # mx-data / mx-search / mx-xuangu / mx-zixuan / mx-moni / mx-poster
@@ -670,7 +705,7 @@ FactorGPT/
 
 ## Testing & Quality Assurance
 
-FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge — 395 test functions across 27 files (430 cases after parametrisation; 429 pass, 1 skipped), none of which require network access:
+FactorGPT's "production-grade" claim is backed by automated tests and reproducible experiments, not just a badge — 426 test functions across 27 files (461 cases after parametrisation; 460 pass, 1 skipped), none of which require network access:
 
 - **CI**: `.github/workflows/ci.yml` runs the full test suite on every push/PR (Python 3.11 + 3.12), then compile-checks all source modules. Status: [![CI](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/ZXTLQQ/FactorGPT/actions/workflows/ci.yml)
 - **Core tests**: sandbox security & lookahead-bias rejection (`test_sandbox.py`, 15 test functions / 24 cases including parametrized future-column names), the six-stage refinery pipeline end-to-end (`test_refinery.py`, 6), and documentation-contract drift guards (`test_docs_contract.py`, 7 — keeps README page/factor counts, the `instrument→symbol` data contract and `kronos.fallback_to_stub` from silently drifting, and fails when README references an image that does not exist: a missing chart renders as a broken placeholder on GitHub and nothing else would ever complain).
@@ -685,7 +720,9 @@ FactorGPT's "production-grade" claim is backed by automated tests and reproducib
 - **Upload pipeline & material context** (`test_upload_ingest.py`, 23): the regressions that made uploads feel broken. A long paper title must keep its `.pdf` through sanitisation (the bug that surfaced as `不支持的文件类型：` with an empty extension), the dedupe key must be the *original* filename and not the timestamped on-disk one, a PDF must keep **per-page** text (flattening it makes page-wise slicing impossible), page-wise context must keep head + tail and name the omitted pages, a table of contents must reach the context, and `pages` — a full-text copy — must never land in `index.json`. Plus the plain-text fallback and the "tail is empty because one page exceeds the tail budget" edge.
 - **Multimodal judgment tier** (`test_multimodal_train.py`, 11): the Naive Bayes tier must train **without torch** (it is the last tier standing on a bare install), every model's artifact must round-trip, and metrics/skip reasons must be recorded rather than printed.
 - **High-frequency offline layer** (`test_hf_offline_upload.py`, 14): the compaction path from raw L2 snapshot to minute panel, the session-boundary handling that the `docs/高频数据接入与因子挖掘.md` traps warn about, and the user-supplied-table loader.
-- **Intent routing & material injection** (`test_intent.py`, 37): that `mining` / `qa` / `clarify` are separated as claimed, that **uploaded material reaches the Q&A branch too** (without it "summarise this paper" can only answer "I did not receive your text"), that no material means no material block, and that each branch degrades to an answer rather than an exception.
+- **Intent routing & material injection** (`test_intent.py`, 40): that `mining` / `qa` / `clarify` are separated as claimed, that **uploaded material reaches the Q&A branch too** (without it "summarise this paper" can only answer "I did not receive your text"), that no material means no material block, and that each branch degrades to an answer rather than an exception. Three more pin the middle tier: it takes over when the LLM call fails, it turns "窗口改成60天" into a standalone requirement (echoing it back verbatim is the bug, so the test asserts inequality), and it falls through to regex when the artifacts are absent.
+- **Offline conversation tier** (`test_dialogue_model.py`, 19): the synthetic corpus is deterministic and de-duplicated (repeated rows would make "accuracy 1.0" a counting artifact), follow-up samples really do carry no intent keyword (otherwise the hard-node comparison below is meaningless), state extraction reads the last turn's slots, and `resolve_reference` binds only what the current sentence omits while leaving standalone needs and empty context untouched — never inventing a direction. The falsifiable one: on the no-keyword slice the local model must beat regex by > 0.2 accuracy and reach ≥ 0.8, with both arms recorded in the report — if that fails, the tier carries no information and should be deleted rather than kept.
+- **Lazy loading & caching invariants** (`test_rag_lazy.py`, 9): these optimisations move a fixed cost from construction time to first use, and the failure mode is silent — an index that is never built means vector retrieval quietly never happens, with no error, only slightly worse answers. So the tests pin behaviour, not timings: the vector index is not built at construction, is built exactly once on first retrieve, is never touched when `use_vector_store: false`, and a failing index degrades to keyword retrieval with the reason recorded. Plus the offline-corpus cache reusing its parsed result while **invalidating when the corpus changes** (an append-only OCR corpus with a permanent cache means newly imported material is never retrievable — a bug that never raises), and the JEV local model being shared per process but keyed per config directory.
 - **Batched cross-sectional regression** (`test_csreg.py`, 5): the batch solver must reproduce the naive per-day loop exactly — including which days it *refuses* to solve (too few valid names), that fully collinear controls fall back to `lstsq` rather than producing plausible-looking coefficients, and that it actually gets faster (the speed assertion exists precisely because "correct but slow again" would otherwise pass silently).
 - **Native C++ hot kernels** (`test_native_kernels.py`, 9): when a compiled kernel is present it is checked **bit-for-bit** against the pandas implementation it replaces, on a fixture built to break naive ports: ties, `-0.0` vs `0.0`, all-constant rows (sd = 0 → NaN, never 0), all-NaN rows, `inf`, and rows below the minimum sample count. NaN *positions* must match too — a kernel that fills `0` where pandas leaves `NaN` would quietly change every downstream statistic. In CI the skip becomes a failure (`FG_REQUIRE_NATIVE=1`), and the fallback path is run as a second job with `FG_DISABLE_NATIVE=1`, because "the accelerator stopped being built" must be loud.
 - **Warnings are errors** (`pytest.ini`): the failure mode this repo cares about is not a raised exception but an *exception silently swallowed into a plausible number* — `np.corrcoef` returning 0 for a degenerate cross-section, or `np.nanmean` warning on an empty slice and quietly yielding NaN. Every `RuntimeWarning` / `FutureWarning` / `DeprecationWarning` now fails the suite, so those substitutions cannot creep back in.
@@ -701,6 +738,8 @@ FactorGPT's "production-grade" claim is backed by automated tests and reproducib
 - [x] Multitask RL specification search — shared DeepSet Q-policy, zero-shot transfer to unseen features, seeding the GP initial population (see Highlight 13)
 - [x] Uploaded material across both branches, with a tunable context budget, page-aware head/tail slicing and an auto-detected table of contents (see Highlight 5)
 - [x] High-frequency L2 layer reachable from the chat window — minute panel, agent-mode switch, contract semantics and a naming rule enforced in code (see "High-Frequency (L2) Data Source")
+- [x] Offline conversation tier — trainable intent + follow-up heads, reference resolution filling only the omitted slots, chain demoted to LLM → local model → regex (see Highlight 14)
+- [x] Conversation-path hot spots profiled and removed: the vector index and the ChromaDB client are built lazily (construction 10.4 s → 0.4 s), the offline knowledge corpus is cached by content fingerprint (first retrieval 2.13 s → 0.88 s), the JEV local model is shared per process and per config (second client 180 ms → 2 ms), and the dialogue classifier no longer drags torch into the chat path (2.7 s import → 0)
 - [ ] Surface the parameterised temporal-memory operator (`hwma`, Highlight 10) as a first-class operator in the expression DSL — today it runs only inside the multi-scale miner
 - [ ] Page-level retrieval over paged uploads: ask for a specific page or chapter instead of re-uploading a smaller file, so a 60-page paper no longer needs a 60k budget to be answerable
 - [ ] Move the high-frequency factor grid onto the tick grid — on ≥1 min bars the book factors carry RankIC of only 0.01–0.05; the layer is built for ticks and is currently measured where it is weakest

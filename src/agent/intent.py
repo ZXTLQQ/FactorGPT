@@ -13,11 +13,22 @@ FactorGPT 的对话入口此前是「单意图」的：任何输入都被当成�
 ``clarify``          信息不足，需要追问 → 直接对话作答并请用户补充
 ===================  ==========================================================
 
-判定的主体是**一次 LLM 语义分类**（:func:`classify`）：把对话历史与当前输入一起
-交给模型，要求它只输出一个 JSON 对象。两种情况下退化为规则兜底
-（:func:`rule_classify`）：LLM 不可用/返回不可解析，或命中「极短问候」快路径
-（省掉一次往返）。兜底不改变既有行为的方向（默认仍判 mining），但会把置信度
-压低并在 ``source`` 里标 ``"rule"``，让调用方能如实告诉用户「这次是猜的」。
+判定链是**三级**的，越靠前越可信：
+
+1. **LLM 语义分类**（:func:`classify`）：把对话历史与当前输入一起交给模型，
+   要求它只输出一个 JSON 对象；
+2. **本地训练模型**（``agent.dialogue_model``，由 ``scripts/train_dialogue.py``
+   训出的词袋朴素贝叶斯，离线、毫秒级；产物不存在时自动跳过）；
+3. **本地正则规则**（:func:`rule_classify`，最糙但永不可用尽）。
+
+第 2 级是后加的，原因很具体：LLM 不在时正则只能判意图，**消解不了指代**——
+"窗口改成 60 天"的 ``rewritten`` 原样返回，流水线拿到一句没有主语的需求，于是
+每轮从零重挖，多轮对话在离线时是断的。而在「字面无任何意图提示词」的困难样本上
+（``再来一个``/``换个方向``/``帮我看看`` 这类），本地模型的准确率是 0.98，
+正则只有 0.24——这一级不是凑数，它接住的正好是正则看不见的那部分。
+
+兜底不改变既有行为的方向（默认仍判 mining），但会把置信度压低并在 ``source``
+里标 ``"rule"``/``"local-model"``，让调用方能如实告诉用户「这次是谁判的」。
 
 设计约束：
 - **永不因分类而中断主流程**：LLM 异常、JSON 脏、字段缺失，一律降级为规则结果；
@@ -31,6 +42,11 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from agent.dialogue_model import (  # noqa: E402  （同包内延迟导入无意义，直接引入）
+    load_classifier,
+    resolve_reference,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +152,8 @@ class IntentResult:
         reason: 判定理由（模型给出的一句话，或兜底说明）。
         rewritten: 仅 mining 有意义——把「换个窗口」「再来一个」这类指代消解后
             补全成的独立因子需求，供挖掘流水线直接使用。
-        source: ``"llm"`` / ``"rule"`` —— 用户需要知道这次判定是谁做的。
+        source: ``"llm"`` / ``"local-model"`` / ``"rule"`` —— 用户需要知道这次
+            判定是谁做的。
         error: LLM 调用失败原因（无失败则为空），界面据此解释为何退化为兜底。
     """
 
@@ -195,18 +212,60 @@ def rule_classify(text: str, history: Optional[Sequence[Dict[str, str]]] = None)
     if any(w in s for w in _STRONG_QUESTION_WORDS) and not any(w in s for w in _BUILD_VERBS):
         return IntentResult(INTENT_QA, 0.6, "规则：强疑问短语且无构建动词", source="rule")
 
+    # 挖掘类必须带上"消解过指代"的需求：离线时"换个窗口"原样丢给流水线，
+    # 整轮就白跑了（见 dialogue_model.resolve_reference）。
     if has_mining and not (len(s) <= 12 and not has_question):
         return IntentResult(INTENT_MINING, 0.6, "规则：命中因子/回测类关键词",
-                            rewritten=str(text or "").strip(), source="rule")
+                            rewritten=_resolve(text, history), source="rule")
     if has_mining:
         return IntentResult(INTENT_MINING, 0.45, "规则：关键词弱命中，把握不高",
-                            rewritten=str(text or "").strip(), source="rule")
+                            rewritten=_resolve(text, history), source="rule")
     if has_question:
         return IntentResult(INTENT_QA, 0.55, "规则：疑问句且无因子构建动词", source="rule")
     if len(s) <= 10:
         return IntentResult(INTENT_CHITCHAT, 0.4, "规则：极短输入且无任何因子线索", source="rule")
     return IntentResult(INTENT_MINING, 0.35,
-                        "规则兜底：未命中明确信号，沿用既有挖掘行为", source="rule")
+                        "规则兜底：未命中明确信号，沿用既有挖掘行为",
+                        rewritten=_resolve(text, history), source="rule")
+
+
+def _resolve(text: str,
+             history: Optional[Sequence[Dict[str, str]]] = None,
+             config: Optional[Dict[str, Any]] = None) -> str:
+    """把「换个窗口」这类指代补全成一句独立需求；无需补全时原样返回。"""
+    try:
+        resolved = resolve_reference(text, history=history,
+                                     model=load_classifier(config))
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[intent] 指代消解失败，用原文: %s", e)
+        return str(text or "").strip()
+    return str(resolved or str(text or "")).strip()
+
+
+def _local_classify(text: str,
+                    config: Optional[Dict[str, Any]] = None,
+                    history: Optional[Sequence[Dict[str, str]]] = None
+                    ) -> Optional["IntentResult"]:
+    """第二级：本地训练模型判定（离线、毫秒级）；未训练时返回 ``None``。
+
+    它只替代**意图判定**这一步，指代消解仍走 :func:`_resolve`——模型判"这句是跟进"
+    与"把 60 天填进哪个槽"是两件事，后者用正则比用词袋可靠。
+    """
+    cli = load_classifier(config)
+    if cli is None:
+        return None
+    try:
+        intent, conf = cli.predict_intent(text)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[intent] 本地模型不可用，退到正则: %s", e)
+        return None
+    if intent not in INTENTS:
+        return None
+    return IntentResult(
+        intent, round(float(conf), 3), "本地训练模型（词袋朴素贝叶斯）",
+        rewritten=_resolve(text, history, config) if intent == INTENT_MINING else "",
+        source="local-model",
+    )
 
 
 # --------------------------------------------------------------------------
@@ -365,6 +424,12 @@ def classify(
         error = f"{type(e).__name__}: {e}"
         logger.warning("[intent] LLM 分类失败，退化为规则兜底: %s", error)
 
+    if result is None:
+        # 第二级：本地训练模型。它比正则强在"字面无提示词"的那批输入上
+        # （困难集 0.98 vs 0.24），且完全离线。
+        result = _local_classify(text, config, history)
+        if result is not None:
+            result.error = error
     if result is None:
         result = rule_classify(text, history)
         result.error = error

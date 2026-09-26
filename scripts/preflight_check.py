@@ -167,6 +167,30 @@ def check_rag(cfg: dict) -> None:
         record("已学习因子库", WARN, f"{lib} 不存在，冷启动检索命中率会下降")
 
 
+# ── 4b. 上传材料判定链（JEV 三级）──────────────────────────────────── #
+def check_jev(cfg: dict) -> None:
+    """「配了 JEV 不等于在用 JEV」——这里报的是实测会走哪一级。
+
+    三级链里只要有一级可用就不阻塞，但**是哪一级**必须说清楚：在线级缺 Key 时
+    界面不会报错，用户只会觉得判定不准，而这种"说不清哪里不对"最难排查。
+    """
+    from engine.jev import JEVClient
+
+    cli = JEVClient(cfg)
+    if cli.callable:
+        record("JEV 判定链", OK, f"在线级可用（{cli.model} @ {cli.base_url}）")
+        return
+    local = cli._ensure_local()
+    if local is not None:
+        record("JEV 判定链", OK,
+               "在线级未配置 TYPESAFE_API_KEY，实际由本地训练模型判定（离线可用）；"
+               "上传材料的类型/情绪/前瞻判定不受影响")
+        return
+    record("JEV 判定链", WARN,
+           "TYPESAFE_API_KEY 未配置且本地模型未训练，上传材料将退化为正则判定；"
+           "跑 python scripts/train_multimodal.py 可启用第二级")
+
+
 # ── 5. 沙箱与追踪 ───────────────────────────────────────────────────── #
 def check_runtime(cfg: dict) -> None:
     sb = ((cfg.get("engine", {}) or {}).get("sandbox", {}) or {})
@@ -227,6 +251,7 @@ def main() -> int:
     check_llm(cfg)
     check_cache(cfg)
     check_rag(cfg)
+    check_jev(cfg)
     check_runtime(cfg)
 
     if args.offline:
